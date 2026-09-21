@@ -1,22 +1,19 @@
-using M68KASMtoCSharp.AmigaCore.CPU;
-using M68KASMtoCSharp.Libraries;
-using M68KASMtoCSharp.Libraries.Native;
+using AmigaSharp.AmigaCore.CPU;
+using AmigaSharp.AmigaCore.Libraries;
+using AmigaSharp.AmigaCore.Libraries.Native;
 
-namespace M68KASMtoCSharp.AmigaCore;
+namespace AmigaSharp.AmigaCore;
 
 public class Amiga
 {
-    private readonly Dictionary<string, int> _dataLocations;
-    private readonly List<byte> _data;
     public Dictionary<int, AbstractLibrary> Libraries { get; }
     private readonly Dictionary<int, Action> _calculatedSubroutines;
 
     public M68K Cpu { get;}
+    public Memory Memory { get;}
 
     public Amiga()
     {
-        _dataLocations = new Dictionary<string, int>();
-        _data = [];
         Libraries = new Dictionary<int, AbstractLibrary>();
         _calculatedSubroutines = new Dictionary<int, Action>();
 
@@ -24,6 +21,7 @@ public class Amiga
         OpenLibrary(new ExecLibrary(this));
 
         Cpu = new M68K();
+        Memory = new Memory();
     }
 
     public int OpenLibrary(AbstractLibrary abstractLibrary)
@@ -77,24 +75,8 @@ public class Amiga
         return Libraries.Count() * -10000;
     }
 
-    public void AppendData(string stringData, string name)
-    {
-        _dataLocations.Add(name, _data.Count);
-        _data.AddRange(stringData.ToCharArray().Select(c => (byte)c));
-    }
-
-    public int GetDataAddress(string name)
-    {
-        return _dataLocations[name];
-    }
-
     public void JumpSubroutine(int address)
     {
         _calculatedSubroutines[address]();
-    }
-
-    public byte ReadByteMemory(int address)
-    {
-        return _data[address];
     }
 }

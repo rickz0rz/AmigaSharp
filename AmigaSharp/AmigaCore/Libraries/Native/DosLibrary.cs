@@ -1,7 +1,7 @@
-using M68KASMtoCSharp.AmigaCore;
-using M68KASMtoCSharp.AmigaCore.CPU;
+using AmigaSharp.AmigaCore;
+using AmigaSharp.AmigaCore.CPU;
 
-namespace M68KASMtoCSharp.Libraries.Native;
+namespace AmigaSharp.AmigaCore.Libraries.Native;
 
 public class DosLibrary(Amiga amiga) : AbstractLibrary(amiga)
 {
@@ -29,7 +29,7 @@ public class DosLibrary(Amiga amiga) : AbstractLibrary(amiga)
 
         try
         {
-            var d1 = amiga.Cpu.GetDataRegister(DataRegister.D1);
+            var d1 = amiga.Cpu.D[1];
             var stringValue = Tools.ReadStringUntilNull(amiga, d1);
             Console.WriteLine(stringValue);
             result = 0;
@@ -39,6 +39,6 @@ public class DosLibrary(Amiga amiga) : AbstractLibrary(amiga)
             Console.WriteLine(e.Message);
         }
 
-        amiga.Cpu.SetDataRegister(DataRegister.D0, result);
+        amiga.Cpu.MoveQuick(DataRegister.D0, result);
     }
 }

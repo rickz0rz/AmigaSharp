@@ -1,7 +1,6 @@
 using System.Text;
-using M68KASMtoCSharp.AmigaCore;
 
-namespace M68KASMtoCSharp;
+namespace AmigaSharp.AmigaCore;
 
 public static class Tools
 {
@@ -10,12 +9,12 @@ public static class Tools
         var stringBuilder = new StringBuilder();
 
         var cAddress = address;
-        var cValue = amiga.ReadByteMemory(cAddress);
+        var cValue = amiga.Memory[cAddress];
         while (cValue != 0)
         {
             stringBuilder.Append((char)cValue);
             cAddress++;
-            cValue = amiga.ReadByteMemory(cAddress);
+            cValue = amiga.Memory[cAddress];
         }
 
         return stringBuilder.ToString();

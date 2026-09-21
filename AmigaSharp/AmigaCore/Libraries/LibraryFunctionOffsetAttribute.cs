@@ -1,4 +1,4 @@
-namespace M68KASMtoCSharp.Libraries;
+namespace AmigaSharp.AmigaCore.Libraries;
 
 public class LibraryFunctionOffsetAttribute(int offset) : Attribute
 {

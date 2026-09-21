@@ -1,4 +1,4 @@
-namespace M68KASMtoCSharp.AmigaCore.CPU;
+namespace AmigaSharp.AmigaCore.CPU;
 
 public enum AddressRegister
 {

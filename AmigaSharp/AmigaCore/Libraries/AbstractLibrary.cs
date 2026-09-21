@@ -1,6 +1,4 @@
-using M68KASMtoCSharp.AmigaCore;
-
-namespace M68KASMtoCSharp.Libraries;
+namespace AmigaSharp.AmigaCore.Libraries;
 
 public abstract class AbstractLibrary(Amiga amiga)
 {

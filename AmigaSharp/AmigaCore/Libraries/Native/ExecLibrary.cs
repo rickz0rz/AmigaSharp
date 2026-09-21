@@ -1,7 +1,6 @@
-using M68KASMtoCSharp.AmigaCore;
-using M68KASMtoCSharp.AmigaCore.CPU;
+using AmigaSharp.AmigaCore.CPU;
 
-namespace M68KASMtoCSharp.Libraries.Native;
+namespace AmigaSharp.AmigaCore.Libraries.Native;
 
 public class ExecLibrary(Amiga amiga) : AbstractLibrary(amiga)
 {
@@ -26,7 +25,7 @@ public class ExecLibrary(Amiga amiga) : AbstractLibrary(amiga)
         try
         {
             // Console.WriteLine("Opening library...");
-            var libraryName = Tools.ReadStringUntilNull(amiga, amiga.Cpu.GetAddressRegister(AddressRegister.A1));
+            var libraryName = Tools.ReadStringUntilNull(amiga, amiga.Cpu.A[(int)AddressRegister.A1]);
             // Console.WriteLine("Library name: {0}", libraryName);
 
             AbstractLibrary abstractLibrary = null;
@@ -50,7 +49,7 @@ public class ExecLibrary(Amiga amiga) : AbstractLibrary(amiga)
             Console.WriteLine(e);
         }
 
-        amiga.Cpu.SetDataRegister(DataRegister.D0, result);
+        amiga.Cpu.MoveQuick(DataRegister.D0, result);
     }
 
     // CloseLibrary(library)
@@ -62,7 +61,7 @@ public class ExecLibrary(Amiga amiga) : AbstractLibrary(amiga)
         try
         {
             // Console.WriteLine("Closing library...");
-            var libraryAddress = amiga.Cpu.GetAddressRegister(AddressRegister.A1);
+            var libraryAddress = amiga.Cpu.A[(int)AddressRegister.A1];
             var library = amiga.Libraries[libraryAddress];
             // Console.WriteLine("Library name: {0}", library.Name());
             amiga.CloseLibrary(libraryAddress);

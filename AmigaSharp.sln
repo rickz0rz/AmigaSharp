@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "M68KASMtoCSharp", "M68KASMtoCSharp\M68KASMtoCSharp.csproj", "{CC60A15B-5C8C-47A7-AE8F-1BE551650E58}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AmigaSharp", "AmigaSharp\AmigaSharp.csproj", "{CC60A15B-5C8C-47A7-AE8F-1BE551650E58}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
