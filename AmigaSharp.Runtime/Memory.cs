@@ -18,8 +18,15 @@ public sealed class Memory
     private readonly byte[] _data = new byte[Size];
     private readonly bool[] _hardwarePages = new bool[Size >> PageShift];
 
-    public Memory()
+    /// <param name="guardHardware">
+    /// If true, an access to the custom chips or the CIAs throws <see cref="HardwareAccessException"/>.
+    /// If false, the whole address space is RAM. The CPU tests use this.
+    /// </param>
+    public Memory(bool guardHardware = true)
     {
+        if (!guardHardware)
+            return;
+
         // The CIA chips use $BF0000 to $BFFFFF.
         MarkHardware(0xBF0000, 0xC00000);
         // The real-time clock and the custom chips use $DC0000 to $DFFFFF.

@@ -3,22 +3,88 @@ using System.Runtime.CompilerServices;
 namespace AmigaSharp.Runtime.Cpu;
 
 /// <summary>
-/// The programmer-visible state of a 68000: the data registers, the address registers and the condition codes.
+/// The programmer-visible state of a 68000: the registers, the program counter and the status register.
 /// </summary>
 public sealed class CpuState(Memory memory)
 {
     public readonly uint[] D = new uint[8];
 
-    /// <summary>A[7] is the stack pointer.</summary>
+    /// <summary>A[7] is the active stack pointer. It is the SSP in supervisor mode and the USP in user mode.</summary>
     public readonly uint[] A = new uint[8];
 
     // The condition code flags: extend, negative, zero, overflow and carry.
     public bool X, N, Z, V, C;
 
+    /// <summary>The trace flag (SR bit 15).</summary>
+    public bool T;
+
+    /// <summary>The interrupt priority mask (SR bits 10 to 8).</summary>
+    public int InterruptMask;
+
+    /// <summary>The address of the next instruction. Only the interpreter uses it.</summary>
+    public uint Pc;
+
+    /// <summary>STOP sets this flag. The CPU does nothing until an interrupt occurs.</summary>
+    public bool Stopped;
+
+    // The stack pointer of the mode that is not active.
+    private uint _inactiveStackPointer;
+
+    public Memory Memory => memory;
+
     public uint Sp
     {
         get => A[7];
         set => A[7] = value;
+    }
+
+    /// <summary>The supervisor flag (SR bit 13). Use <see cref="SetSupervisor"/> to change it.</summary>
+    public bool S { get; private set; }
+
+    public uint Usp
+    {
+        get => S ? _inactiveStackPointer : A[7];
+        set
+        {
+            if (S)
+                _inactiveStackPointer = value;
+            else
+                A[7] = value;
+        }
+    }
+
+    public uint Ssp
+    {
+        get => S ? A[7] : _inactiveStackPointer;
+        set
+        {
+            if (S)
+                A[7] = value;
+            else
+                _inactiveStackPointer = value;
+        }
+    }
+
+    /// <summary>Changes the mode. A7 changes to the stack pointer of the new mode.</summary>
+    public void SetSupervisor(bool supervisor)
+    {
+        if (supervisor == S)
+            return;
+        (A[7], _inactiveStackPointer) = (_inactiveStackPointer, A[7]);
+        S = supervisor;
+    }
+
+    /// <summary>The status register. The bits that the 68000 does not implement are always zero.</summary>
+    public ushort Sr
+    {
+        get => (ushort)((T ? 0x8000 : 0) | (S ? 0x2000 : 0) | (InterruptMask << 8) | Ccr);
+        set
+        {
+            T = (value & 0x8000) != 0;
+            InterruptMask = (value >> 8) & 7;
+            Ccr = (byte)value;
+            SetSupervisor((value & 0x2000) != 0);
+        }
     }
 
     /// <summary>The condition code register as a byte: bit 4 is X, bit 3 is N, bit 2 is Z, bit 1 is V, bit 0 is C.</summary>
