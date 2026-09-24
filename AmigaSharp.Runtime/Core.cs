@@ -14,11 +14,17 @@ public sealed class Core
     /// <summary>Address 4 holds the pointer to ExecBase.</summary>
     public const uint SysBaseAddress = 4;
 
-    // The exception vector table uses $000 to $3FF. Allocations start above it.
+    /// <summary>
+    /// The return address of the program. The entry point returns to this address when the program ends.
+    /// No code is at this address.
+    /// </summary>
+    public const uint ExitAddress = 0x00FF_FFF0;
+
+    // The exception vector table uses $000 to $3FF. Allocations start above it and stop below the program hunks.
     // TODO: Replace this bump allocator with exec memory lists (AllocMem and FreeMem).
     private const uint FirstFreeAddress = 0x1000;
-    private const uint LastFreeAddress = 0x20_0000;
-    private const uint StackSize = 8 * 1024;
+    private const uint LastFreeAddress = Loader.HunkLayout.ChipBase;
+    private const uint StackSize = 16 * 1024;
 
     // Each library vector is a 6-byte JMP instruction.
     private const int VectorSize = 6;
@@ -27,10 +33,17 @@ public sealed class Core
     private readonly Dictionary<string, AbstractLibrary> _librariesByName = new();
     private readonly Dictionary<uint, AbstractLibrary> _librariesByBase = new();
     private readonly Dictionary<uint, Action> _vectors = new();
+    private readonly Dictionary<uint, Action> _functions = new();
     private uint _nextFreeAddress = FirstFreeAddress;
 
     public Memory Memory { get; } = new();
     public CpuState Cpu { get; }
+
+    /// <summary>Runs the code that has no translated function. A 68000 exception in that code is fatal.</summary>
+    public Interpreter Interpreter { get; }
+
+    /// <summary>The address that the last RTS, RTR or RTE returned to.</summary>
+    public uint LastReturnAddress { get; set; }
 
     /// <summary>The stream that the default output file handle writes to.</summary>
     public Stream Output { get; }
@@ -38,6 +51,7 @@ public sealed class Core
     public Core(Stream? output = null)
     {
         Cpu = new CpuState(Memory);
+        Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };
         Output = output ?? Console.OpenStandardOutput();
 
         RegisterLibrary("exec.library", core => new ExecLibrary(core));
@@ -120,6 +134,117 @@ public sealed class Core
             throw new InvalidOperationException(
                 $"No library function at ${address:X6} (base ${libraryBase:X6}, offset {offset}).");
         function();
+    }
+
+    /// <summary>Makes a translated function the code at the address.</summary>
+    public void RegisterFunction(uint address, Action function)
+    {
+        _functions[address & Memory.AddressMask] = function;
+    }
+
+    /// <summary>
+    /// Does <c>JSR</c> to a translated function: pushes the return address and calls the function.
+    /// </summary>
+    /// <exception cref="StackUnwindException">
+    /// The code returned to a different address. A frame further up the C# call stack continues at that address.
+    /// </exception>
+    public void Call(uint returnAddress, Action function)
+    {
+        Cpu.Push32(returnAddress);
+        try
+        {
+            function();
+        }
+        catch (StackUnwindException unwind) when (unwind.ReturnAddress == returnAddress)
+        {
+            return;
+        }
+
+        if (LastReturnAddress != returnAddress)
+            throw new StackUnwindException(LastReturnAddress);
+    }
+
+    /// <summary>Does <c>JSR</c> to an address that is known only at run time, for example <c>JSR -552(A6)</c>.</summary>
+    public void CallAddress(uint returnAddress, uint target)
+    {
+        Call(returnAddress, () => Dispatch(target));
+    }
+
+    /// <summary>
+    /// Continues at the address with the current stack, as <c>JMP</c> does. This method returns when that code
+    /// returns from the current frame. The translated code must then return at once.
+    /// </summary>
+    public void Dispatch(uint target)
+    {
+        target &= Memory.AddressMask;
+        if (_vectors.TryGetValue(target, out var native))
+        {
+            native();
+            LastReturnAddress = Cpu.Pop32();
+            return;
+        }
+
+        if (_functions.TryGetValue(target, out var function))
+        {
+            function();
+            return;
+        }
+
+        // The vectors of a library are below its base. An address there with no native function is a library
+        // function that the runtime does not implement.
+        foreach (var library in _librariesByBase.Values)
+        {
+            var negativeSize = Memory.Read16(library.Base + LibraryOffsets.NegativeSize);
+            if (target < library.Base && target >= library.Base - negativeSize)
+                throw new MissingLibraryFunctionException(library.Name, (int)target - (int)library.Base);
+        }
+
+        RunInterpreted(target);
+    }
+
+    /// <summary>Records the return address that the translated code popped for RTS, RTR or RTE.</summary>
+    public void ReturnTo(uint address)
+    {
+        LastReturnAddress = address;
+    }
+
+    /// <summary>
+    /// Runs the code at the address in the interpreter until it returns from the current frame. The return address of
+    /// the frame is at the top of the stack now. A call from the interpreted code to a native or a translated function
+    /// runs that function.
+    /// </summary>
+    private void RunInterpreted(uint address)
+    {
+        var frame = Cpu.Sp;
+        Cpu.Pc = address;
+        while (true)
+        {
+            var pc = Cpu.Pc & Memory.AddressMask;
+            if (_vectors.TryGetValue(pc, out var native))
+            {
+                native();
+                Cpu.Pc = Cpu.Pop32();
+            }
+            else if (_functions.TryGetValue(pc, out var function))
+            {
+                function();
+                Cpu.Pc = LastReturnAddress;
+            }
+            else
+            {
+                var opcode = Memory.Read16(pc);
+                Interpreter.Step();
+                // RTS, RTE and RTR are the only instructions that can return from the frame.
+                if (opcode is not (0x4E75 or 0x4E73 or 0x4E77))
+                    continue;
+            }
+
+            if (Cpu.Sp > frame)
+            {
+                LastReturnAddress = Cpu.Pc;
+                return;
+            }
+        }
     }
 
     private void PlaceLibrary(AbstractLibrary library)

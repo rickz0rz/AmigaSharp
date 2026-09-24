@@ -14,6 +14,12 @@ public sealed class Interpreter(CpuState cpu)
 
     public CpuState Cpu => cpu;
 
+    /// <summary>
+    /// If true, <see cref="Step"/> throws <see cref="CpuTrapException"/> for a 68000 exception and does not jump to
+    /// the handler. The runtime uses this, because it does not install exception handlers.
+    /// </summary>
+    public bool ExceptionsAreFatal { get; init; }
+
     /// <summary>Runs one instruction at <see cref="CpuState.Pc"/>, then does any trace exception.</summary>
     public void Step()
     {
@@ -30,6 +36,12 @@ public sealed class Interpreter(CpuState cpu)
         }
         catch (CpuTrapException trap)
         {
+            if (ExceptionsAreFatal)
+            {
+                cpu.Pc = instruction.Address;
+                throw;
+            }
+
             RaiseException(trap.Vector, trap.StacksInstructionAddress ? instruction.Address : cpu.Pc);
 
             // TRAP, TRAPV, CHK and a zero divide complete the instruction, so a trace exception follows the trap.
