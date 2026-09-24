@@ -13,4 +13,8 @@
         <RootNamespace>AmigaSharp</RootNamespace>
     </PropertyGroup>
 
+    <ItemGroup>
+        <None Include="..\samples\HelloWorld\hello" Link="hello" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

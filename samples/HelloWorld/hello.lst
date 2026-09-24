@@ -1,0 +1,62 @@
+Sections:
+00: "code" (0-46)
+
+
+Source: "hello.s"
+                            	     1: ; Prints "Hello World!" with dos.library PutStr and returns 0.
+                            	     2: ; Build: vasmm68k_mot -Fhunkexe -nosym -L hello.lst -o hello hello.s
+                            	     3: 
+                            	     4: SysBase			= 4
+                            	     5: OpenLibrary		= -552
+                            	     6: CloseLibrary		= -414
+                            	     7: PutStr			= -948
+                            	     8: 
+                            	     9: 			SECTION	code,CODE
+                            	    10: 
+00:00000000 43FA002A        	    11: Start:			LEA	DosName,A1		;dos.library name string
+00:00000004 7024            	    12: 			MOVEQ	#36,D0			;minimum required version (36 = Kick 2.0)
+00:00000006 2C780004        	    13: 			MOVEA.L	SysBase,A6
+00:0000000A 4EAEFDD8        	    14: 			JSR	OpenLibrary(A6)
+00:0000000E 4A80            	    15: 			TST.L	D0			;zero if OpenLibrary() failed
+00:00000010 6716            	    16: 			BEQ.S	NoDos			;if failed, skip to exit
+                            	    17: 
+00:00000012 223C00000038    	    18: 			MOVE.L	#Hello,D1		;string to print
+00:00000018 2C40            	    19: 			MOVEA.L	D0,A6			;moving DOSBase to A6
+00:0000001A 4EAEFC4C        	    20: 			JSR	PutStr(A6)
+                            	    21: 
+00:0000001E 224E            	    22: 			MOVEA.L	A6,A1			;DOSBase, library to close
+00:00000020 2C780004        	    23: 			MOVEA.L	SysBase,A6
+00:00000024 4EAEFE62        	    24: 			JSR	CloseLibrary(A6)
+                            	    25: 
+00:00000028 7000            	    26: NoDos:			CLR.L	D0			;return 0 to the system
+00:0000002A 4E75            	    27: 			RTS
+                            	    28: 
+00:0000002C 646F732E6C696272	    29: DosName:		DC.B	"dos.library",0
+00:00000034 617279
+00:00000037 00
+00:00000038 48656C6C6F20576F	    30: Hello:			DC.B	"Hello World!",10,0
+00:00000040 726C6421
+00:00000044 0A
+00:00000045 00
+                            	    31: 
+
+
+Symbols by name:
+CloseLibrary                     E:FFFFFE62
+DosName                         00:0000002C
+Hello                           00:00000038
+NoDos                           00:00000028
+OpenLibrary                      E:FFFFFDD8
+PutStr                           E:FFFFFC4C
+Start                           00:00000000
+SysBase                          E:00000004
+
+Symbols by value:
+FFFFFC4C PutStr
+FFFFFDD8 OpenLibrary
+FFFFFE62 CloseLibrary
+00000000 Start
+00000004 SysBase
+00000028 NoDos
+0000002C DosName
+00000038 Hello

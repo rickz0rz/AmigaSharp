@@ -1,0 +1,78 @@
+Sections:
+00: "code" (0-6C)
+01: "data" (0-4)
+
+
+Source: "controlflow.s"
+                            	     1: ; Tests the control flow of translated code. The program returns 1111 in D0.
+                            	     2: ; Build: vasmm68k_mot -Fhunkexe -nosym -L controlflow.lst -o controlflow controlflow.s
+                            	     3: 
+                            	     4: 			SECTION	code,CODE
+                            	     5: 
+                            	     6: ; Adds 1 + 10 + 1000 (the jump table cases) and 100 (the stack frame) to D7.
+                            	     7: ; Escape then returns to the caller of Start through the saved stack pointer.
+00:00000000 23CF00000000    	     8: Start:			MOVE.L	A7,SavedSp
+00:00000006 7E00            	     9: 			MOVEQ	#0,D7
+00:00000008 7002            	    10: 			MOVEQ	#2,D0
+00:0000000A 610C            	    11: .cases:			BSR	Dispatch
+00:0000000C 51C8FFFC        	    12: 			DBRA	D0,.cases
+00:00000010 6136            	    13: 			BSR	Frame
+00:00000012 6148            	    14: 			BSR	Escape
+00:00000014 70FF            	    15: 			MOVEQ	#-1,D0			;never gets here
+00:00000016 4E75            	    16: 			RTS
+                            	    17: 
+                            	    18: ; Runs case D0 through a PC-relative jump table. The cases are local labels,
+                            	    19: ; so they are not functions. The runtime runs them in the interpreter.
+00:00000018 48E7C000        	    20: Dispatch:		MOVEM.L	D0-D1,-(A7)
+00:0000001C D040            	    21: 			ADD.W	D0,D0
+00:0000001E 323B0006        	    22: 			MOVE.W	.table(PC,D0.W),D1
+00:00000022 4EFB1002        	    23: 			JMP	.table(PC,D1.W)
+00:00000026 0006            	    24: .table:			DC.W	.case0-.table,.case1-.table,.case2-.table
+00:00000028 000A
+00:0000002A 000E
+00:0000002C 5287            	    25: .case0:			ADDQ.L	#1,D7
+00:0000002E 600A            	    26: 			BRA.S	.done
+00:00000030 610E            	    27: .case1:			BSR	AddTen			;interpreted code calls a translated function
+00:00000032 6006            	    28: 			BRA.S	.done
+00:00000034 DEBC000003E8    	    29: .case2:			ADD.L	#1000,D7
+00:0000003A 4CDF0003        	    30: .done:			MOVEM.L	(A7)+,D0-D1
+00:0000003E 4E75            	    31: 			RTS
+                            	    32: 
+00:00000040 DEBC0000000A    	    33: AddTen:			ADD.L	#10,D7
+00:00000046 4E75            	    34: 			RTS
+                            	    35: 
+                            	    36: ; Uses a stack frame for a local variable.
+00:00000048 4E55FFF8        	    37: Frame:			LINK	A5,#-8
+00:0000004C 2B7C00000064FFFC	    38: 			MOVE.L	#100,-4(A5)
+00:00000054 DEADFFFC        	    39: 			ADD.L	-4(A5),D7
+00:00000058 4E5D            	    40: 			UNLK	A5
+00:0000005A 4E75            	    41: 			RTS
+                            	    42: 
+                            	    43: ; Restores the stack pointer of Start and returns from the program with D0 = D7.
+00:0000005C 6104            	    44: Escape:			BSR.S	.deeper
+00:0000005E 70FE            	    45: 			MOVEQ	#-2,D0			;never gets here
+00:00000060 4E75            	    46: 			RTS
+00:00000062 2E7900000000    	    47: .deeper:		MOVEA.L	SavedSp,A7
+00:00000068 2007            	    48: 			MOVE.L	D7,D0
+00:0000006A 4E75            	    49: 			RTS
+                            	    50: 
+                            	    51: 			SECTION	data,DATA
+01:00000000 00000000        	    52: SavedSp:		DC.L	0
+                            	    53: 
+
+
+Symbols by name:
+AddTen                          00:00000040
+Dispatch                        00:00000018
+Escape                          00:0000005C
+Frame                           00:00000048
+SavedSp                         01:00000000
+Start                           00:00000000
+
+Symbols by value:
+00000000 SavedSp
+00000000 Start
+00000018 Dispatch
+00000040 AddTen
+00000048 Frame
+0000005C Escape

@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -25,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AmigaSharp.Runtime\AmigaSharp.Runtime.csproj" />
     <ProjectReference Include="..\AmigaSharp\AmigaSharp.csproj" />
+    <ProjectReference Include="..\AmigaSharp.Translator\AmigaSharp.Translator.csproj" />
   </ItemGroup>
 
 </Project>
