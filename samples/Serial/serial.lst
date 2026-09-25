@@ -1,0 +1,241 @@
+Sections:
+00: "code" (0-14A)
+01: "data" (0-16)
+02: "variables" (0-60)
+
+
+Source: "serial.s"
+                            	     1: ; Reads a line from the serial port with an RBF interrupt handler, and sends it back in upper case with
+                            	     2: ; serial.device. Returns the length of the line in D0.
+                            	     3: ; Build: vasmm68k_mot -Fhunkexe -nosym -L serial.lst -o serial serial.s
+                            	     4: ;
+                            	     5: ; The program opens serial.device at 19200 baud and installs its own RBF handler, as Prevue does. The handler
+                            	     6: ; stores each byte, and at the end of the line it signals the main task. The main task waits for that signal.
+                            	     7: 
+                            	     8: SysBase			= 4
+                            	     9: _LVOSetIntVector	= -162
+                            	    10: _LVOFindTask		= -294
+                            	    11: _LVOWait		= -318
+                            	    12: _LVOSignal		= -324
+                            	    13: _LVOAllocSignal		= -330
+                            	    14: _LVOFreeSignal		= -336
+                            	    15: _LVOOpenDevice		= -444
+                            	    16: _LVOCloseDevice		= -450
+                            	    17: _LVODoIO		= -456
+                            	    18: _LVOCreateIORequest	= -654
+                            	    19: _LVODeleteIORequest	= -660
+                            	    20: _LVOCreateMsgPort	= -666
+                            	    21: _LVODeleteMsgPort	= -672
+                            	    22: INTB_RBF		= 11
+                            	    23: NT_INTERRUPT		= 2
+                            	    24: SERDATR			= $018			;offsets from the custom chip base in A0
+                            	    25: INTREQ			= $09C
+                            	    26: INTF_RBF		= $0800
+                            	    27: CMD_WRITE		= 3
+                            	    28: SDCMD_SETPARAMS		= 11
+                            	    29: IO_COMMAND		= 28
+                            	    30: IO_LENGTH		= 36
+                            	    31: IO_DATA			= 40
+                            	    32: IO_BAUD			= 60
+                            	    33: IOEXTSER_SIZE		= 82
+                            	    34: 
+                            	    35: 			SECTION	code,CODE
+                            	    36: 
+00:00000000 48E73F3E        	    37: Start:			MOVEM.L	D2-D7/A2-A6,-(A7)
+00:00000004 2C780004        	    38: 			MOVEA.L	SysBase,A6
+00:00000008 93C9            	    39: 			SUBA.L	A1,A1
+00:0000000A 4EAEFEDA        	    40: 			JSR	_LVOFindTask(A6)
+00:0000000E 23C000000000    	    41: 			MOVE.L	D0,Task
+00:00000014 70FF            	    42: 			MOVEQ	#-1,D0
+00:00000016 4EAEFEB6        	    43: 			JSR	_LVOAllocSignal(A6)
+00:0000001A 2E00            	    44: 			MOVE.L	D0,D7
+00:0000001C 6B0000D0        	    45: 			BMI	.failed
+00:00000020 7C00            	    46: 			MOVEQ	#0,D6
+00:00000022 0FC6            	    47: 			BSET	D7,D6
+00:00000024 23C600000004    	    48: 			MOVE.L	D6,Mask
+                            	    49: 
+                            	    50: ; Open serial.device and set the baud rate.
+00:0000002A 4EAEFD66        	    51: 			JSR	_LVOCreateMsgPort(A6)
+00:0000002E 2440            	    52: 			MOVEA.L	D0,A2
+00:00000030 204A            	    53: 			MOVEA.L	A2,A0
+00:00000032 7052            	    54: 			MOVEQ	#IOEXTSER_SIZE,D0
+00:00000034 4EAEFD72        	    55: 			JSR	_LVOCreateIORequest(A6)
+00:00000038 2640            	    56: 			MOVEA.L	D0,A3
+00:0000003A 41FA00F4        	    57: 			LEA	SerialName(PC),A0
+00:0000003E 7000            	    58: 			MOVEQ	#0,D0
+00:00000040 224B            	    59: 			MOVEA.L	A3,A1
+00:00000042 7200            	    60: 			MOVEQ	#0,D1
+00:00000044 4EAEFE44        	    61: 			JSR	_LVOOpenDevice(A6)
+00:00000048 4A80            	    62: 			TST.L	D0
+00:0000004A 660000A2        	    63: 			BNE	.failed
+00:0000004E 277C00004B00003C	    64: 			MOVE.L	#19200,IO_BAUD(A3)
+00:00000056 377C000B001C    	    65: 			MOVE.W	#SDCMD_SETPARAMS,IO_COMMAND(A3)
+00:0000005C 224B            	    66: 			MOVEA.L	A3,A1
+00:0000005E 4EAEFE38        	    67: 			JSR	_LVODoIO(A6)
+                            	    68: 
+                            	    69: ; Install the handler and wait for the line.
+00:00000062 700B            	    70: 			MOVEQ	#INTB_RBF,D0
+00:00000064 43F900000000    	    71: 			LEA	Interrupt,A1
+00:0000006A 4EAEFF5E        	    72: 			JSR	_LVOSetIntVector(A6)
+00:0000006E 23C000000008    	    73: 			MOVE.L	D0,OldInterrupt
+00:00000074 203900000004    	    74: 			MOVE.L	Mask,D0
+00:0000007A 4EAEFEC2        	    75: 			JSR	_LVOWait(A6)
+00:0000007E 700B            	    76: 			MOVEQ	#INTB_RBF,D0
+00:00000080 227900000008    	    77: 			MOVEA.L	OldInterrupt,A1
+00:00000086 4EAEFF5E        	    78: 			JSR	_LVOSetIntVector(A6)
+                            	    79: 
+                            	    80: ; Change the line to upper case.
+00:0000008A 41F900000010    	    81: 			LEA	Line,A0
+00:00000090 20390000000C    	    82: 			MOVE.L	Count,D0
+00:00000096 5380            	    83: 			SUBQ.L	#1,D0
+00:00000098 1210            	    84: .upper:			MOVE.B	(A0),D1
+00:0000009A 0C010061        	    85: 			CMPI.B	#'a',D1
+00:0000009E 6D0C            	    86: 			BLT.S	.next
+00:000000A0 0C01007A        	    87: 			CMPI.B	#'z',D1
+00:000000A4 6E06            	    88: 			BGT.S	.next
+00:000000A6 04010020        	    89: 			SUBI.B	#32,D1
+00:000000AA 1081            	    90: 			MOVE.B	D1,(A0)
+00:000000AC 5288            	    91: .next:			ADDQ.L	#1,A0
+00:000000AE 51C8FFE8        	    92: 			DBRA	D0,.upper
+                            	    93: 
+                            	    94: ; Send the line back.
+00:000000B2 377C0003001C    	    95: 			MOVE.W	#CMD_WRITE,IO_COMMAND(A3)
+00:000000B8 27790000000C0024	    96: 			MOVE.L	Count,IO_LENGTH(A3)
+00:000000C0 277C000000100028	    97: 			MOVE.L	#Line,IO_DATA(A3)
+00:000000C8 224B            	    98: 			MOVEA.L	A3,A1
+00:000000CA 4EAEFE38        	    99: 			JSR	_LVODoIO(A6)
+                            	   100: 
+00:000000CE 224B            	   101: 			MOVEA.L	A3,A1
+00:000000D0 4EAEFE3E        	   102: 			JSR	_LVOCloseDevice(A6)
+00:000000D4 204B            	   103: 			MOVEA.L	A3,A0
+00:000000D6 4EAEFD6C        	   104: 			JSR	_LVODeleteIORequest(A6)
+00:000000DA 204A            	   105: 			MOVEA.L	A2,A0
+00:000000DC 4EAEFD60        	   106: 			JSR	_LVODeleteMsgPort(A6)
+00:000000E0 2007            	   107: 			MOVE.L	D7,D0
+00:000000E2 4EAEFEB0        	   108: 			JSR	_LVOFreeSignal(A6)
+00:000000E6 20390000000C    	   109: 			MOVE.L	Count,D0
+00:000000EC 6002            	   110: 			BRA.S	.exit
+                            	   111: 
+00:000000EE 70FF            	   112: .failed:		MOVEQ	#-1,D0
+00:000000F0 4CDF7CFC        	   113: .exit:			MOVEM.L	(A7)+,D2-D7/A2-A6
+00:000000F4 4E75            	   114: 			RTS
+                            	   115: 
+                            	   116: ; The RBF handler. Exec calls it with A0 = the custom chips, A1 = is_Data and A6 = ExecBase. It reads the byte,
+                            	   117: ; clears the interrupt request, and signals the main task at the end of the line.
+00:000000F6 30280018        	   118: RbfHandler:		MOVE.W	SERDATR(A0),D0
+00:000000FA 317C0800009C    	   119: 			MOVE.W	#INTF_RBF,INTREQ(A0)
+00:00000100 22390000000C    	   120: 			MOVE.L	Count,D1
+00:00000106 43F900000010    	   121: 			LEA	Line,A1
+00:0000010C 13801800        	   122: 			MOVE.B	D0,0(A1,D1.L)
+00:00000110 5281            	   123: 			ADDQ.L	#1,D1
+00:00000112 23C10000000C    	   124: 			MOVE.L	D1,Count
+00:00000118 0C00000A        	   125: 			CMPI.B	#10,D0
+00:0000011C 6610            	   126: 			BNE.S	.done
+00:0000011E 227900000000    	   127: 			MOVEA.L	Task,A1
+00:00000124 203900000004    	   128: 			MOVE.L	Mask,D0
+00:0000012A 4EAEFEBC        	   129: 			JSR	_LVOSignal(A6)
+00:0000012E 4E75            	   130: .done:			RTS
+                            	   131: 
+00:00000130 73657269616C2E64	   132: SerialName:		DC.B	"serial.device",0
+00:00000138 6576696365
+00:0000013D 00
+00:0000013E 6C696E6520726561	   133: InterruptName:		DC.B	"line reader",0
+00:00000146 646572
+00:00000149 00
+                            	   134: 			EVEN
+                            	   135: 
+                            	   136: 			SECTION	data,DATA
+                            	   137: ; struct Interrupt
+01:00000000 00000000        	   138: Interrupt:		DC.L	0,0			;ln_Succ, ln_Pred
+01:00000004 00000000
+01:00000008 02              	   139: 			DC.B	NT_INTERRUPT,0		;ln_Type, ln_Pri
+01:00000009 00
+01:0000000A 0000013E        	   140: 			DC.L	InterruptName		;ln_Name
+01:0000000E 00000000        	   141: 			DC.L	0			;is_Data
+01:00000012 000000F6        	   142: 			DC.L	RbfHandler		;is_Code
+                            	   143: 
+                            	   144: 			SECTION	variables,BSS
+02:00000000 00000000        	   145: Task:			DS.L	1
+02:00000004 00000000        	   146: Mask:			DS.L	1
+02:00000008 00000000        	   147: OldInterrupt:		DS.L	1
+02:0000000C 00000000        	   148: Count:			DS.L	1
+02:00000010 00              	   149: Line:			DS.B	80
+02:00000011 *
+                            	   150: 
+
+
+Symbols by name:
+CMD_WRITE                        E:00000003
+Count                           02:0000000C
+INTB_RBF                         E:0000000B
+INTF_RBF                         E:00000800
+INTREQ                           E:0000009C
+IOEXTSER_SIZE                    E:00000052
+IO_BAUD                          E:0000003C
+IO_COMMAND                       E:0000001C
+IO_DATA                          E:00000028
+IO_LENGTH                        E:00000024
+Interrupt                       01:00000000
+InterruptName                   00:0000013E
+Line                            02:00000010
+Mask                            02:00000004
+NT_INTERRUPT                     E:00000002
+OldInterrupt                    02:00000008
+RbfHandler                      00:000000F6
+SDCMD_SETPARAMS                  E:0000000B
+SERDATR                          E:00000018
+SerialName                      00:00000130
+Start                           00:00000000
+SysBase                          E:00000004
+Task                            02:00000000
+_LVOAllocSignal                  E:FFFFFEB6
+_LVOCloseDevice                  E:FFFFFE3E
+_LVOCreateIORequest              E:FFFFFD72
+_LVOCreateMsgPort                E:FFFFFD66
+_LVODeleteIORequest              E:FFFFFD6C
+_LVODeleteMsgPort                E:FFFFFD60
+_LVODoIO                         E:FFFFFE38
+_LVOFindTask                     E:FFFFFEDA
+_LVOFreeSignal                   E:FFFFFEB0
+_LVOOpenDevice                   E:FFFFFE44
+_LVOSetIntVector                 E:FFFFFF5E
+_LVOSignal                       E:FFFFFEBC
+_LVOWait                         E:FFFFFEC2
+
+Symbols by value:
+FFFFFD60 _LVODeleteMsgPort
+FFFFFD66 _LVOCreateMsgPort
+FFFFFD6C _LVODeleteIORequest
+FFFFFD72 _LVOCreateIORequest
+FFFFFE38 _LVODoIO
+FFFFFE3E _LVOCloseDevice
+FFFFFE44 _LVOOpenDevice
+FFFFFEB0 _LVOFreeSignal
+FFFFFEB6 _LVOAllocSignal
+FFFFFEBC _LVOSignal
+FFFFFEC2 _LVOWait
+FFFFFEDA _LVOFindTask
+FFFFFF5E _LVOSetIntVector
+00000000 Task
+00000000 Interrupt
+00000000 Start
+00000002 NT_INTERRUPT
+00000003 CMD_WRITE
+00000004 SysBase
+00000004 Mask
+00000008 OldInterrupt
+0000000B SDCMD_SETPARAMS
+0000000B INTB_RBF
+0000000C Count
+00000010 Line
+00000018 SERDATR
+0000001C IO_COMMAND
+00000024 IO_LENGTH
+00000028 IO_DATA
+0000003C IO_BAUD
+00000052 IOEXTSER_SIZE
+0000009C INTREQ
+000000F6 RbfHandler
+00000130 SerialName
+0000013E InterruptName
+00000800 INTF_RBF
