@@ -356,6 +356,7 @@ public sealed class Core
     /// <summary>Makes the interrupt requests that time causes, updates the devices, and delivers the interrupts.</summary>
     public void PollNow()
     {
+        Chipset.Beam.Clock.Tick();
         Chipset.Custom.Update();
         Devices.Update();
         Interrupts.Deliver();

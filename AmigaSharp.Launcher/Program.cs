@@ -20,6 +20,11 @@ const string usage = """
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
+      --virtual-time            Use a virtual clock: time moves at each safe point, and waits end at once. A run is then
+                                the same each time, and it is as fast as the host can run it.
+      --press <seconds>=<key>   Press a key at a time, for example 5=escape or 7.5=f1. The names are the letters, the
+                                digits, space, return, escape, backspace, tab, delete, help, up, down, left, right and
+                                f1 to f10. The option can occur more than once.
       --trace                   Write each library call to the standard error stream.
     """;
 
@@ -31,6 +36,8 @@ var trace = false;
 var serialPort = 5400;
 var scale = 1;
 var seconds = 10.0;
+var virtualTime = false;
+var presses = new List<(double Seconds, byte RawKey)>();
 
 try
 {
@@ -58,6 +65,14 @@ try
             case "--screenshot": screenshot = Next(); break;
             case "--seconds": seconds = double.Parse(Next()); break;
             case "--trace": trace = true; break;
+            case "--virtual-time": virtualTime = true; break;
+            case "--press":
+            {
+                var (time, key) = Pair();
+                presses.Add((double.Parse(time, System.Globalization.CultureInfo.InvariantCulture),
+                    KeyNames.RawKey(key) ?? throw new ArgumentException($"{key} is not a key name.")));
+                break;
+            }
             case "--help" or "-h":
                 Console.WriteLine(usage);
                 return 0;
@@ -81,7 +96,8 @@ var executable = File.ReadAllBytes(executablePath);
 drive ??= Path.GetDirectoryName(Path.GetFullPath(executablePath))!;
 commandName ??= Path.GetFileName(executablePath);
 
-var core = new Core(rootDirectory: drive) { TraceLibraryCalls = trace };
+IClock clock = virtualTime ? new VirtualClock() : new RealTimeClock();
+var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace };
 foreach (var (name, path) in volumes)
     core.FileSystem.AddVolume(name, path);
 foreach (var (name, path) in assigns)
@@ -129,13 +145,32 @@ var runner = new Thread(() =>
 }, 64 * 1024 * 1024) { IsBackground = true, Name = "68000" };
 runner.Start();
 
+// The scripted key presses: each key goes down, and up again 0.1 second later.
+if (presses.Count > 0)
+{
+    new Thread(() =>
+    {
+        foreach (var (time, rawKey) in presses.OrderBy(press => press.Seconds))
+        {
+            WaitForTime(time);
+            core.KeyboardInput.PostRawKey(rawKey, up: false);
+            WaitForTime(time + 0.1);
+            core.KeyboardInput.PostRawKey(rawKey, up: true);
+        }
+    }) { IsBackground = true, Name = "Key presses" }.Start();
+}
+
+void WaitForTime(double time)
+{
+    while (!finished && clock.Elapsed.TotalSeconds < time)
+        Thread.Sleep(5);
+}
+
 try
 {
     if (screenshot != null)
     {
-        var end = DateTime.Now.AddSeconds(seconds);
-        while (!finished && DateTime.Now < end)
-            Thread.Sleep(50);
+        WaitForTime(seconds);
         var pixels = new uint[Display.Width * Display.Height];
         core.Chipset.Display.CopyFrame(pixels);
         File.WriteAllBytes(screenshot, Png.Encode(Display.Width, Display.Height, pixels));

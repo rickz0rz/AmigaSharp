@@ -9,6 +9,11 @@ public interface IClock
 
     /// <summary>Returns when the time is at least <paramref name="time"/>.</summary>
     void WaitUntil(TimeSpan time);
+
+    /// <summary>The runtime calls this at each full safe point. A virtual clock moves forward here.</summary>
+    void Tick()
+    {
+    }
 }
 
 /// <summary>Real time from the start of the runtime.</summary>
@@ -39,6 +44,30 @@ public sealed class ManualClock : IClock
         if (time > Elapsed)
             Elapsed = time;
     }
+}
+
+/// <summary>
+/// A clock that is not real time: it moves forward a fixed step at each safe point, and a wait moves it to the end of
+/// the wait at once. So a run is the same each time, and it runs as fast as the host can.
+/// </summary>
+public sealed class VirtualClock(TimeSpan step) : IClock
+{
+    private long _ticks;
+
+    /// <summary>A step of 100 microseconds, about the time of a library call or a short loop on a 68000.</summary>
+    public VirtualClock() : this(TimeSpan.FromMicroseconds(100))
+    {
+    }
+
+    public TimeSpan Elapsed => TimeSpan.FromTicks(Interlocked.Read(ref _ticks));
+
+    public void WaitUntil(TimeSpan time)
+    {
+        if (time > Elapsed)
+            Interlocked.Exchange(ref _ticks, time.Ticks);
+    }
+
+    public void Tick() => Interlocked.Add(ref _ticks, step.Ticks);
 }
 
 /// <summary>

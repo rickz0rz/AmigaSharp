@@ -27,6 +27,11 @@ Use `--help` to see all the options. These options are the most important:
 - `--volume NAME=<directory>` and `--assign NAME=<path>` make the volumes and the assigns of the program.
 - `--serial-port <port>` sets the TCP port of the serial port. Connect to it with `nc localhost <port>`.
 - `--screenshot <file.png>` saves the display after `--seconds` and does not open a window.
+- `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
+  each time, and it is as fast as the host can run it.
+- `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
+
+In the window, the keys of the host go to the Amiga keyboard. F11 is the Help key.
 
 This command runs Prevue with the drive of the original machine:
 
