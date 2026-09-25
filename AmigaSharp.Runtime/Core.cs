@@ -2,6 +2,7 @@ using System.Text;
 using AmigaSharp.Runtime.Cpu;
 using AmigaSharp.Runtime.Dos;
 using AmigaSharp.Runtime.Exec;
+using AmigaSharp.Runtime.Hardware;
 using AmigaSharp.Runtime.Libraries;
 using AmigaSharp.Runtime.Libraries.Native;
 
@@ -60,6 +61,9 @@ public sealed class Core
 
     public FileSystem FileSystem { get; }
 
+    /// <summary>The custom chips and the CIAs.</summary>
+    public Chipset Chipset { get; }
+
     /// <summary>The stream that the console output goes to.</summary>
     public Stream Output { get; }
 
@@ -84,8 +88,11 @@ public sealed class Core
     /// <param name="output">The console output. The default is the standard output of the host.</param>
     /// <param name="input">The console input. The default is the standard input of the host.</param>
     /// <param name="rootDirectory">The host directory of the volume SYS:. The default is the current directory.</param>
-    public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null)
+    /// <param name="clock">The time of the hardware. The default is real time.</param>
+    public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null)
     {
+        Chipset = new Chipset(clock ?? new RealTimeClock());
+        Memory.Hardware = Chipset;
         Cpu = new CpuState(Memory);
         Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };
         Output = output ?? Console.OpenStandardOutput();
@@ -99,6 +106,11 @@ public sealed class Core
         Devices = new DeviceManager(this);
         Libraries.Register("exec.library", core => new ExecLibrary(core));
         Libraries.Register("dos.library", core => new DosLibrary(core));
+        Libraries.Register("graphics.library", core => new GraphicsLibrary(core));
+        Libraries.Register("diskfont.library", core => new DiskFontLibrary(core));
+        Libraries.Register("intuition.library", core => new IntuitionLibrary(core));
+        Libraries.Register("utility.library", core => new UtilityLibrary(core));
+        Libraries.RegisterResource("battclock.resource", _ => new BattClockResource());
 
         // Exec is always open.
         ExecBase = Libraries.Open("exec.library", 0)!.Base;
@@ -273,6 +285,16 @@ public sealed class Core
             if (!progress)
                 throw new WaitDeadlockException(mask);
         }
+    }
+
+    /// <summary>Waits for the start of the next frame, as graphics WaitTOF does.</summary>
+    public void WaitForNextFrame()
+    {
+        var beam = Chipset.Beam;
+        var next = beam.Frame + 1;
+        foreach (var handler in _idleHandlers.ToList())
+            handler();
+        beam.Clock.WaitUntil(beam.StartOfFrame(next));
     }
 
     /// <summary>exec Signal. The runtime has one task, so the signals go to it.</summary>

@@ -19,7 +19,8 @@ public sealed class Memory
     private readonly bool[] _hardwarePages = new bool[Size >> PageShift];
 
     /// <param name="guardHardware">
-    /// If true, an access to the custom chips or the CIAs throws <see cref="HardwareAccessException"/>.
+    /// If true, the custom chips and the CIAs use their addresses. An access there goes to <see cref="Hardware"/>, or
+    /// throws <see cref="HardwareAccessException"/> if no hardware is connected.
     /// If false, the whole address space is RAM. The CPU tests use this.
     /// </param>
     public Memory(bool guardHardware = true)
@@ -33,16 +34,24 @@ public sealed class Memory
         MarkHardware(0xDC0000, 0xE00000);
     }
 
+    /// <summary>The custom chips and the CIAs. Null means that an access to them throws.</summary>
+    public IHardware? Hardware { get; set; }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte Read8(uint address)
     {
-        return _data[Check(address)];
+        address &= AddressMask;
+        if (_hardwarePages[address >> PageShift])
+            return HardwareOrThrow(address).Read8(address);
+        return _data[address];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ushort Read16(uint address)
     {
         address = CheckAligned(address);
+        if (_hardwarePages[address >> PageShift])
+            return HardwareOrThrow(address).Read16(address);
         return (ushort)(_data[address] << 8 | _data[(address + 1) & AddressMask]);
     }
 
@@ -55,15 +64,40 @@ public sealed class Memory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Write8(uint address, byte value)
     {
-        _data[Check(address)] = value;
+        address &= AddressMask;
+        if (_hardwarePages[address >> PageShift])
+        {
+            HardwareOrThrow(address).Write8(address, value);
+            return;
+        }
+
+        _data[address] = value;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Write16(uint address, ushort value)
     {
         address = CheckAligned(address);
+        if (_hardwarePages[address >> PageShift])
+        {
+            HardwareOrThrow(address).Write16(address, value);
+            return;
+        }
+
         _data[address] = (byte)(value >> 8);
         _data[(address + 1) & AddressMask] = (byte)value;
+    }
+
+    /// <summary>
+    /// The RAM at the address, for fast access by the runtime, for example to draw into a bitplane. The range must not
+    /// include hardware addresses.
+    /// </summary>
+    public Span<byte> Ram(uint address, int length)
+    {
+        address &= AddressMask;
+        if (_hardwarePages[address >> PageShift] || _hardwarePages[(address + (uint)Math.Max(length - 1, 0)) >> PageShift])
+            throw new HardwareAccessException(address);
+        return _data.AsSpan((int)address, length);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -108,21 +142,14 @@ public sealed class Memory
             _hardwarePages[page] = true;
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private uint Check(uint address)
-    {
-        address &= AddressMask;
-        if (_hardwarePages[address >> PageShift])
-            throw new HardwareAccessException(address);
-        return address;
-    }
+    private IHardware HardwareOrThrow(uint address) => Hardware ?? throw new HardwareAccessException(address);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private uint CheckAligned(uint address)
+    private static uint CheckAligned(uint address)
     {
         // The 68000 cannot access a word or a long at an odd address.
         if ((address & 1) != 0)
             throw new AddressErrorException(address & AddressMask);
-        return Check(address);
+        return address & AddressMask;
     }
 }
