@@ -39,8 +39,10 @@ public sealed class Display
     private readonly ushort[] _state = new ushort[0x100];
     private readonly byte[][] _planeData = new byte[6][];
     private readonly object _frameLock = new();
-    private uint[] _back = new uint[Width * Height];
-    private uint[] _front = new uint[Width * Height];
+    // The display draws into the canvas. With interlace, a frame changes only its rows, and the rows of the other
+    // frame stay. The host reads the last complete picture from _front.
+    private readonly uint[] _canvas = new uint[Width * Height];
+    private readonly uint[] _front = new uint[Width * Height];
 
     public Display(Memory memory, CustomChips custom)
     {
@@ -95,7 +97,7 @@ public sealed class Display
         if (!render)
             return;
         lock (_frameLock)
-            (_front, _back) = (_back, _front);
+            Array.Copy(_canvas, _front, _canvas.Length);
         FrameNumber++;
     }
 
@@ -165,7 +167,7 @@ public sealed class Display
         var bplcon0 = State(CustomRegister.Bplcon0);
         var dualPlayfield = (bplcon0 & DualPlayfield) != 0;
         var extraHalfBrite = planes == 6 && (bplcon0 & (HoldAndModify | DualPlayfield)) == 0;
-        var target = _back.AsSpan(row * Width, Width);
+        var target = _canvas.AsSpan(row * Width, Width);
 
         for (var x = 0; x < Width; x++)
         {
@@ -193,7 +195,7 @@ public sealed class Display
         }
 
         if (!interlaced)
-            target.CopyTo(_back.AsSpan((row + 1) * Width, Width));
+            target.CopyTo(_canvas.AsSpan((row + 1) * Width, Width));
     }
 
     /// <summary>The color of a pixel from the bits of its planes.</summary>
