@@ -54,6 +54,26 @@ public sealed class DosLibraryTests : IDisposable
     }
 
     [Fact]
+    public void StandardAssign_FindsTheDirectoryInAnyCase()
+    {
+        Directory.CreateDirectory(Path.Combine(_harness.Root, "fonts"));
+        File.WriteAllText(Path.Combine(_harness.Root, "fonts", "a.font"), "x");
+
+        var file = _harness.Call(Dos, Open, ("D1", _harness.String("FONTS:a.font")), ("D2", DosMode.OldFile));
+
+        Assert.NotEqual(0u, file);
+    }
+
+    [Fact]
+    public void Assign_ToAnotherVolume_UsesThatVolume()
+    {
+        _harness.Core.FileSystem.AddAssign("DF0", "SYS:");
+        File.WriteAllText(Path.Combine(_harness.Root, "config.dat"), "x");
+
+        Assert.NotEqual(0u, _harness.Call(Dos, Open, ("D1", _harness.String("df0:config.dat")), ("D2", DosMode.OldFile)));
+    }
+
+    [Fact]
     public void Open_MissingFile_SetsIoErr()
     {
         var file = _harness.Call(Dos, Open, ("D1", _harness.String("missing")), ("D2", DosMode.OldFile));

@@ -63,8 +63,10 @@ public sealed class FileSystem
 
     private readonly Core _core;
     private readonly Dictionary<string, string> _volumes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _assigns = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<uint, OpenFile> _files = new();
     private readonly Dictionary<uint, Lock> _locks = new();
+    private readonly HashSet<string> _resolving = new(StringComparer.OrdinalIgnoreCase);
     private int _nextKey = 1;
 
     private sealed record OpenFile(Stream? Stream, bool IsConsole, string Name);
@@ -77,16 +79,30 @@ public sealed class FileSystem
         AddVolume("SYS", rootDirectory);
         // The standard assigns of AmigaDOS point to directories of SYS:.
         foreach (var (assign, directory) in new[] { ("C", "C"), ("S", "S"), ("L", "L"), ("LIBS", "Libs"), ("DEVS", "Devs"), ("FONTS", "Fonts") })
-            AddVolume(assign, Path.Combine(rootDirectory, directory));
+            AddAssign(assign, "SYS:" + directory);
     }
 
     /// <summary>The volume of names that have no volume and of the first current directory.</summary>
     public string DefaultVolume { get; private set; } = "SYS";
 
-    /// <summary>Makes a volume or an assign, for example <c>AddVolume("DF0", "/path/to/disk")</c>.</summary>
+    /// <summary>Makes a volume on a host directory, for example <c>AddVolume("DF0", "/path/to/disk")</c>.</summary>
     public void AddVolume(string name, string hostDirectory)
     {
-        _volumes[name.TrimEnd(':')] = Path.GetFullPath(hostDirectory);
+        name = name.TrimEnd(':');
+        _assigns.Remove(name);
+        _volumes[name] = Path.GetFullPath(hostDirectory);
+    }
+
+    /// <summary>
+    /// Makes an assign to an AmigaDOS directory, as the Assign command does, for example
+    /// <c>AddAssign("FONTS", "SYS:Fonts")</c>. The runtime finds the directory each time that a name uses the assign,
+    /// so the directory can have another case on the host, and it does not have to exist yet.
+    /// </summary>
+    public void AddAssign(string name, string directory)
+    {
+        name = name.TrimEnd(':');
+        _volumes.Remove(name);
+        _assigns[name] = directory;
     }
 
     /// <summary>The host directory of the lock, or of the default volume if the lock is 0.</summary>
@@ -297,6 +313,24 @@ public sealed class FileSystem
             {
                 // ":" is the root of the volume of the current directory.
                 directory = RootOf(HostPathOf(currentDirectory));
+            }
+            else if (_assigns.TryGetValue(volume, out var target))
+            {
+                // An assign can point to another assign, but not to itself.
+                if (_resolving.Contains(volume))
+                    return (null, DosError.DeviceNotMounted);
+                _resolving.Add(volume);
+                try
+                {
+                    var (assigned, error) = Resolve(target, currentDirectory, mustExist: true);
+                    if (assigned == null)
+                        return (null, error == DosError.ObjectNotFound ? DosError.DirectoryNotFound : error);
+                    directory = assigned;
+                }
+                finally
+                {
+                    _resolving.Remove(volume);
+                }
             }
             else if (!_volumes.TryGetValue(volume, out directory!))
             {
