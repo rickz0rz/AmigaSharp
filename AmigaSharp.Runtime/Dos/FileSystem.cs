@@ -93,6 +93,14 @@ public sealed class FileSystem
         _volumes[name] = Path.GetFullPath(hostDirectory);
     }
 
+    /// <summary>Removes a volume or an assign.</summary>
+    public void RemoveVolume(string name)
+    {
+        name = name.TrimEnd(':');
+        _volumes.Remove(name);
+        _assigns.Remove(name);
+    }
+
     /// <summary>
     /// Makes an assign to an AmigaDOS directory, as the Assign command does, for example
     /// <c>AddAssign("FONTS", "SYS:Fonts")</c>. The runtime finds the directory each time that a name uses the assign,

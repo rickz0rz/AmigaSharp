@@ -32,4 +32,12 @@ public abstract class AbstractDevice(Core core) : AbstractLibrary
     }
 
     protected ushort Command(uint request) => Memory.Read16(request + IoRequestOffsets.Command);
+
+    // BeginIO(ioRequest) and AbortIO(ioRequest) in the jump table of the device. exec DoIO and SendIO call BeginIO,
+    // and a program can also call it directly.
+    [LibraryFunctionOffset(-30)]
+    public void BeginIOVector([A1] uint request) => Core.Devices.BeginIO(request);
+
+    [LibraryFunctionOffset(-36)]
+    public int AbortIOVector([A1] uint request) => Core.Devices.Abort(request);
 }

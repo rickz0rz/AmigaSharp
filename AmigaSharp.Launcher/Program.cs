@@ -143,7 +143,13 @@ try
     }
     else
     {
-        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale).Run(() => finished);
+        void Key(Silk.NET.SDL.Scancode scancode, bool up)
+        {
+            if (KeyboardMapping.TryGetRawKey(scancode, out var rawKey))
+                core.KeyboardInput.PostRawKey(rawKey, up);
+        }
+
+        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key).Run(() => finished);
     }
 }
 finally

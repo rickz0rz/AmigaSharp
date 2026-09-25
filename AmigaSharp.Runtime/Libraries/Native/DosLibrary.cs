@@ -26,6 +26,7 @@ public class DosLibrary(Core core) : AbstractLibrary
 
     private readonly Memory _memory = core.Memory;
     private readonly FileSystem _files = core.FileSystem;
+    private readonly Shell _shell = new(core);
 
     public override string Name => "dos.library";
     public override ushort Version => 40;
@@ -220,12 +221,9 @@ public class DosLibrary(Core core) : AbstractLibrary
     // success = Execute(commandString, input, output)
     // D0                D1             D2     D3
     [LibraryFunctionOffset(-222)]
-    public int Execute([D1] uint command, [D2] uint input, [D3] uint output)
-    {
-        core.Log.WriteLine($"Execute(\"{_memory.ReadCString(command)}\"): the runtime cannot run AmigaDOS commands.");
-        SetError(DosError.ObjectNotFound);
-        return DosFalse;
-    }
+    // The shell of the runtime runs the command. Returns DOSTRUE if the command ran, also if it failed.
+    public int Execute([D1] uint command, [D2] uint input, [D3] uint output) =>
+        RunCommand(_memory.ReadCString(command), output) == Shell.UnknownCommand ? DosFalse : DosTrue;
 
     // char = FPutC(fh, char)
     // D0           D1  D2
@@ -271,12 +269,8 @@ public class DosLibrary(Core core) : AbstractLibrary
     // error = SystemTagList(command, tags)
     // D0                    D1       D2
     [LibraryFunctionOffset(-606)]
-    public int SystemTagList([D1] uint command, [D2] uint tags)
-    {
-        core.Log.WriteLine($"SystemTagList(\"{_memory.ReadCString(command)}\"): the runtime cannot run AmigaDOS commands.");
-        SetError(DosError.ObjectNotFound);
-        return -1;
-    }
+    // Returns the return code of the command, or -1 if the command cannot run.
+    public int SystemTagList([D1] uint command, [D2] uint tags) => RunCommand(_memory.ReadCString(command), 0);
 
     // https://d0.se/autodocs/dos.library/PutStr
     //
@@ -297,6 +291,26 @@ public class DosLibrary(Core core) : AbstractLibrary
     // D0              D1   D2
     [LibraryFunctionOffset(-954)]
     public int VPrintf([D1] uint format, [D2] uint arguments) => VFPrintf(Output(), format, arguments);
+
+    /// <summary>Runs a command in the shell of the runtime. The output goes to the file handle, or to the console.</summary>
+    private int RunCommand(string commandLine, uint output)
+    {
+        using var stream = new MemoryStream();
+        var result = _shell.Run(commandLine, CurrentDirectory, stream);
+        if (result == Shell.UnknownCommand)
+        {
+            core.Log.WriteLine($"Execute(\"{commandLine}\"): the runtime has no such command.");
+            SetError(DosError.ObjectNotFound);
+            return -1;
+        }
+
+        var text = stream.ToArray();
+        if (output != 0)
+            WriteString(output, text);
+        else if (text.Length > 0)
+            WriteString(Output(), text);
+        return result;
+    }
 
     private bool WriteString(uint file, byte[] text)
     {

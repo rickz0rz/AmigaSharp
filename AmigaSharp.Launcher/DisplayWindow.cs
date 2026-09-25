@@ -7,7 +7,7 @@ namespace AmigaSharp.Launcher;
 /// Shows the picture of the display in an SDL window. The window must run on the main thread, because macOS requires
 /// that for windows.
 /// </summary>
-public sealed unsafe class DisplayWindow(Display display, string title, int scale)
+public sealed unsafe class DisplayWindow(Display display, string title, int scale, Action<Scancode, bool> key)
 {
     /// <summary>Shows the window until the user closes it or <paramref name="stop"/> becomes true.</summary>
     public void Run(Func<bool> stop)
@@ -33,6 +33,9 @@ public sealed unsafe class DisplayWindow(Display display, string title, int scal
                 {
                     if (e.Type == (uint)EventType.Quit)
                         return;
+                    // A key that the host repeats sends a new key down. The Amiga repeats a key in its own way.
+                    if (e.Type is (uint)EventType.Keydown or (uint)EventType.Keyup && e.Key.Repeat == 0)
+                        key(e.Key.Keysym.Scancode, e.Type == (uint)EventType.Keyup);
                 }
 
                 if (display.FrameNumber != shown)

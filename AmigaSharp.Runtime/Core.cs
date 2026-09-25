@@ -47,6 +47,7 @@ public sealed class Core
 
     private readonly Dictionary<uint, Action> _functions = new();
     private readonly List<Func<bool>> _idleHandlers = [];
+    private readonly List<Action> _pollHandlers = [];
     private int _nativeCallDepth;
     private int _pollCountdown = PollInterval;
 
@@ -77,6 +78,9 @@ public sealed class Core
 
     /// <summary>The stream that the console input comes from.</summary>
     public Stream Input { get; }
+
+    /// <summary>The events of the host keyboard. input.device sends them to the handlers of the program.</summary>
+    public Input.InputQueue KeyboardInput { get; } = new();
 
     /// <summary>Messages from the runtime about functions and devices that it does not have.</summary>
     public TextWriter Log { get; set; } = Console.Error;
@@ -125,6 +129,9 @@ public sealed class Core
         Libraries.Register("utility.library", core => new UtilityLibrary(core));
         Libraries.RegisterResource("battclock.resource", _ => new BattClockResource());
         Libraries.Register("serial.device", core => new SerialDevice(core));
+        Libraries.Register("input.device", core => new InputDevice(core));
+        Libraries.Register("console.device", core => new ConsoleDevice(core));
+        Libraries.Register("trackdisk.device", core => new TrackDiskDevice(core));
 
         // Exec is always open.
         ExecBase = Libraries.Open("exec.library", 0)!.Base;
@@ -283,6 +290,9 @@ public sealed class Core
     /// </summary>
     public void AddIdleHandler(Func<bool> handler) => _idleHandlers.Add(handler);
 
+    /// <summary>Adds a handler that the runtime calls at each safe point, for example to deliver input events.</summary>
+    public void AddPollHandler(Action handler) => _pollHandlers.Add(handler);
+
     /// <summary>
     /// exec Wait: returns the signals in the mask that the task received, and clears them. While the task waits, the
     /// interrupts and the devices run, and they can send the signals.
@@ -349,6 +359,8 @@ public sealed class Core
         Chipset.Custom.Update();
         Devices.Update();
         Interrupts.Deliver();
+        foreach (var handler in _pollHandlers)
+            handler();
         Scheduler?.Preempt();
     }
 
