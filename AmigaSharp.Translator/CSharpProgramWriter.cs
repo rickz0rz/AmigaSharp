@@ -141,16 +141,18 @@ public sealed class CSharpProgramWriter
 
         public string Jump(Instruction instruction, uint target)
         {
+            // A backward jump can be a loop that waits for an interrupt, so it is a safe point for interrupts.
+            var poll = target <= instruction.Address ? "core.Poll(); " : "";
             if (function.Contains(target) && analysis.IsInstruction(target))
             {
                 Labels.Add(target);
-                return $"goto L_{target:X6};";
+                return poll.Length == 0 ? $"goto L_{target:X6};" : $"{{ {poll}goto L_{target:X6}; }}";
             }
 
             // A jump to the start of another function is a tail call.
             return analysis.FunctionAt(target) is { } other
-                ? $"{{ {other.Name}(); return; }}"
-                : $"{{ core.Dispatch({Hex(target)}); return; }}";
+                ? $"{{ {poll}{other.Name}(); return; }}"
+                : $"{{ {poll}core.Dispatch({Hex(target)}); return; }}";
         }
 
         public string JumpDynamic(Instruction instruction, string target) => $"{{ core.Dispatch({target}); return; }}";

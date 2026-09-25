@@ -42,9 +42,13 @@ public sealed class Core
     /// <summary>The size of the stack of the main process. AmigaDOS gives it to the program at 4(SP).</summary>
     public const uint StackSize = 64 * 1024;
 
+    // Poll checks the interrupts after this number of calls, so that a call at each backward branch costs little.
+    private const int PollInterval = 64;
+
     private readonly Dictionary<uint, Action> _functions = new();
     private readonly List<Func<bool>> _idleHandlers = [];
     private int _nativeCallDepth;
+    private int _pollCountdown = PollInterval;
 
     public Memory Memory { get; } = new();
     public CpuState Cpu { get; }
@@ -63,6 +67,8 @@ public sealed class Core
 
     /// <summary>The custom chips and the CIAs.</summary>
     public Chipset Chipset { get; }
+
+    public InterruptDispatcher Interrupts { get; }
 
     /// <summary>The stream that the console output goes to.</summary>
     public Stream Output { get; }
@@ -104,6 +110,11 @@ public sealed class Core
 
         Libraries = new LibraryManager(this);
         Devices = new DeviceManager(this);
+        Interrupts = new InterruptDispatcher(this);
+        // Kickstart enables the master bit and the interrupts of the CIAs, the vertical blank and the software.
+        Chipset.Custom.Write(CustomRegister.Intena,
+            0x8000 | 1 << InterruptBit.Enable | 1 << InterruptBit.Ports | 1 << InterruptBit.VerticalBlank
+            | 1 << InterruptBit.External | 1 << InterruptBit.Soft);
         Libraries.Register("exec.library", core => new ExecLibrary(core));
         Libraries.Register("dos.library", core => new DosLibrary(core));
         Libraries.Register("graphics.library", core => new GraphicsLibrary(core));
@@ -111,6 +122,7 @@ public sealed class Core
         Libraries.Register("intuition.library", core => new IntuitionLibrary(core));
         Libraries.Register("utility.library", core => new UtilityLibrary(core));
         Libraries.RegisterResource("battclock.resource", _ => new BattClockResource());
+        Libraries.Register("serial.device", core => new SerialDevice(core));
 
         // Exec is always open.
         ExecBase = Libraries.Open("exec.library", 0)!.Base;
@@ -196,6 +208,7 @@ public sealed class Core
     /// </summary>
     public void Dispatch(uint target)
     {
+        Poll();
         target &= Memory.AddressMask;
 
         // A library vector is a JMP to a stub or to a function that SetFunction installed.
@@ -265,8 +278,11 @@ public sealed class Core
     /// </summary>
     public void AddIdleHandler(Func<bool> handler) => _idleHandlers.Add(handler);
 
-    /// <summary>exec Wait: returns the signals in the mask that the task received, and clears them.</summary>
-    /// <exception cref="WaitDeadlockException">No handler can send a signal.</exception>
+    /// <summary>
+    /// exec Wait: returns the signals in the mask that the task received, and clears them. While the task waits, the
+    /// interrupts and the devices run, and they can send the signals.
+    /// </summary>
+    /// <exception cref="WaitDeadlockException">No interrupt, device or idle handler can send a signal.</exception>
     public uint WaitForSignals(uint mask)
     {
         var address = Memory.Read32(ExecBase + ExecBaseOffsets.ThisTask) + TaskOffsets.SignalsReceived;
@@ -279,23 +295,63 @@ public sealed class Core
                 return received & mask;
             }
 
+            PollNow();
+            if ((Memory.Read32(address) & mask) != 0)
+                continue;
+
             var progress = false;
             foreach (var handler in _idleHandlers.ToList())
                 progress |= handler();
-            if (!progress)
+            if (progress)
+                continue;
+            if (!Interrupts.CanInterrupt() && !Devices.HasPendingRequests)
                 throw new WaitDeadlockException(mask);
+
+            var clock = Chipset.Beam.Clock;
+            clock.WaitUntil(clock.Elapsed + IdleStep);
         }
+    }
+
+    /// <summary>
+    /// A safe point for interrupts. The translated code calls this method at each backward branch, so that a loop
+    /// that waits for an interrupt ends.
+    /// </summary>
+    public void Poll()
+    {
+        if (--_pollCountdown > 0)
+            return;
+        _pollCountdown = PollInterval;
+        PollNow();
+    }
+
+    /// <summary>Makes the interrupt requests that time causes, updates the devices, and delivers the interrupts.</summary>
+    public void PollNow()
+    {
+        Chipset.Custom.Update();
+        Devices.Update();
+        Interrupts.Deliver();
     }
 
     /// <summary>Waits for the start of the next frame, as graphics WaitTOF does.</summary>
     public void WaitForNextFrame()
     {
         var beam = Chipset.Beam;
-        var next = beam.Frame + 1;
+        var next = beam.StartOfFrame(beam.Frame + 1);
         foreach (var handler in _idleHandlers.ToList())
             handler();
-        beam.Clock.WaitUntil(beam.StartOfFrame(next));
+        while (beam.Clock.Elapsed < next)
+        {
+            PollNow();
+            beam.Clock.WaitUntil(Min(next, beam.Clock.Elapsed + IdleStep));
+        }
+
+        PollNow();
     }
+
+    /// <summary>The time that a wait sleeps before it checks the interrupts again.</summary>
+    private static readonly TimeSpan IdleStep = TimeSpan.FromMilliseconds(1);
+
+    private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 
     /// <summary>exec Signal. The runtime has one task, so the signals go to it.</summary>
     public void Signal(uint task, uint signals)
@@ -348,6 +404,7 @@ public sealed class Core
             }
             else
             {
+                Poll();
                 var opcode = Memory.Read16(pc);
                 Interpreter.Step();
                 // RTS, RTE and RTR are the only instructions that can return from the frame.
@@ -365,6 +422,8 @@ public sealed class Core
 
     private void RunNative(uint stub, Action native)
     {
+        // Each library call is a safe point for interrupts.
+        PollNow();
         if (TraceLibraryCalls)
         {
             var d = Cpu.D;

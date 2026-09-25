@@ -73,5 +73,7 @@ public class ControlFlowTests
         Assert.Contains("var target = 0x200026u + (uint)(short)cpu.D[1];", source);
         Assert.Contains("{ core.Dispatch(target); return; }", source);
         Assert.Contains("core.Call(0x20000Cu, Dispatch);", source);
+        // The DBRA loop is a safe point for interrupts.
+        Assert.Contains("if (c != 0xFFFFu) { core.Poll(); goto L_20000A; }", source);
     }
 }

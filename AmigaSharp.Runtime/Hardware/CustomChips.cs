@@ -33,6 +33,10 @@ public static class CustomRegister
     public const int Intena = 0x09A;
     public const int Intreq = 0x09C;
     public const int Adkcon = 0x09E;
+    public const int Aud0lc = 0x0A0;
+    public const int Aud0len = 0x0A4;
+    public const int Aud0per = 0x0A6;
+    public const int AudioChannelSize = 0x10;
     public const int Bpl1pt = 0x0E0;
     public const int Bplcon0 = 0x100;
     public const int Bplcon1 = 0x102;
@@ -43,17 +47,70 @@ public static class CustomRegister
     public const int Color00 = 0x180;
 }
 
+/// <summary>The bits of INTENA and INTREQ (hardware/intbits.h).</summary>
+public static class InterruptBit
+{
+    public const int Tbe = 0;
+    public const int DiskBlock = 1;
+    public const int Soft = 2;
+    public const int Ports = 3;
+    public const int Copper = 4;
+    public const int VerticalBlank = 5;
+    public const int Blitter = 6;
+    public const int Audio0 = 7;
+    public const int Rbf = 11;
+    public const int DiskSync = 12;
+    public const int External = 13;
+    public const int Enable = 14;
+
+    /// <summary>The interrupt level of the 68000 for each bit.</summary>
+    public static int Level(int bit) => bit switch
+    {
+        <= 2 => 1,
+        3 => 2,
+        <= 6 => 3,
+        <= 10 => 4,
+        <= 12 => 5,
+        _ => 6,
+    };
+}
+
 /// <summary>
 /// The custom chips (Agnus, Denise and Paula) as registers. The model stores each write, so the display and the
 /// devices can read the values. DMACON, INTENA, INTREQ and ADKCON use the set/clear bit 15. A read of a register that
 /// the model does not have throws <see cref="HardwareAccessException"/>.
 /// </summary>
-public sealed class CustomChips(Beam beam)
+/// <remarks>
+/// <see cref="Update"/> makes the interrupt requests that time causes: VERTB at the start of each frame, an audio
+/// interrupt each time that a channel with DMA starts its buffer again, and RBF when a serial byte arrives.
+/// </remarks>
+public sealed class CustomChips
 {
+    private const ushort DmaEnable = 0x0200;
+
+    private readonly Beam _beam;
+    private readonly ushort[] _registers = new ushort[0x100];
+    private readonly AudioTimer[] _audio = new AudioTimer[4];
+    private long _lastFrame;
+
+    public CustomChips(Beam beam)
+    {
+        _beam = beam;
+        Serial = new SerialPort(beam);
+    }
+
     /// <summary>The Agnus ID in VPOSR bits 14 to 8. $30 is the ECS Agnus (8372) for NTSC.</summary>
     public int AgnusId { get; set; } = 0x30;
 
-    private readonly ushort[] _registers = new ushort[0x100];
+    public SerialPort Serial { get; }
+
+    /// <summary>The state of an audio channel for its interrupt: the start of the DMA and the interrupts already made.</summary>
+    private struct AudioTimer
+    {
+        public bool Running;
+        public long StartClock;
+        public long Interrupts;
+    }
 
     /// <summary>The value that the program last wrote to the register.</summary>
     public ushort this[int offset] => _registers[offset >> 1];
@@ -69,9 +126,6 @@ public sealed class CustomChips(Beam beam)
     public ushort Intreq { get; private set; }
     public ushort Adkcon { get; private set; }
 
-    /// <summary>The value of SERDATR. The serial port model sets it.</summary>
-    public Func<ushort> SerialReceive { get; set; } = () => 0x3000;
-
     public ushort Read(int offset)
     {
         switch (offset)
@@ -80,19 +134,23 @@ public sealed class CustomChips(Beam beam)
             case CustomRegister.Dmaconr: return (ushort)(Dmacon & 0x07FF);
             case CustomRegister.Vposr:
                 // Bit 15 is the long frame flag, bits 14 to 8 are the Agnus ID, and bit 0 is bit 8 of the line.
-                return (ushort)(0x8000 | (AgnusId << 8) | (beam.Line >> 8));
-            case CustomRegister.Vhposr: return (ushort)(((beam.Line & 0xFF) << 8) | beam.Horizontal);
+                return (ushort)(0x8000 | (AgnusId << 8) | (_beam.Line >> 8));
+            case CustomRegister.Vhposr: return (ushort)(((_beam.Line & 0xFF) << 8) | _beam.Horizontal);
             case CustomRegister.Joy0dat or CustomRegister.Joy1dat: return 0;
             case CustomRegister.Adkconr: return Adkcon;
             case CustomRegister.Pot0dat or CustomRegister.Pot1dat: return 0;
             // The pins are inputs and the right mouse buttons are not pressed.
             case CustomRegister.Potgor: return 0xFF00;
-            case CustomRegister.Serdatr: return SerialReceive();
+            case CustomRegister.Serdatr: return Serial.ReadData(Intreq);
             case CustomRegister.Dskbytr: return 0;
             case CustomRegister.Intenar: return Intena;
             case CustomRegister.Intreqr: return Intreq;
             // The ECS Denise (8373) has the ID $FC.
             case CustomRegister.Deniseid: return 0xFFFC;
+            // A read of a strobe register does the same as a write. The value is not defined.
+            case CustomRegister.Copjmp1 or CustomRegister.Copjmp2:
+                Write(offset, 0);
+                return 0;
             default: throw new HardwareAccessException(CustomRegister.Base + (uint)offset);
         }
     }
@@ -102,11 +160,19 @@ public sealed class CustomChips(Beam beam)
         _registers[offset >> 1] = value;
         switch (offset)
         {
-            case CustomRegister.Dmacon: Dmacon = SetClear(Dmacon, value); break;
+            case CustomRegister.Dmacon:
+                Dmacon = SetClear(Dmacon, value);
+                UpdateAudioDma();
+                break;
             case CustomRegister.Intena: Intena = SetClear(Intena, value); break;
             case CustomRegister.Intreq: Intreq = SetClear(Intreq, value); break;
             case CustomRegister.Adkcon: Adkcon = SetClear(Adkcon, value); break;
-            case CustomRegister.Serdat: SerialTransmit?.Invoke(value); break;
+            case CustomRegister.Serper: Serial.Period = value; break;
+            case CustomRegister.Serdat:
+                Serial.WriteData(value);
+                SerialTransmit?.Invoke(value);
+                RequestInterrupt(InterruptBit.Tbe);
+                break;
             case CustomRegister.Copjmp1: CopperJump?.Invoke(1); break;
             case CustomRegister.Copjmp2: CopperJump?.Invoke(2); break;
         }
@@ -114,6 +180,61 @@ public sealed class CustomChips(Beam beam)
 
     /// <summary>Sets an interrupt request, as the hardware does. For example, the start of each frame sets VERTB.</summary>
     public void RequestInterrupt(int bit) => Intreq |= (ushort)(1 << bit);
+
+    /// <summary>Makes the interrupt requests that time causes since the last update.</summary>
+    public void Update()
+    {
+        var frame = _beam.Frame;
+        if (frame != _lastFrame)
+        {
+            _lastFrame = frame;
+            RequestInterrupt(InterruptBit.VerticalBlank);
+        }
+
+        var clock = _beam.ColorClocks;
+        for (var channel = 0; channel < _audio.Length; channel++)
+        {
+            ref var timer = ref _audio[channel];
+            if (!timer.Running)
+                continue;
+            var interval = AudioInterval(channel);
+            var interrupts = (clock - timer.StartClock) / interval + 1;
+            if (interrupts > timer.Interrupts)
+            {
+                timer.Interrupts = interrupts;
+                RequestInterrupt(InterruptBit.Audio0 + channel);
+            }
+        }
+
+        if (Serial.Update((Intreq & (1 << InterruptBit.Rbf)) != 0))
+            RequestInterrupt(InterruptBit.Rbf);
+    }
+
+    /// <summary>
+    /// The color clocks between two interrupts of an audio channel. The channel plays AUDxLEN words, two samples in
+    /// each word, and each sample takes AUDxPER color clocks. A length of 0 is 65536 words.
+    /// </summary>
+    private long AudioInterval(int channel)
+    {
+        var registers = CustomRegister.Aud0len + channel * CustomRegister.AudioChannelSize;
+        var length = this[registers] == 0 ? 65536 : this[registers];
+        var period = Math.Max((int)this[registers + 2], 124);
+        return 2L * length * period;
+    }
+
+    /// <summary>Starts or stops the audio timers when DMACON changes. A channel starts with an interrupt.</summary>
+    private void UpdateAudioDma()
+    {
+        for (var channel = 0; channel < _audio.Length; channel++)
+        {
+            ref var timer = ref _audio[channel];
+            var on = (Dmacon & DmaEnable) != 0 && (Dmacon & (1 << channel)) != 0;
+            if (on && !timer.Running)
+                timer = new AudioTimer { Running = true, StartClock = _beam.ColorClocks, Interrupts = 0 };
+            else if (!on)
+                timer.Running = false;
+        }
+    }
 
     /// <summary>Bit 15 set: the other bits that are 1 are set. Bit 15 clear: they are cleared.</summary>
     private static ushort SetClear(ushort old, ushort value) =>

@@ -75,6 +75,18 @@ public sealed class DeviceManager(Core core)
 
     public bool IsComplete(uint request) => !_pending.Contains(request);
 
+    /// <summary>True if a request is not done yet. A device can then still send a signal.</summary>
+    public bool HasPendingRequests => _pending.Count > 0;
+
+    /// <summary>Lets each device with a pending request do its work, for example read the bytes that arrived.</summary>
+    public void Update()
+    {
+        if (_pending.Count == 0)
+            return;
+        foreach (var device in core.Libraries.Loaded.OfType<AbstractDevice>().ToList())
+            device.Update();
+    }
+
     public int Abort(uint request) => IsComplete(request) || DeviceOf(request) is not { } device ? 0 : device.AbortIO(request);
 
     /// <summary>The signal of the reply port of the request.</summary>

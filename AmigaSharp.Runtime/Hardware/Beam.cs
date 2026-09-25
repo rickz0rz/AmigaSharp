@@ -54,7 +54,8 @@ public sealed class Beam(IClock clock)
 
     public IClock Clock { get; } = clock;
 
-    private long ColorClocks => (long)(Clock.Elapsed.TotalSeconds * ColorClockHz);
+    /// <summary>The number of color clocks since the start.</summary>
+    public long ColorClocks => (long)(Clock.Elapsed.TotalSeconds * ColorClockHz);
 
     /// <summary>The number of lines since the start.</summary>
     public long TotalLines => ColorClocks / ColorClocksPerLine;

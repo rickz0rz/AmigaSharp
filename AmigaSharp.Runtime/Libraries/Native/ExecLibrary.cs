@@ -1,4 +1,5 @@
 using AmigaSharp.Runtime.Exec;
+using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Runtime.Libraries.Native;
 
@@ -69,11 +70,22 @@ public class ExecLibrary(Core core) : AbstractLibrary
         core.CallFromNative(function, supervisorFrame: true);
     }
 
+    // Disable() and Enable(). Disable stops all interrupts with the master bit of INTENA. Enable starts them again when
+    // the nest count is -1 again.
     [LibraryFunctionOffset(-120)]
-    public void Disable() => ChangeNestCount(ExecBaseOffsets.InterruptDisableCount, 1);
+    public void Disable()
+    {
+        core.Chipset.Custom.Write(CustomRegister.Intena, 1 << InterruptBit.Enable);
+        ChangeNestCount(ExecBaseOffsets.InterruptDisableCount, 1);
+    }
 
     [LibraryFunctionOffset(-126)]
-    public void Enable() => ChangeNestCount(ExecBaseOffsets.InterruptDisableCount, -1);
+    public void Enable()
+    {
+        ChangeNestCount(ExecBaseOffsets.InterruptDisableCount, -1);
+        if ((sbyte)_memory.Read8(Base + ExecBaseOffsets.InterruptDisableCount) < 0)
+            core.Chipset.Custom.Write(CustomRegister.Intena, 0x8000 | 1 << InterruptBit.Enable);
+    }
 
     [LibraryFunctionOffset(-132)]
     public void Forbid() => ChangeNestCount(ExecBaseOffsets.TaskDisableCount, 1);

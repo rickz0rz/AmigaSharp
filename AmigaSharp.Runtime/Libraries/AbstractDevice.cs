@@ -26,5 +26,10 @@ public abstract class AbstractDevice(Core core) : AbstractLibrary
     /// <summary>Stops a request that is not done. Returns 0, or an error code.</summary>
     public virtual int AbortIO(uint request) => 0;
 
+    /// <summary>The runtime calls this at each safe point while a request is pending. The device can complete requests.</summary>
+    public virtual void Update()
+    {
+    }
+
     protected ushort Command(uint request) => Memory.Read16(request + IoRequestOffsets.Command);
 }
