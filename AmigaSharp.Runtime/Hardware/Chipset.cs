@@ -15,18 +15,23 @@ public sealed class Chipset : IHardware
     private const uint CiaStart = 0xBF_0000;
     private const uint CiaEnd = 0xC0_0000;
 
-    public Chipset(IClock clock)
+    public Chipset(IClock clock, Memory memory)
     {
         Beam = new Beam(clock);
         Custom = new CustomChips(Beam);
         CiaA = new Cia(() => Beam.Frame);
         CiaB = new Cia(() => Beam.TotalLines);
+        Display = new Display(memory, Custom);
+        Custom.FrameEnded += Display.RunFrame;
     }
 
     public Beam Beam { get; }
     public CustomChips Custom { get; }
     public Cia CiaA { get; }
     public Cia CiaB { get; }
+
+    /// <summary>The picture that the custom chips make.</summary>
+    public Display Display { get; }
 
     public byte Read8(uint address)
     {

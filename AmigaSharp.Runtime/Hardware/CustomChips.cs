@@ -121,6 +121,17 @@ public sealed class CustomChips
     /// <summary>The program wrote to COPJMP1 or COPJMP2.</summary>
     public event Action<int>? CopperJump;
 
+    /// <summary>
+    /// A frame ended. The display runs the copper and makes the picture. The first value is true for a long frame, and
+    /// the second is true if the host must show the picture.
+    /// </summary>
+    public event Action<bool, bool>? FrameEnded;
+
+    /// <summary>
+    /// True for a long frame (VPOSR bit 15). With interlace (BPLCON0 bit 2), long and short frames alternate.
+    /// </summary>
+    public bool LongFrame { get; private set; } = true;
+
     public ushort Dmacon { get; private set; }
     public ushort Intena { get; private set; }
     public ushort Intreq { get; private set; }
@@ -134,7 +145,7 @@ public sealed class CustomChips
             case CustomRegister.Dmaconr: return (ushort)(Dmacon & 0x07FF);
             case CustomRegister.Vposr:
                 // Bit 15 is the long frame flag, bits 14 to 8 are the Agnus ID, and bit 0 is bit 8 of the line.
-                return (ushort)(0x8000 | (AgnusId << 8) | (_beam.Line >> 8));
+                return (ushort)((LongFrame ? 0x8000 : 0) | (AgnusId << 8) | (_beam.Line >> 8));
             case CustomRegister.Vhposr: return (ushort)(((_beam.Line & 0xFF) << 8) | _beam.Horizontal);
             case CustomRegister.Joy0dat or CustomRegister.Joy1dat: return 0;
             case CustomRegister.Adkconr: return Adkcon;
@@ -187,6 +198,15 @@ public sealed class CustomChips
         var frame = _beam.Frame;
         if (frame != _lastFrame)
         {
+            // Run the copper of each frame that ended, up to two, so that the copper lists of interlace stay in step
+            // with the long frame flag. Only the last frame makes a picture.
+            for (var ended = _lastFrame; ended < frame; ended++)
+            {
+                if (ended >= frame - 2)
+                    FrameEnded?.Invoke(LongFrame, ended == frame - 1);
+                LongFrame = (this[CustomRegister.Bplcon0] & 0x0004) == 0 || !LongFrame;
+            }
+
             _lastFrame = frame;
             RequestInterrupt(InterruptBit.VerticalBlank);
         }

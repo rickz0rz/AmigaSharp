@@ -97,7 +97,7 @@ public sealed class Core
     /// <param name="clock">The time of the hardware. The default is real time.</param>
     public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null)
     {
-        Chipset = new Chipset(clock ?? new RealTimeClock());
+        Chipset = new Chipset(clock ?? new RealTimeClock(), Memory);
         Memory.Hardware = Chipset;
         Cpu = new CpuState(Memory);
         Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };

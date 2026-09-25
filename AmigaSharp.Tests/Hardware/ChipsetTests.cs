@@ -11,7 +11,7 @@ public class ChipsetTests
 
     public ChipsetTests()
     {
-        _chipset = new Chipset(_clock);
+        _chipset = new Chipset(_clock, _memory);
         _memory.Hardware = _chipset;
     }
 

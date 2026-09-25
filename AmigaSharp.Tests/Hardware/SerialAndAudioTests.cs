@@ -12,7 +12,7 @@ public class SerialAndAudioTests
 
     public SerialAndAudioTests()
     {
-        _chipset = new Chipset(_clock);
+        _chipset = new Chipset(_clock, _memory);
         _memory.Hardware = _chipset;
         _chipset.Custom.Serial.Connection = _connection;
         // 9600 baud.
