@@ -7,6 +7,7 @@ the executable and the listing, so they do not need vasm.
 |---|---|
 | `HelloWorld` | Library calls through `exec.library` and `dos.library`. `AmigaSharp/Generated/HelloWorld.cs` is the translation. |
 | `ControlFlow` | A jump table into local labels, interpreted code that calls translated code, a stack frame, a data hunk, and an exit through a saved stack pointer. |
+| `FileIO` | File access through `dos.library`, `AllocMem`, `RawDoFmt` with a 68000 PutChProc, `IoErr`, and a BSS hunk. |
 
 ## Rebuild a sample
 

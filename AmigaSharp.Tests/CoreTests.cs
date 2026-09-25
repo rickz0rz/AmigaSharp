@@ -1,5 +1,6 @@
 using System.Text;
 using AmigaSharp.Runtime;
+using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Libraries;
 
 namespace AmigaSharp.Tests;
@@ -14,7 +15,7 @@ public class CoreTests
 
     public CoreTests()
     {
-        _core = new Core(_output);
+        _core = new Core(_output) { Log = TextWriter.Null };
     }
 
     [Fact]
@@ -27,10 +28,31 @@ public class CoreTests
     }
 
     [Fact]
-    public void StackPointer_IsInsideAllocatedMemory()
+    public void StackPointer_IsAtTheTopOfTheProcessStack()
     {
-        Assert.InRange(_core.Cpu.Sp, 0x1000u, 0x20_0000u);
+        var process = _core.MainProcess;
+
+        Assert.Equal(_core.Memory.Read32(process + TaskOffsets.StackUpper), _core.Cpu.Sp);
+        Assert.InRange(_core.Cpu.Sp, Core.FastStart, Core.FastEnd);
         Assert.Equal(0u, _core.Cpu.Sp & 3);
+    }
+
+    [Fact]
+    public void ThisTask_IsTheMainProcess()
+    {
+        var sysBase = _core.Memory.Read32(Core.SysBaseAddress);
+
+        Assert.Equal(_core.MainProcess, _core.Memory.Read32(sysBase + ExecBaseOffsets.ThisTask));
+        Assert.Equal(NodeType.Process, _core.Memory.Read8(_core.MainProcess + NodeOffsets.Type));
+    }
+
+    [Fact]
+    public void LibraryVector_IsJmpToStub()
+    {
+        var sysBase = _core.Memory.Read32(Core.SysBaseAddress);
+
+        Assert.Equal(0x4EF9, _core.Memory.Read16(sysBase + unchecked((uint)OpenLibrary)));
+        Assert.InRange(_core.Memory.Read32(sysBase + unchecked((uint)OpenLibrary) + 2), LibraryManager.StubBase, LibraryManager.StubBase + 0x1000);
     }
 
     [Fact]
@@ -75,12 +97,13 @@ public class CoreTests
     {
         var sysBase = _core.Memory.Read32(Core.SysBaseAddress);
 
-        Assert.Throws<InvalidOperationException>(() => _core.CallVector(sysBase, -6));
+        var exception = Assert.Throws<MissingLibraryFunctionException>(() => _core.CallVector(sysBase, -6));
+        Assert.Equal(("exec.library", -6), (exception.Library, exception.Offset));
     }
 
     private uint CallOpenLibrary(string name, uint version)
     {
-        _core.Cpu.A[1] = _core.AllocateStatic(Encoding.Latin1.GetBytes(name + "\0"));
+        _core.Cpu.A[1] = _core.AllocateSystem(Encoding.Latin1.GetBytes(name + "\0"));
         _core.Cpu.D[0] = version;
         _core.CallVector(_core.Memory.Read32(Core.SysBaseAddress), OpenLibrary);
         return _core.Cpu.D[0];

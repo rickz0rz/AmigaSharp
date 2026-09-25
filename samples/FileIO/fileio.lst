@@ -1,0 +1,244 @@
+Sections:
+00: "code" (0-17C)
+01: "variables" (0-54)
+
+
+Source: "fileio.s"
+                            	     1: ; Writes a file, reads it back and prints it with exec.library and dos.library.
+                            	     2: ; Build: vasmm68k_mot -Fhunkexe -nosym -L fileio.lst -o fileio fileio.s
+                            	     3: ;
+                            	     4: ; The output is:
+                            	     5: ;   Read 11 bytes: hello, file
+                            	     6: ;   -12-002a-abc|de   |
+                            	     7: ;   IoErr 205
+                            	     8: 
+                            	     9: SysBase			= 4
+                            	    10: _LVOAllocMem		= -198
+                            	    11: _LVOFreeMem		= -210
+                            	    12: _LVOCloseLibrary	= -414
+                            	    13: _LVORawDoFmt		= -522
+                            	    14: _LVOOpenLibrary		= -552
+                            	    15: _LVOOpen		= -30
+                            	    16: _LVOClose		= -36
+                            	    17: _LVORead		= -42
+                            	    18: _LVOWrite		= -48
+                            	    19: _LVOSeek		= -66
+                            	    20: _LVODeleteFile		= -72
+                            	    21: _LVOIoErr		= -132
+                            	    22: _LVOPutStr		= -948
+                            	    23: _LVOVPrintf		= -954
+                            	    24: MODE_OLDFILE		= 1005
+                            	    25: MODE_NEWFILE		= 1006
+                            	    26: OFFSET_BEGINNING	= -1
+                            	    27: MEMF_PUBLIC_CLEAR	= $10001
+                            	    28: BUFFER_SIZE		= 64
+                            	    29: 
+                            	    30: 			SECTION	code,CODE
+                            	    31: 
+00:00000000 48E73F3E        	    32: Start:			MOVEM.L	D2-D7/A2-A6,-(A7)
+00:00000004 2C780004        	    33: 			MOVEA.L	SysBase,A6
+00:00000008 43FA0100        	    34: 			LEA	DosName(PC),A1
+00:0000000C 7024            	    35: 			MOVEQ	#36,D0
+00:0000000E 4EAEFDD8        	    36: 			JSR	_LVOOpenLibrary(A6)
+00:00000012 23C000000000    	    37: 			MOVE.L	D0,DosBase
+00:00000018 670000E4        	    38: 			BEQ	.no_dos
+                            	    39: 
+                            	    40: ; Write the text to a new file, then go back to the start of the file.
+00:0000001C 2C40            	    41: 			MOVEA.L	D0,A6
+00:0000001E 223C00000116    	    42: 			MOVE.L	#FileName,D1
+00:00000024 243C000003EE    	    43: 			MOVE.L	#MODE_NEWFILE,D2
+00:0000002A 4EAEFFE2        	    44: 			JSR	_LVOOpen(A6)
+00:0000002E 2E00            	    45: 			MOVE.L	D0,D7
+00:00000030 670000C8        	    46: 			BEQ	.failed
+00:00000034 2207            	    47: 			MOVE.L	D7,D1
+00:00000036 243C0000012B    	    48: 			MOVE.L	#Text,D2
+00:0000003C 760B            	    49: 			MOVEQ	#TextLength,D3
+00:0000003E 4EAEFFD0        	    50: 			JSR	_LVOWrite(A6)
+00:00000042 2207            	    51: 			MOVE.L	D7,D1
+00:00000044 7400            	    52: 			MOVEQ	#0,D2
+00:00000046 76FF            	    53: 			MOVEQ	#OFFSET_BEGINNING,D3
+00:00000048 4EAEFFBE        	    54: 			JSR	_LVOSeek(A6)
+                            	    55: 
+                            	    56: ; Read the file into a clear buffer.
+00:0000004C 2C780004        	    57: 			MOVEA.L	SysBase,A6
+00:00000050 7040            	    58: 			MOVEQ	#BUFFER_SIZE,D0
+00:00000052 223C00010001    	    59: 			MOVE.L	#MEMF_PUBLIC_CLEAR,D1
+00:00000058 4EAEFF3A        	    60: 			JSR	_LVOAllocMem(A6)
+00:0000005C 2A40            	    61: 			MOVEA.L	D0,A5
+00:0000005E 2C7900000000    	    62: 			MOVEA.L	DosBase,A6
+00:00000064 2207            	    63: 			MOVE.L	D7,D1
+00:00000066 240D            	    64: 			MOVE.L	A5,D2
+00:00000068 7640            	    65: 			MOVEQ	#BUFFER_SIZE,D3
+00:0000006A 4EAEFFD6        	    66: 			JSR	_LVORead(A6)
+00:0000006E 2C00            	    67: 			MOVE.L	D0,D6
+00:00000070 2207            	    68: 			MOVE.L	D7,D1
+00:00000072 4EAEFFDC        	    69: 			JSR	_LVOClose(A6)
+                            	    70: 
+                            	    71: ; Print the result with VPrintf. The arguments are longs on the stack.
+00:00000076 2F0D            	    72: 			MOVE.L	A5,-(A7)
+00:00000078 2F06            	    73: 			MOVE.L	D6,-(A7)
+00:0000007A 223C00000137    	    74: 			MOVE.L	#ReadFormat,D1
+00:00000080 240F            	    75: 			MOVE.L	A7,D2
+00:00000082 4EAEFC46        	    76: 			JSR	_LVOVPrintf(A6)
+00:00000086 508F            	    77: 			ADDQ.L	#8,A7
+                            	    78: 
+                            	    79: ; Format with RawDoFmt and a PutChProc in 68000 code, then print the buffer.
+00:00000088 41FA00C1        	    80: 			LEA	FormatText(PC),A0
+00:0000008C 43FA00E2        	    81: 			LEA	FormatData(PC),A1
+00:00000090 45FA0074        	    82: 			LEA	StuffChar(PC),A2
+00:00000094 47F900000004    	    83: 			LEA	FormatBuffer,A3
+00:0000009A 2C780004        	    84: 			MOVEA.L	SysBase,A6
+00:0000009E 4EAEFDF6        	    85: 			JSR	_LVORawDoFmt(A6)
+00:000000A2 2C7900000000    	    86: 			MOVEA.L	DosBase,A6
+00:000000A8 223C00000004    	    87: 			MOVE.L	#FormatBuffer,D1
+00:000000AE 4EAEFC4C        	    88: 			JSR	_LVOPutStr(A6)
+                            	    89: 
+                            	    90: ; Open a file that does not exist and print the error code.
+00:000000B2 223C0000011F    	    91: 			MOVE.L	#MissingName,D1
+00:000000B8 243C000003ED    	    92: 			MOVE.L	#MODE_OLDFILE,D2
+00:000000BE 4EAEFFE2        	    93: 			JSR	_LVOOpen(A6)
+00:000000C2 4EAEFF7C        	    94: 			JSR	_LVOIoErr(A6)
+00:000000C6 2F00            	    95: 			MOVE.L	D0,-(A7)
+00:000000C8 223C0000015D    	    96: 			MOVE.L	#ErrorFormat,D1
+00:000000CE 240F            	    97: 			MOVE.L	A7,D2
+00:000000D0 4EAEFC46        	    98: 			JSR	_LVOVPrintf(A6)
+00:000000D4 588F            	    99: 			ADDQ.L	#4,A7
+                            	   100: 
+                            	   101: ; Clean up.
+00:000000D6 223C00000116    	   102: 			MOVE.L	#FileName,D1
+00:000000DC 4EAEFFB8        	   103: 			JSR	_LVODeleteFile(A6)
+00:000000E0 2C780004        	   104: 			MOVEA.L	SysBase,A6
+00:000000E4 224D            	   105: 			MOVEA.L	A5,A1
+00:000000E6 7040            	   106: 			MOVEQ	#BUFFER_SIZE,D0
+00:000000E8 4EAEFF2E        	   107: 			JSR	_LVOFreeMem(A6)
+00:000000EC 227900000000    	   108: 			MOVEA.L	DosBase,A1
+00:000000F2 4EAEFE62        	   109: 			JSR	_LVOCloseLibrary(A6)
+00:000000F6 7000            	   110: 			MOVEQ	#0,D0
+00:000000F8 6006            	   111: 			BRA.S	.exit
+                            	   112: 
+00:000000FA 700A            	   113: .failed:		MOVEQ	#10,D0
+00:000000FC 6002            	   114: 			BRA.S	.exit
+00:000000FE 7014            	   115: .no_dos:		MOVEQ	#20,D0
+00:00000100 4CDF7CFC        	   116: .exit:			MOVEM.L	(A7)+,D2-D7/A2-A6
+00:00000104 4E75            	   117: 			RTS
+                            	   118: 
+                            	   119: ; The PutChProc of RawDoFmt: stores the character in D0 at (A3)+.
+00:00000106 16C0            	   120: StuffChar:		MOVE.B	D0,(A3)+
+00:00000108 4E75            	   121: 			RTS
+                            	   122: 
+00:0000010A 646F732E6C696272	   123: DosName:		DC.B	"dos.library",0
+00:00000112 617279
+00:00000115 00
+00:00000116 746573742E747874	   124: FileName:		DC.B	"test.txt",0
+00:0000011E 00
+00:0000011F 6D697373696E672E	   125: MissingName:		DC.B	"missing.txt",0
+00:00000127 747874
+00:0000012A 00
+00:0000012B 68656C6C6F2C2066	   126: Text:			DC.B	"hello, file"
+00:00000133 696C65
+                            	   127: TextLength		= *-Text
+00:00000136 00              	   128: 			DC.B	0
+00:00000137 5265616420256C64	   129: ReadFormat:		DC.B	"Read %ld bytes: %s",10,0
+00:0000013F 2062797465733A20
+00:00000147 2573
+00:00000149 0A
+00:0000014A 00
+00:0000014B 25642D253034782D	   130: FormatText:		DC.B	"%d-%04x-%s|%-5s|",10,0
+00:00000153 25737C252D35737C
+00:0000015B 0A
+00:0000015C 00
+00:0000015D 496F45727220256C	   131: ErrorFormat:		DC.B	"IoErr %ld",10,0
+00:00000165 64
+00:00000166 0A
+00:00000167 00
+00:00000168 616263          	   132: First:			DC.B	"abc",0
+00:0000016B 00
+00:0000016C 6465            	   133: Second:			DC.B	"de",0
+00:0000016E 00
+                            	   134: 			EVEN
+                            	   135: ; RawDoFmt reads a word for %d and %x, and a long for %s.
+00:00000170 FFF4            	   136: FormatData:		DC.W	-12,$2A
+00:00000172 002A
+00:00000174 00000168        	   137: 			DC.L	First,Second
+00:00000178 0000016C
+                            	   138: 
+                            	   139: 			SECTION	variables,BSS
+01:00000000 00000000        	   140: DosBase:		DS.L	1
+01:00000004 00              	   141: FormatBuffer:		DS.B	80
+01:00000005 *
+                            	   142: 
+
+
+Symbols by name:
+BUFFER_SIZE                      E:00000040
+DosBase                         01:00000000
+DosName                         00:0000010A
+ErrorFormat                     00:0000015D
+FileName                        00:00000116
+First                           00:00000168
+FormatBuffer                    01:00000004
+FormatData                      00:00000170
+FormatText                      00:0000014B
+MEMF_PUBLIC_CLEAR                E:00010001
+MODE_NEWFILE                     E:000003EE
+MODE_OLDFILE                     E:000003ED
+MissingName                     00:0000011F
+OFFSET_BEGINNING                 E:FFFFFFFF
+ReadFormat                      00:00000137
+Second                          00:0000016C
+Start                           00:00000000
+StuffChar                       00:00000106
+SysBase                          E:00000004
+Text                            00:0000012B
+TextLength                       E:0000000B
+_LVOAllocMem                     E:FFFFFF3A
+_LVOClose                        E:FFFFFFDC
+_LVOCloseLibrary                 E:FFFFFE62
+_LVODeleteFile                   E:FFFFFFB8
+_LVOFreeMem                      E:FFFFFF2E
+_LVOIoErr                        E:FFFFFF7C
+_LVOOpen                         E:FFFFFFE2
+_LVOOpenLibrary                  E:FFFFFDD8
+_LVOPutStr                       E:FFFFFC4C
+_LVORawDoFmt                     E:FFFFFDF6
+_LVORead                         E:FFFFFFD6
+_LVOSeek                         E:FFFFFFBE
+_LVOVPrintf                      E:FFFFFC46
+_LVOWrite                        E:FFFFFFD0
+
+Symbols by value:
+FFFFFC46 _LVOVPrintf
+FFFFFC4C _LVOPutStr
+FFFFFDD8 _LVOOpenLibrary
+FFFFFDF6 _LVORawDoFmt
+FFFFFE62 _LVOCloseLibrary
+FFFFFF2E _LVOFreeMem
+FFFFFF3A _LVOAllocMem
+FFFFFF7C _LVOIoErr
+FFFFFFB8 _LVODeleteFile
+FFFFFFBE _LVOSeek
+FFFFFFD0 _LVOWrite
+FFFFFFD6 _LVORead
+FFFFFFDC _LVOClose
+FFFFFFE2 _LVOOpen
+FFFFFFFF OFFSET_BEGINNING
+00000000 Start
+00000000 DosBase
+00000004 FormatBuffer
+00000004 SysBase
+0000000B TextLength
+00000040 BUFFER_SIZE
+00000106 StuffChar
+0000010A DosName
+00000116 FileName
+0000011F MissingName
+0000012B Text
+00000137 ReadFormat
+0000014B FormatText
+0000015D ErrorFormat
+00000168 First
+0000016C Second
+00000170 FormatData
+000003ED MODE_OLDFILE
+000003EE MODE_NEWFILE
+00010001 MEMF_PUBLIC_CLEAR
