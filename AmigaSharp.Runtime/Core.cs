@@ -1,14 +1,18 @@
-using System.Reflection;
 using System.Text;
 using AmigaSharp.Runtime.Cpu;
+using AmigaSharp.Runtime.Dos;
+using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Libraries;
 using AmigaSharp.Runtime.Libraries.Native;
 
 namespace AmigaSharp.Runtime;
 
 /// <summary>
-/// One emulated Amiga: the memory, the CPU state and the HLE libraries.
+/// One emulated Amiga: the memory, the CPU state, the HLE libraries and the process that runs the program.
 /// </summary>
+/// <remarks>
+/// The memory map is the map of an Amiga 2000 with 2 MB of chip RAM and 8 MB of Zorro II fast RAM.
+/// </remarks>
 public sealed class Core
 {
     /// <summary>Address 4 holds the pointer to ExecBase.</summary>
@@ -20,21 +24,26 @@ public sealed class Core
     /// </summary>
     public const uint ExitAddress = 0x00FF_FFF0;
 
-    // The exception vector table uses $000 to $3FF. Allocations start above it and stop below the program hunks.
-    // TODO: Replace this bump allocator with exec memory lists (AllocMem and FreeMem).
-    private const uint FirstFreeAddress = 0x1000;
-    private const uint LastFreeAddress = Loader.HunkLayout.ChipBase;
-    private const uint StackSize = 16 * 1024;
+    // The exception vectors and the other low memory use $000 to $FFF.
+    public const uint ChipStart = 0x1000;
+    public const uint ChipEnd = 0x20_0000;
+    public const uint FastStart = 0x20_0000;
+    public const uint FastEnd = 0xA0_0000;
 
-    // Each library vector is a 6-byte JMP instruction.
-    private const int VectorSize = 6;
+    /// <summary>
+    /// The return addresses of calls from native code to 68000 code. Each level of nesting has its own address.
+    /// No code is at these addresses.
+    /// </summary>
+    public const uint NativeReturnAddress = 0x00FF_FF00;
 
-    private readonly Dictionary<string, Func<Core, AbstractLibrary>> _libraryFactories = new();
-    private readonly Dictionary<string, AbstractLibrary> _librariesByName = new();
-    private readonly Dictionary<uint, AbstractLibrary> _librariesByBase = new();
-    private readonly Dictionary<uint, Action> _vectors = new();
+    private const uint SupervisorStackSize = 8 * 1024;
+
+    /// <summary>The size of the stack of the main process. AmigaDOS gives it to the program at 4(SP).</summary>
+    public const uint StackSize = 64 * 1024;
+
     private readonly Dictionary<uint, Action> _functions = new();
-    private uint _nextFreeAddress = FirstFreeAddress;
+    private readonly List<Func<bool>> _idleHandlers = [];
+    private int _nativeCallDepth;
 
     public Memory Memory { get; } = new();
     public CpuState Cpu { get; }
@@ -42,98 +51,97 @@ public sealed class Core
     /// <summary>Runs the code that has no translated function. A 68000 exception in that code is fatal.</summary>
     public Interpreter Interpreter { get; }
 
+    /// <summary>The free memory of exec.</summary>
+    public MemoryAllocator Allocator { get; }
+
+    public LibraryManager Libraries { get; }
+
+    public DeviceManager Devices { get; }
+
+    public FileSystem FileSystem { get; }
+
+    /// <summary>The stream that the console output goes to.</summary>
+    public Stream Output { get; }
+
+    /// <summary>The stream that the console input comes from.</summary>
+    public Stream Input { get; }
+
+    /// <summary>Messages from the runtime about functions and devices that it does not have.</summary>
+    public TextWriter Log { get; set; } = Console.Error;
+
+    /// <summary>If true, the runtime writes each call to a native library function to <see cref="Log"/>.</summary>
+    public bool TraceLibraryCalls { get; set; }
+
+    /// <summary>The address of ExecBase.</summary>
+    public uint ExecBase { get; }
+
+    /// <summary>The address of the <c>struct Process</c> of the main process. ExecBase.ThisTask points to it.</summary>
+    public uint MainProcess { get; }
+
     /// <summary>The address that the last RTS, RTR or RTE returned to.</summary>
     public uint LastReturnAddress { get; set; }
 
-    /// <summary>The stream that the default output file handle writes to.</summary>
-    public Stream Output { get; }
-
-    public Core(Stream? output = null)
+    /// <param name="output">The console output. The default is the standard output of the host.</param>
+    /// <param name="input">The console input. The default is the standard input of the host.</param>
+    /// <param name="rootDirectory">The host directory of the volume SYS:. The default is the current directory.</param>
+    public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null)
     {
         Cpu = new CpuState(Memory);
         Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };
         Output = output ?? Console.OpenStandardOutput();
+        Input = input ?? Console.OpenStandardInput();
 
-        RegisterLibrary("exec.library", core => new ExecLibrary(core));
-        RegisterLibrary("dos.library", core => new DosLibrary(core));
+        Allocator = new MemoryAllocator(Memory);
+        Allocator.AddRegion(ChipStart, ChipEnd, isChip: true);
+        Allocator.AddRegion(FastStart, FastEnd, isChip: false);
+
+        Libraries = new LibraryManager(this);
+        Devices = new DeviceManager(this);
+        Libraries.Register("exec.library", core => new ExecLibrary(core));
+        Libraries.Register("dos.library", core => new DosLibrary(core));
 
         // Exec is always open.
-        var exec = OpenLibrary("exec.library", 0)!;
-        Memory.Write32(SysBaseAddress, exec.Base);
+        ExecBase = Libraries.Open("exec.library", 0)!.Base;
+        Memory.Write32(SysBaseAddress, ExecBase);
 
-        var stackBottom = Allocate(StackSize);
-        Cpu.Sp = stackBottom + StackSize;
+        FileSystem = new FileSystem(this, rootDirectory ?? Directory.GetCurrentDirectory());
+        MainProcess = CreateMainProcess();
+        Cpu.Ssp = AllocateSystem(SupervisorStackSize) + SupervisorStackSize;
     }
 
-    public void RegisterLibrary(string name, Func<Core, AbstractLibrary> factory)
+    /// <summary>
+    /// Allocates memory for the runtime, from the top of fast memory. The program hunks load at fixed addresses at the
+    /// bottom of each memory region, so this memory does not overlap them. The memory is clear.
+    /// </summary>
+    public uint AllocateSystem(uint size, MemoryFlags flags = MemoryFlags.Any)
     {
-        _libraryFactories[name] = factory;
-    }
-
-    /// <summary>Allocates memory that the program never frees. The address is long-aligned and the memory is zero.</summary>
-    public uint Allocate(uint size)
-    {
-        var address = _nextFreeAddress;
-        var next = (address + size + 3) & ~3u;
-        if (next > LastFreeAddress)
-            throw new OutOfMemoryException($"The allocator has no space for {size} bytes.");
-        _nextFreeAddress = next;
+        var address = Allocator.Allocate(size, flags | MemoryFlags.Public | MemoryFlags.Clear | MemoryFlags.Reverse);
+        if (address == 0)
+            throw new OutOfMemoryException($"The runtime has no memory for {size} bytes.");
         return address;
     }
 
-    public uint AllocateStatic(ReadOnlySpan<byte> bytes)
+    /// <summary>Allocates memory for the runtime and copies the bytes to it.</summary>
+    public uint AllocateSystem(ReadOnlySpan<byte> bytes)
     {
-        var address = Allocate((uint)bytes.Length);
+        var address = AllocateSystem((uint)Math.Max(bytes.Length, 1));
         Memory.WriteBytes(address, bytes);
         return address;
     }
 
+    public void FreeSystem(uint address, uint size) => Allocator.Free(address, size);
+
     /// <summary>
     /// Opens a library by name. Returns null if the library does not exist or if its version is less than the minimum.
     /// </summary>
-    public AbstractLibrary? OpenLibrary(string name, uint minimumVersion)
-    {
-        if (!_librariesByName.TryGetValue(name, out var library))
-        {
-            if (!_libraryFactories.TryGetValue(name, out var factory))
-                return null;
+    public AbstractLibrary? OpenLibrary(string name, uint minimumVersion) => Libraries.Open(name, minimumVersion);
 
-            library = factory(this);
-            PlaceLibrary(library);
-            _librariesByName.Add(name, library);
-            _librariesByBase.Add(library.Base, library);
-        }
-
-        if (library.Version < minimumVersion)
-            return null;
-
-        library.OpenCount++;
-        Memory.Write16(library.Base + LibraryOffsets.OpenCount, library.OpenCount);
-        return library;
-    }
-
-    /// <summary>
-    /// Closes a library. The library stays in memory, because exec expunges libraries only when memory is low.
-    /// </summary>
-    public void CloseLibrary(uint libraryBase)
-    {
-        if (!_librariesByBase.TryGetValue(libraryBase, out var library))
-            throw new InvalidOperationException($"CloseLibrary: no library at ${libraryBase:X6}.");
-        if (library.OpenCount == 0)
-            throw new InvalidOperationException($"CloseLibrary: {library.Name} is not open.");
-
-        library.OpenCount--;
-        Memory.Write16(library.Base + LibraryOffsets.OpenCount, library.OpenCount);
-    }
+    public void RegisterLibrary(string name, Func<Core, AbstractLibrary> factory) => Libraries.Register(name, factory);
 
     /// <summary>Calls the library function at the offset from the library base, as <c>JSR offset(A6)</c> does.</summary>
     public void CallVector(uint libraryBase, short offset)
     {
-        var address = (libraryBase + (uint)offset) & Memory.AddressMask;
-        if (!_vectors.TryGetValue(address, out var function))
-            throw new InvalidOperationException(
-                $"No library function at ${address:X6} (base ${libraryBase:X6}, offset {offset}).");
-        function();
+        CallAddress(ExitAddress, libraryBase + (uint)offset);
     }
 
     /// <summary>Makes a translated function the code at the address.</summary>
@@ -177,9 +185,14 @@ public sealed class Core
     public void Dispatch(uint target)
     {
         target &= Memory.AddressMask;
-        if (_vectors.TryGetValue(target, out var native))
+
+        // A library vector is a JMP to a stub or to a function that SetFunction installed.
+        if (Memory.Read16(target) == 0x4EF9)
+            target = Memory.Read32(target + 2) & Memory.AddressMask;
+
+        if (Libraries.TryGetStub(target, out var native))
         {
-            native();
+            RunNative(target, native);
             LastReturnAddress = Cpu.Pop32();
             return;
         }
@@ -190,16 +203,97 @@ public sealed class Core
             return;
         }
 
-        // The vectors of a library are below its base. An address there with no native function is a library
-        // function that the runtime does not implement.
-        foreach (var library in _librariesByBase.Values)
-        {
-            var negativeSize = Memory.Read16(library.Base + LibraryOffsets.NegativeSize);
-            if (target < library.Base && target >= library.Base - negativeSize)
-                throw new MissingLibraryFunctionException(library.Name, (int)target - (int)library.Base);
-        }
-
         RunInterpreted(target);
+    }
+
+    /// <summary>
+    /// Calls 68000 code from a native function, for example the PutChProc of RawDoFmt. The code returns with RTS, or
+    /// with RTE if <paramref name="supervisorFrame"/> is true. The call then runs in supervisor mode with an
+    /// exception frame on the supervisor stack, as for exec Supervisor.
+    /// </summary>
+    public void CallFromNative(uint address, bool supervisorFrame = false)
+    {
+        var returnAddress = NativeReturnAddress - (uint)_nativeCallDepth * 2;
+        _nativeCallDepth++;
+        try
+        {
+            if (supervisorFrame)
+            {
+                var sr = Cpu.Sr;
+                Cpu.SetSupervisor(true);
+                Cpu.Push32(returnAddress);
+                Cpu.Push16(sr);
+            }
+            else
+            {
+                Cpu.Push32(returnAddress);
+            }
+
+            try
+            {
+                Dispatch(address);
+            }
+            catch (StackUnwindException unwind) when (unwind.ReturnAddress == returnAddress)
+            {
+                return;
+            }
+
+            if (LastReturnAddress != returnAddress)
+                throw new StackUnwindException(LastReturnAddress);
+        }
+        finally
+        {
+            _nativeCallDepth--;
+        }
+    }
+
+    /// <summary>
+    /// Adds a handler that the runtime calls while the program waits for signals. A device, a timer or an interrupt
+    /// can send a signal from it. The handler returns true if it did something.
+    /// </summary>
+    public void AddIdleHandler(Func<bool> handler) => _idleHandlers.Add(handler);
+
+    /// <summary>exec Wait: returns the signals in the mask that the task received, and clears them.</summary>
+    /// <exception cref="WaitDeadlockException">No handler can send a signal.</exception>
+    public uint WaitForSignals(uint mask)
+    {
+        var address = Memory.Read32(ExecBase + ExecBaseOffsets.ThisTask) + TaskOffsets.SignalsReceived;
+        while (true)
+        {
+            var received = Memory.Read32(address);
+            if ((received & mask) != 0)
+            {
+                Memory.Write32(address, received & ~mask);
+                return received & mask;
+            }
+
+            var progress = false;
+            foreach (var handler in _idleHandlers.ToList())
+                progress |= handler();
+            if (!progress)
+                throw new WaitDeadlockException(mask);
+        }
+    }
+
+    /// <summary>exec Signal. The runtime has one task, so the signals go to it.</summary>
+    public void Signal(uint task, uint signals)
+    {
+        var address = task + TaskOffsets.SignalsReceived;
+        Memory.Write32(address, Memory.Read32(address) | signals);
+    }
+
+    /// <summary>Puts a message at the end of the message list of a port, and does the action of the port.</summary>
+    public void DeliverMessage(uint port, uint message)
+    {
+        ExecList.AddTail(Memory, port + MsgPortOffsets.MessageList, message);
+        switch (Memory.Read8(port + MsgPortOffsets.Flags) & 3)
+        {
+            case MsgPortOffsets.PaSignal:
+                Signal(Memory.Read32(port + MsgPortOffsets.SignalTask), 1u << Memory.Read8(port + MsgPortOffsets.SignalBit));
+                break;
+            case 1:
+                throw new NotSupportedException("A message port with PA_SOFTINT is not supported yet.");
+        }
     }
 
     /// <summary>Records the return address that the translated code popped for RTS, RTR or RTE.</summary>
@@ -220,9 +314,9 @@ public sealed class Core
         while (true)
         {
             var pc = Cpu.Pc & Memory.AddressMask;
-            if (_vectors.TryGetValue(pc, out var native))
+            if (Libraries.TryGetStub(pc, out var native))
             {
-                native();
+                RunNative(pc, native);
                 Cpu.Pc = Cpu.Pop32();
             }
             else if (_functions.TryGetValue(pc, out var function))
@@ -247,32 +341,55 @@ public sealed class Core
         }
     }
 
-    private void PlaceLibrary(AbstractLibrary library)
+    private void RunNative(uint stub, Action native)
     {
-        var functions = library.GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Select(method => (method, attribute: method.GetCustomAttribute<LibraryFunctionOffsetAttribute>()))
-            .Where(function => function.attribute != null)
-            .ToList();
-
-        // The vectors are below the base and the library structure is above it.
-        var negativeSize = functions.Count == 0 ? 0 : functions.Max(function => -function.attribute!.Offset) + VectorSize;
-        negativeSize = (negativeSize + 3) & ~3;
-        var start = Allocate((uint)(negativeSize + library.PositiveSize));
-        library.Base = start + (uint)negativeSize;
-
-        var name = AllocateStatic(Encoding.Latin1.GetBytes(library.Name + "\0"));
-        Memory.Write8(library.Base + LibraryOffsets.NodeType, LibraryOffsets.NodeTypeLibrary);
-        Memory.Write32(library.Base + LibraryOffsets.NodeName, name);
-        Memory.Write16(library.Base + LibraryOffsets.NegativeSize, (ushort)negativeSize);
-        Memory.Write16(library.Base + LibraryOffsets.PositiveSize, library.PositiveSize);
-        Memory.Write16(library.Base + LibraryOffsets.Version, library.Version);
-        Memory.Write16(library.Base + LibraryOffsets.Revision, library.Revision);
-
-        foreach (var (method, attribute) in functions)
+        if (TraceLibraryCalls)
         {
-            var address = (library.Base + (uint)attribute!.Offset) & Memory.AddressMask;
-            _vectors.Add(address, method.CreateDelegate<Action>(library));
+            var d = Cpu.D;
+            var a = Cpu.A;
+            Log.WriteLine($"{Libraries.StubName(stub)} from ${Memory.Read32(Cpu.Sp):X6}: "
+                          + $"D0=${d[0]:X} D1=${d[1]:X} D2=${d[2]:X} D3=${d[3]:X} A0=${a[0]:X} A1=${a[1]:X}");
         }
+
+        native();
+    }
+
+    /// <summary>
+    /// Makes the process that runs the program: a <c>struct Process</c> with a message port, a stack, and console
+    /// input and output. <see cref="TranslatedProgram"/> adds the CLI structure.
+    /// </summary>
+    private uint CreateMainProcess()
+    {
+        var process = AllocateSystem(ProcessOffsets.Size);
+        var name = AllocateSystem(Encoding.Latin1.GetBytes("AmigaSharp\0"));
+        Memory.Write8(process + NodeOffsets.Type, NodeType.Process);
+        Memory.Write32(process + NodeOffsets.Name, name);
+        Memory.Write8(process + TaskOffsets.State, TaskOffsets.StateRunning);
+        // Signals 0 to 15 belong to the system.
+        Memory.Write32(process + TaskOffsets.SignalsAllocated, 0x0000_FFFF);
+        ExecList.Initialize(Memory, process + TaskOffsets.MemEntry);
+
+        var stackLower = AllocateSystem(StackSize);
+        var stackUpper = stackLower + StackSize;
+        Memory.Write32(process + TaskOffsets.StackLower, stackLower);
+        Memory.Write32(process + TaskOffsets.StackUpper, stackUpper);
+        Memory.Write32(process + ProcessOffsets.StackSize, StackSize);
+        Memory.Write32(process + ProcessOffsets.StackBase, stackUpper >> 2);
+        Cpu.Sp = stackUpper;
+
+        // pr_MsgPort signals the process with SIGB_DOS (bit 8).
+        var port = process + ProcessOffsets.MsgPort;
+        Memory.Write8(port + NodeOffsets.Type, NodeType.MsgPort);
+        Memory.Write8(port + MsgPortOffsets.Flags, MsgPortOffsets.PaSignal);
+        Memory.Write8(port + MsgPortOffsets.SignalBit, 8);
+        Memory.Write32(port + MsgPortOffsets.SignalTask, process);
+        ExecList.Initialize(Memory, port + MsgPortOffsets.MessageList, NodeType.Message);
+
+        Memory.Write32(process + ProcessOffsets.InputStream, FileSystem.OpenConsole());
+        Memory.Write32(process + ProcessOffsets.OutputStream, FileSystem.OpenConsole());
+        Memory.Write32(process + ProcessOffsets.TaskNumber, 1);
+
+        Memory.Write32(ExecBase + ExecBaseOffsets.ThisTask, process);
+        return process;
     }
 }
