@@ -44,6 +44,10 @@ public sealed class Display
     private readonly uint[] _canvas = new uint[Width * Height];
     private readonly uint[] _front = new uint[Width * Height];
 
+    // The address where the copper starts in the next frame. The copper starts at COP1LC at the start of the frame,
+    // before the program handles the vertical blank. A change of COP1LC in the handler is for the frame after that.
+    private uint? _frameStart;
+
     public Display(Memory memory, CustomChips custom)
     {
         _memory = memory;
@@ -66,6 +70,14 @@ public sealed class Display
             Array.Copy(_front, target, Width * Height);
     }
 
+    /// <summary>
+    /// The program wrote to COPJMP1 or COPJMP2. The copper starts again at COP1LC or COP2LC in the current frame.
+    /// </summary>
+    public void CopperJumped(int list) =>
+        _frameStart = Location(list == 1 ? CustomRegister.Cop1lc : CustomRegister.Cop2lc);
+
+    private uint Location(int offset) => (uint)(_custom[offset] << 16 | _custom[offset + 2]);
+
     /// <summary>Runs the copper and makes the picture of one frame.</summary>
     /// <param name="longFrame">True for the long frame of an interlaced display, which has 263 lines.</param>
     /// <param name="render">False to run only the copper, for a frame that the host does not show.</param>
@@ -79,7 +91,7 @@ public sealed class Display
         var dmacon = _custom.Dmacon;
         var copper = (dmacon & (DmaEnable | CopperDma)) == (DmaEnable | CopperDma);
         if (copper)
-            _copper.Start((uint)(_custom[CustomRegister.Cop1lc] << 16 | _custom[CustomRegister.Cop1lc + 2]));
+            _copper.Start(_frameStart ?? Location(CustomRegister.Cop1lc));
         else
             _copper.Stop();
 
@@ -94,6 +106,7 @@ public sealed class Display
         }
 
         IsInterlaced = (_state[CustomRegister.Bplcon0 >> 1] & Interlace) != 0;
+        _frameStart = Location(CustomRegister.Cop1lc);
         if (!render)
             return;
         lock (_frameLock)

@@ -23,6 +23,7 @@ public sealed class Chipset : IHardware
         CiaB = new Cia(() => Beam.TotalLines);
         Display = new Display(memory, Custom);
         Custom.FrameEnded += Display.RunFrame;
+        Custom.CopperJump += Display.CopperJumped;
     }
 
     public Beam Beam { get; }
