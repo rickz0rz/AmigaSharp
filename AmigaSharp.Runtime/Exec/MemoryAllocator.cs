@@ -108,7 +108,8 @@ public sealed class MemoryAllocator(Memory memory)
     /// <exception cref="InvalidOperationException">The memory is already free, or it is not in a region.</exception>
     public void Free(uint address, uint size)
     {
-        if (size == 0)
+        // Cleanup code often frees a null pointer. Exec does nothing for it.
+        if (size == 0 || address == 0)
             return;
 
         var start = address & ~(BlockSize - 1);

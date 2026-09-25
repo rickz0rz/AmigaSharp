@@ -14,7 +14,7 @@ public sealed class DeviceManager(Core core)
     public int Open(string name, uint unit, uint request, uint flags)
     {
         var memory = core.Memory;
-        if (core.Libraries.Open(name, 0) is not AbstractDevice device)
+        if (core.Libraries.Open(name, 0, logMissing: false) is not AbstractDevice device)
         {
             core.Log.WriteLine($"OpenDevice: the runtime has no {name}.");
             return IoRequestOffsets.ErrorOpenFail;
@@ -34,7 +34,8 @@ public sealed class DeviceManager(Core core)
 
     public void Close(uint request)
     {
-        var device = DeviceOf(request);
+        if (DeviceOf(request) is not { } device)
+            return;
         device.CloseUnit(request);
         core.Libraries.Close(device.Base);
         core.Memory.Write32(request + IoRequestOffsets.Device, 0xFFFF_FFFF);
@@ -47,7 +48,10 @@ public sealed class DeviceManager(Core core)
         memory.Write8(request + NodeOffsets.Type, NodeType.Message);
         memory.Write8(request + IoRequestOffsets.Error, 0);
         _pending.Add(request);
-        DeviceOf(request).BeginIO(request);
+        if (DeviceOf(request) is { } device)
+            device.BeginIO(request);
+        else
+            Complete(request, IoRequestOffsets.ErrorOpenFail);
     }
 
     /// <summary>
@@ -71,7 +75,7 @@ public sealed class DeviceManager(Core core)
 
     public bool IsComplete(uint request) => !_pending.Contains(request);
 
-    public int Abort(uint request) => IsComplete(request) ? 0 : DeviceOf(request).AbortIO(request);
+    public int Abort(uint request) => IsComplete(request) || DeviceOf(request) is not { } device ? 0 : device.AbortIO(request);
 
     /// <summary>The signal of the reply port of the request.</summary>
     public uint ReplySignal(uint request)
@@ -80,10 +84,18 @@ public sealed class DeviceManager(Core core)
         return port == 0 ? 0 : 1u << core.Memory.Read8(port + MsgPortOffsets.SignalBit);
     }
 
-    private AbstractDevice DeviceOf(uint request)
+    /// <summary>
+    /// The device of a request, or null if the request has no open device. A program can use a request after
+    /// OpenDevice failed, for example in its cleanup code. The runtime then ignores the request and logs it.
+    /// </summary>
+    private AbstractDevice? DeviceOf(uint request)
     {
-        var device = core.Memory.Read32(request + IoRequestOffsets.Device);
-        return core.Libraries.FindByBase(device) as AbstractDevice
-               ?? throw new InvalidOperationException($"The I/O request at ${request:X6} has no open device.");
+        if (request == 0)
+            return null;
+        var address = core.Memory.Read32(request + IoRequestOffsets.Device);
+        if (core.Libraries.FindByBase(address) is AbstractDevice device)
+            return device;
+        core.Log.WriteLine($"The I/O request at ${request:X6} has no open device.");
+        return null;
     }
 }

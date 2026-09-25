@@ -1,0 +1,212 @@
+Sections:
+00: "code" (0-11D)
+01: "variables" (0-8C)
+
+
+Source: "graphics.s"
+                            	     1: ; Draws into a bitmap with graphics.library and returns the address of the BitMap in D0.
+                            	     2: ; Build: vasmm68k_mot -Fhunkexe -nosym -L graphics.lst -o graphics graphics.s
+                            	     3: ;
+                            	     4: ; The drawing, in order:
+                            	     5: ;   1. A rectangle in pen 1 from (2,2) to (20,12).
+                            	     6: ;   2. A line in pen 2 from (24,2) to (40,18).
+                            	     7: ;   3. The text "Hi" in pen 3 with JAM1, on the baseline at (44,10).
+                            	     8: ;   4. A rectangle from (10,8) to (30,16) in COMPLEMENT mode, which inverts the bits.
+                            	     9: ;   5. A copy of the area from (0,0) to (23,15) to (64,16).
+                            	    10: 
+                            	    11: SysBase			= 4
+                            	    12: _LVOCloseLibrary	= -414
+                            	    13: _LVOOpenLibrary		= -552
+                            	    14: _LVOText		= -60
+                            	    15: _LVOInitRastPort	= -198
+                            	    16: _LVOSetRast		= -234
+                            	    17: _LVOMove		= -240
+                            	    18: _LVODraw		= -246
+                            	    19: _LVORectFill		= -306
+                            	    20: _LVOSetAPen		= -342
+                            	    21: _LVOSetDrMd		= -354
+                            	    22: _LVOInitBitMap		= -390
+                            	    23: _LVOAllocRaster		= -492
+                            	    24: _LVOBltBitMapRastPort	= -606
+                            	    25: JAM1			= 0
+                            	    26: COMPLEMENT		= 2
+                            	    27: WIDTH			= 96
+                            	    28: HEIGHT			= 32
+                            	    29: DEPTH			= 2
+                            	    30: bm_Planes		= 8
+                            	    31: rp_BitMap		= 4
+                            	    32: 
+                            	    33: 			SECTION	code,CODE
+                            	    34: 
+00:00000000 48E73F3E        	    35: Start:			MOVEM.L	D2-D7/A2-A6,-(A7)
+00:00000004 2C780004        	    36: 			MOVEA.L	SysBase,A6
+00:00000008 43FA0100        	    37: 			LEA	GraphicsName(PC),A1
+00:0000000C 7000            	    38: 			MOVEQ	#0,D0
+00:0000000E 4EAEFDD8        	    39: 			JSR	_LVOOpenLibrary(A6)
+00:00000012 4A80            	    40: 			TST.L	D0
+00:00000014 670000EC        	    41: 			BEQ	.failed
+00:00000018 2C40            	    42: 			MOVEA.L	D0,A6
+                            	    43: 
+                            	    44: ; Make the bitmap and its two planes, and a RastPort for it.
+00:0000001A 41F900000000    	    45: 			LEA	Bitmap,A0
+00:00000020 7002            	    46: 			MOVEQ	#DEPTH,D0
+00:00000022 7260            	    47: 			MOVEQ	#WIDTH,D1
+00:00000024 7420            	    48: 			MOVEQ	#HEIGHT,D2
+00:00000026 4EAEFE7A        	    49: 			JSR	_LVOInitBitMap(A6)
+00:0000002A 7060            	    50: 			MOVEQ	#WIDTH,D0
+00:0000002C 7220            	    51: 			MOVEQ	#HEIGHT,D1
+00:0000002E 4EAEFE14        	    52: 			JSR	_LVOAllocRaster(A6)
+00:00000032 23C000000008    	    53: 			MOVE.L	D0,Bitmap+bm_Planes
+00:00000038 7060            	    54: 			MOVEQ	#WIDTH,D0
+00:0000003A 7220            	    55: 			MOVEQ	#HEIGHT,D1
+00:0000003C 4EAEFE14        	    56: 			JSR	_LVOAllocRaster(A6)
+00:00000040 23C00000000C    	    57: 			MOVE.L	D0,Bitmap+bm_Planes+4
+00:00000046 43F900000028    	    58: 			LEA	Port,A1
+00:0000004C 4EAEFF3A        	    59: 			JSR	_LVOInitRastPort(A6)
+00:00000050 45F900000028    	    60: 			LEA	Port,A2
+00:00000056 257C000000000004	    61: 			MOVE.L	#Bitmap,rp_BitMap(A2)
+00:0000005E 224A            	    62: 			MOVEA.L	A2,A1
+00:00000060 7000            	    63: 			MOVEQ	#0,D0
+00:00000062 4EAEFF16        	    64: 			JSR	_LVOSetRast(A6)
+                            	    65: 
+                            	    66: ; 1. The rectangle.
+00:00000066 224A            	    67: 			MOVEA.L	A2,A1
+00:00000068 7001            	    68: 			MOVEQ	#1,D0
+00:0000006A 4EAEFEAA        	    69: 			JSR	_LVOSetAPen(A6)
+00:0000006E 224A            	    70: 			MOVEA.L	A2,A1
+00:00000070 7002            	    71: 			MOVEQ	#2,D0
+00:00000072 7202            	    72: 			MOVEQ	#2,D1
+00:00000074 7414            	    73: 			MOVEQ	#20,D2
+00:00000076 760C            	    74: 			MOVEQ	#12,D3
+00:00000078 4EAEFECE        	    75: 			JSR	_LVORectFill(A6)
+                            	    76: 
+                            	    77: ; 2. The line.
+00:0000007C 224A            	    78: 			MOVEA.L	A2,A1
+00:0000007E 7002            	    79: 			MOVEQ	#2,D0
+00:00000080 4EAEFEAA        	    80: 			JSR	_LVOSetAPen(A6)
+00:00000084 224A            	    81: 			MOVEA.L	A2,A1
+00:00000086 7018            	    82: 			MOVEQ	#24,D0
+00:00000088 7202            	    83: 			MOVEQ	#2,D1
+00:0000008A 4EAEFF10        	    84: 			JSR	_LVOMove(A6)
+00:0000008E 224A            	    85: 			MOVEA.L	A2,A1
+00:00000090 7028            	    86: 			MOVEQ	#40,D0
+00:00000092 7212            	    87: 			MOVEQ	#18,D1
+00:00000094 4EAEFF0A        	    88: 			JSR	_LVODraw(A6)
+                            	    89: 
+                            	    90: ; 3. The text.
+00:00000098 224A            	    91: 			MOVEA.L	A2,A1
+00:0000009A 7003            	    92: 			MOVEQ	#3,D0
+00:0000009C 4EAEFEAA        	    93: 			JSR	_LVOSetAPen(A6)
+00:000000A0 224A            	    94: 			MOVEA.L	A2,A1
+00:000000A2 7000            	    95: 			MOVEQ	#JAM1,D0
+00:000000A4 4EAEFE9E        	    96: 			JSR	_LVOSetDrMd(A6)
+00:000000A8 224A            	    97: 			MOVEA.L	A2,A1
+00:000000AA 702C            	    98: 			MOVEQ	#44,D0
+00:000000AC 720A            	    99: 			MOVEQ	#10,D1
+00:000000AE 4EAEFF10        	   100: 			JSR	_LVOMove(A6)
+00:000000B2 224A            	   101: 			MOVEA.L	A2,A1
+00:000000B4 41FA0065        	   102: 			LEA	HiText(PC),A0
+00:000000B8 7002            	   103: 			MOVEQ	#2,D0
+00:000000BA 4EAEFFC4        	   104: 			JSR	_LVOText(A6)
+                            	   105: 
+                            	   106: ; 4. The inverted rectangle.
+00:000000BE 224A            	   107: 			MOVEA.L	A2,A1
+00:000000C0 7002            	   108: 			MOVEQ	#COMPLEMENT,D0
+00:000000C2 4EAEFE9E        	   109: 			JSR	_LVOSetDrMd(A6)
+00:000000C6 224A            	   110: 			MOVEA.L	A2,A1
+00:000000C8 700A            	   111: 			MOVEQ	#10,D0
+00:000000CA 7208            	   112: 			MOVEQ	#8,D1
+00:000000CC 741E            	   113: 			MOVEQ	#30,D2
+00:000000CE 7610            	   114: 			MOVEQ	#16,D3
+00:000000D0 4EAEFECE        	   115: 			JSR	_LVORectFill(A6)
+                            	   116: 
+                            	   117: ; 5. The copy. Minterm $C0 copies the source.
+00:000000D4 41F900000000    	   118: 			LEA	Bitmap,A0
+00:000000DA 7000            	   119: 			MOVEQ	#0,D0
+00:000000DC 7200            	   120: 			MOVEQ	#0,D1
+00:000000DE 224A            	   121: 			MOVEA.L	A2,A1
+00:000000E0 7440            	   122: 			MOVEQ	#64,D2
+00:000000E2 7610            	   123: 			MOVEQ	#16,D3
+00:000000E4 7818            	   124: 			MOVEQ	#24,D4
+00:000000E6 7A10            	   125: 			MOVEQ	#16,D5
+00:000000E8 7C60DC46        	   126: 			MOVE.L	#$C0,D6
+00:000000EC 4EAEFDA2        	   127: 			JSR	_LVOBltBitMapRastPort(A6)
+                            	   128: 
+00:000000F0 224E            	   129: 			MOVEA.L	A6,A1
+00:000000F2 2C780004        	   130: 			MOVEA.L	SysBase,A6
+00:000000F6 4EAEFE62        	   131: 			JSR	_LVOCloseLibrary(A6)
+00:000000FA 203C00000000    	   132: 			MOVE.L	#Bitmap,D0
+00:00000100 6002            	   133: 			BRA.S	.exit
+                            	   134: 
+00:00000102 7000            	   135: .failed:		MOVEQ	#0,D0
+00:00000104 4CDF7CFC        	   136: .exit:			MOVEM.L	(A7)+,D2-D7/A2-A6
+00:00000108 4E75            	   137: 			RTS
+                            	   138: 
+00:0000010A 6772617068696373	   139: GraphicsName:		DC.B	"graphics.library",0
+00:00000112 2E6C696272617279
+00:0000011A 00
+00:0000011B 4869            	   140: HiText:			DC.B	"Hi"
+                            	   141: 
+                            	   142: 			SECTION	variables,BSS
+01:00000000 00              	   143: Bitmap:			DS.B	40
+01:00000001 *
+01:00000028 00              	   144: Port:			DS.B	100
+01:00000029 *
+                            	   145: 
+
+
+Symbols by name:
+Bitmap                          01:00000000
+COMPLEMENT                       E:00000002
+DEPTH                            E:00000002
+GraphicsName                    00:0000010A
+HEIGHT                           E:00000020
+HiText                          00:0000011B
+JAM1                             E:00000000
+Port                            01:00000028
+Start                           00:00000000
+SysBase                          E:00000004
+WIDTH                            E:00000060
+_LVOAllocRaster                  E:FFFFFE14
+_LVOBltBitMapRastPort            E:FFFFFDA2
+_LVOCloseLibrary                 E:FFFFFE62
+_LVODraw                         E:FFFFFF0A
+_LVOInitBitMap                   E:FFFFFE7A
+_LVOInitRastPort                 E:FFFFFF3A
+_LVOMove                         E:FFFFFF10
+_LVOOpenLibrary                  E:FFFFFDD8
+_LVORectFill                     E:FFFFFECE
+_LVOSetAPen                      E:FFFFFEAA
+_LVOSetDrMd                      E:FFFFFE9E
+_LVOSetRast                      E:FFFFFF16
+_LVOText                         E:FFFFFFC4
+bm_Planes                        E:00000008
+rp_BitMap                        E:00000004
+
+Symbols by value:
+FFFFFDA2 _LVOBltBitMapRastPort
+FFFFFDD8 _LVOOpenLibrary
+FFFFFE14 _LVOAllocRaster
+FFFFFE62 _LVOCloseLibrary
+FFFFFE7A _LVOInitBitMap
+FFFFFE9E _LVOSetDrMd
+FFFFFEAA _LVOSetAPen
+FFFFFECE _LVORectFill
+FFFFFF0A _LVODraw
+FFFFFF10 _LVOMove
+FFFFFF16 _LVOSetRast
+FFFFFF3A _LVOInitRastPort
+FFFFFFC4 _LVOText
+00000000 Bitmap
+00000000 JAM1
+00000000 Start
+00000002 COMPLEMENT
+00000002 DEPTH
+00000004 SysBase
+00000004 rp_BitMap
+00000008 bm_Planes
+00000020 HEIGHT
+00000028 Port
+00000060 WIDTH
+0000010A GraphicsName
+0000011B HiText

@@ -24,8 +24,8 @@ public sealed class LibraryManager(Core core)
     private readonly Dictionary<uint, AbstractLibrary> _byBase = new();
     private readonly Dictionary<uint, Action> _stubs = new();
     private readonly Dictionary<uint, string> _stubNames = new();
-    private readonly Dictionary<string, Func<Core, uint>> _resourceFactories = new();
-    private readonly Dictionary<string, uint> _resources = new();
+    private readonly Dictionary<string, Func<Core, AbstractLibrary>> _resourceFactories = new();
+    private readonly Dictionary<string, AbstractLibrary> _resources = new();
     private uint _nextStub = StubBase;
     private uint _execBase;
 
@@ -36,8 +36,8 @@ public sealed class LibraryManager(Core core)
         _factories[name] = factory;
     }
 
-    /// <summary>Registers a resource. The factory makes the resource and returns its base.</summary>
-    public void RegisterResource(string name, Func<Core, uint> factory)
+    /// <summary>Registers a resource. A resource has a base and a jump table, as a library does.</summary>
+    public void RegisterResource(string name, Func<Core, AbstractLibrary> factory)
     {
         _resourceFactories[name] = factory;
     }
@@ -46,14 +46,33 @@ public sealed class LibraryManager(Core core)
     public uint OpenResource(string name)
     {
         if (_resources.TryGetValue(name, out var existing))
-            return existing;
+            return existing.Base;
         if (!_resourceFactories.TryGetValue(name, out var factory))
         {
             core.Log.WriteLine($"OpenResource: the runtime has no {name}.");
             return 0;
         }
 
-        return _resources[name] = factory(core);
+        var resource = factory(core);
+        Place(resource);
+        _resources[name] = resource;
+        _byBase.Add(resource.Base, resource);
+        return resource.Base;
+    }
+
+    /// <summary>
+    /// The instance of a library, for another library that needs it. The library is made if it is not in memory yet.
+    /// The open count does not change.
+    /// </summary>
+    public T Instance<T>(string name) where T : AbstractLibrary
+    {
+        if (!_byName.TryGetValue(name, out var library))
+        {
+            library = Open(name, 0) ?? throw new InvalidOperationException($"The runtime has no {name}.");
+            Close(library.Base);
+        }
+
+        return (T)library;
     }
 
     /// <summary>The native function of a stub, if the address is a stub.</summary>
@@ -67,7 +86,7 @@ public sealed class LibraryManager(Core core)
     /// <summary>
     /// Opens a library by name. Returns null if the library does not exist or if its version is less than the minimum.
     /// </summary>
-    public AbstractLibrary? Open(string name, uint minimumVersion)
+    public AbstractLibrary? Open(string name, uint minimumVersion, bool logMissing = true)
     {
         // A program can give a path, for example "libs:diskfont.library".
         var fileName = name[(name.LastIndexOfAny([':', '/']) + 1)..];
@@ -75,7 +94,8 @@ public sealed class LibraryManager(Core core)
         {
             if (!_factories.TryGetValue(fileName, out var factory))
             {
-                core.Log.WriteLine($"OpenLibrary: the runtime has no {name}.");
+                if (logMissing)
+                    core.Log.WriteLine($"OpenLibrary: the runtime has no {name}.");
                 return null;
             }
 
@@ -171,7 +191,9 @@ public sealed class LibraryManager(Core core)
         // device list.
         if (_execBase == 0)
             _execBase = library.Base;
-        var list = library is AbstractDevice ? ExecBaseOffsets.DeviceList : ExecBaseOffsets.LibraryList;
+        var list = library is AbstractDevice ? ExecBaseOffsets.DeviceList
+            : library.Name.EndsWith(".resource", StringComparison.Ordinal) ? ExecBaseOffsets.ResourceList
+            : ExecBaseOffsets.LibraryList;
         ExecList.AddTail(memory, _execBase + list, library.Base);
     }
 

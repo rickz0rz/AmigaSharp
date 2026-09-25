@@ -75,6 +75,9 @@ public sealed class FileSystem
     {
         _core = core;
         AddVolume("SYS", rootDirectory);
+        // The standard assigns of AmigaDOS point to directories of SYS:.
+        foreach (var (assign, directory) in new[] { ("C", "C"), ("S", "S"), ("L", "L"), ("LIBS", "Libs"), ("DEVS", "Devs"), ("FONTS", "Fonts") })
+            AddVolume(assign, Path.Combine(rootDirectory, directory));
     }
 
     /// <summary>The volume of names that have no volume and of the first current directory.</summary>
