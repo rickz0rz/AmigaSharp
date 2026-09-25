@@ -10,6 +10,7 @@ the executable and the listing, so they do not need vasm.
 | `FileIO` | File access through `dos.library`, `AllocMem`, `RawDoFmt` with a 68000 PutChProc, `IoErr`, and a BSS hunk. |
 | `Graphics` | Drawing with `graphics.library`: `RectFill`, `Draw`, `Text` with JAM1, COMPLEMENT mode, and `BltBitMapRastPort`. |
 | `Serial` | Interrupts and the serial port: `serial.device`, an RBF handler that `SetIntVector` installs, and `Wait` for a signal from the handler. |
+| `Tasks` | A second process from `CreateProc` with a segment list in memory, as SAS/C programs make it. The tasks wait for each other in busy loops, so the scheduler must switch them. |
 | `Fonts` | A disk font for the tests: `test.font` size 9, with proportional characters and a kern. It has no listing, because the tests only load it. Build it with `vasmm68k_mot -Fhunkexe -nosym -o test/9 test9.s`. The contents file `test.font` is binary data. |
 
 ## Rebuild a sample

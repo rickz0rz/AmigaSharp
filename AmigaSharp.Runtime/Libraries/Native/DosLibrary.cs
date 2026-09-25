@@ -174,11 +174,19 @@ public class DosLibrary(Core core) : AbstractLibrary
     // process = CreateProc(name, pri, segList, stackSize)
     // D0                   D1    D2   D3       D4
     [LibraryFunctionOffset(-138)]
+    // The process runs the code of the first segment of the segment list: 4 bytes after the start, because the first
+    // long of a segment is the BPTR to the next segment. Returns the message port of the process.
     public uint CreateProc([D1] uint name, [D2] int priority, [D3] uint segList, [D4] uint stackSize)
     {
-        core.Log.WriteLine($"CreateProc({_memory.ReadCString(name)}): the runtime has only one process.");
-        SetError(DosError.NoFreeStore);
-        return 0;
+        var parent = Process;
+        var process = core.CreateProcess(_memory.ReadCString(name), (sbyte)priority, stackSize);
+        _memory.Write32(process + ProcessOffsets.SegList, segList);
+        foreach (var field in new[] { ProcessOffsets.CurrentDir, ProcessOffsets.InputStream, ProcessOffsets.OutputStream, ProcessOffsets.WindowPtr })
+            _memory.Write32(process + field, _memory.Read32(parent + field));
+
+        var entry = (segList << 2) + 4;
+        core.Scheduler.Start(process, entry, _memory.Read32(process + TaskOffsets.StackUpper));
+        return process + ProcessOffsets.MsgPort;
     }
 
     // ds = DateStamp(ds)
@@ -199,8 +207,9 @@ public class DosLibrary(Core core) : AbstractLibrary
     [LibraryFunctionOffset(-198)]
     public void Delay([D1] int ticks)
     {
+        // Other tasks run during the delay.
         if (ticks > 0)
-            Thread.Sleep(ticks * 20);
+            core.Scheduler.Delay(TimeSpan.FromSeconds(ticks / 50.0));
     }
 
     // status = IsInteractive(file)

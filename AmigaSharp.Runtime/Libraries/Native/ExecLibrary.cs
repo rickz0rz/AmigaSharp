@@ -179,8 +179,12 @@ public class ExecLibrary(Core core) : AbstractLibrary
     {
         if (name == 0)
             return ThisTask;
-        var taskName = _memory.Read32(ThisTask + NodeOffsets.Name);
-        return taskName != 0 && _memory.ReadCString(taskName) == _memory.ReadCString(name) ? ThisTask : 0;
+        var wanted = _memory.ReadCString(name);
+        return core.Scheduler.Tasks.FirstOrDefault(task =>
+        {
+            var taskName = _memory.Read32(task + NodeOffsets.Name);
+            return taskName != 0 && _memory.ReadCString(taskName) == wanted;
+        });
     }
 
     // oldPriority = SetTaskPri(task, priority)

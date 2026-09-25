@@ -70,6 +70,8 @@ public sealed class Core
 
     public InterruptDispatcher Interrupts { get; }
 
+    public Scheduler Scheduler { get; }
+
     /// <summary>The stream that the console output goes to.</summary>
     public Stream Output { get; }
 
@@ -129,7 +131,10 @@ public sealed class Core
         Memory.Write32(SysBaseAddress, ExecBase);
 
         FileSystem = new FileSystem(this, rootDirectory ?? Directory.GetCurrentDirectory());
-        MainProcess = CreateMainProcess();
+        MainProcess = CreateProcess("AmigaSharp", 0, StackSize);
+        Cpu.Sp = Memory.Read32(MainProcess + TaskOffsets.StackUpper);
+        Memory.Write32(ExecBase + ExecBaseOffsets.ThisTask, MainProcess);
+        Scheduler = new Scheduler(this, MainProcess);
         Cpu.Ssp = AllocateSystem(SupervisorStackSize) + SupervisorStackSize;
     }
 
@@ -285,30 +290,44 @@ public sealed class Core
     /// <exception cref="WaitDeadlockException">No interrupt, device or idle handler can send a signal.</exception>
     public uint WaitForSignals(uint mask)
     {
-        var address = Memory.Read32(ExecBase + ExecBaseOffsets.ThisTask) + TaskOffsets.SignalsReceived;
-        while (true)
+        var task = Memory.Read32(ExecBase + ExecBaseOffsets.ThisTask);
+        var address = task + TaskOffsets.SignalsReceived;
+        Memory.Write32(task + TaskOffsets.SignalsWaited, mask);
+        try
         {
-            var received = Memory.Read32(address);
-            if ((received & mask) != 0)
+            while (true)
             {
-                Memory.Write32(address, received & ~mask);
-                return received & mask;
+                var received = Memory.Read32(address);
+                if ((received & mask) != 0)
+                {
+                    Memory.Write32(address, received & ~mask);
+                    return received & mask;
+                }
+
+                PollNow();
+                if ((Memory.Read32(address) & mask) != 0)
+                    continue;
+
+                // Another task can run while this task waits.
+                if (Scheduler.WaitForOtherTask(mask))
+                    continue;
+
+                var progress = false;
+                foreach (var handler in _idleHandlers.ToList())
+                    progress |= handler();
+                if (progress)
+                    continue;
+                if (!Interrupts.CanInterrupt() && !Devices.HasPendingRequests && !Scheduler.OtherTaskCanRun)
+                    throw new WaitDeadlockException(mask);
+
+                var clock = Chipset.Beam.Clock;
+                clock.WaitUntil(clock.Elapsed + IdleStep);
             }
-
-            PollNow();
-            if ((Memory.Read32(address) & mask) != 0)
-                continue;
-
-            var progress = false;
-            foreach (var handler in _idleHandlers.ToList())
-                progress |= handler();
-            if (progress)
-                continue;
-            if (!Interrupts.CanInterrupt() && !Devices.HasPendingRequests)
-                throw new WaitDeadlockException(mask);
-
-            var clock = Chipset.Beam.Clock;
-            clock.WaitUntil(clock.Elapsed + IdleStep);
+        }
+        finally
+        {
+            Scheduler.StopWaiting();
+            Memory.Write32(task + TaskOffsets.SignalsWaited, 0);
         }
     }
 
@@ -330,6 +349,21 @@ public sealed class Core
         Chipset.Custom.Update();
         Devices.Update();
         Interrupts.Deliver();
+        Scheduler?.Preempt();
+    }
+
+    /// <summary>The state of the calls of a task that the scheduler saves when it switches tasks.</summary>
+    public readonly record struct CallState(uint LastReturnAddress, int NativeCallDepth);
+
+    /// <summary>True while native code calls 68000 code, for example a PutChProc of RawDoFmt.</summary>
+    public bool InNativeCall => _nativeCallDepth > 0;
+
+    public CallState SaveCallState() => new(LastReturnAddress, _nativeCallDepth);
+
+    public void RestoreCallState(CallState state)
+    {
+        LastReturnAddress = state.LastReturnAddress;
+        _nativeCallDepth = state.NativeCallDepth;
     }
 
     /// <summary>Waits for the start of the next frame, as graphics WaitTOF does.</summary>
@@ -358,6 +392,7 @@ public sealed class Core
     {
         var address = task + TaskOffsets.SignalsReceived;
         Memory.Write32(address, Memory.Read32(address) | signals);
+        Scheduler.Signalled(task, signals);
     }
 
     /// <summary>Puts a message at the end of the message list of a port, and does the action of the port.</summary>
@@ -436,27 +471,28 @@ public sealed class Core
     }
 
     /// <summary>
-    /// Makes the process that runs the program: a <c>struct Process</c> with a message port, a stack, and console
-    /// input and output. <see cref="TranslatedProgram"/> adds the CLI structure.
+    /// Makes a <c>struct Process</c> with a message port, a stack, and console input and output. The process does not
+    /// run until the scheduler starts it. The main process is the task that runs the program.
     /// </summary>
-    private uint CreateMainProcess()
+    public uint CreateProcess(string name, sbyte priority, uint stackSize)
     {
         var process = AllocateSystem(ProcessOffsets.Size);
-        var name = AllocateSystem(Encoding.Latin1.GetBytes("AmigaSharp\0"));
+        var namePointer = AllocateSystem(Encoding.Latin1.GetBytes(name + "\0"));
         Memory.Write8(process + NodeOffsets.Type, NodeType.Process);
-        Memory.Write32(process + NodeOffsets.Name, name);
+        Memory.Write8(process + NodeOffsets.Priority, (byte)priority);
+        Memory.Write32(process + NodeOffsets.Name, namePointer);
         Memory.Write8(process + TaskOffsets.State, TaskOffsets.StateRunning);
         // Signals 0 to 15 belong to the system.
         Memory.Write32(process + TaskOffsets.SignalsAllocated, 0x0000_FFFF);
         ExecList.Initialize(Memory, process + TaskOffsets.MemEntry);
 
-        var stackLower = AllocateSystem(StackSize);
-        var stackUpper = stackLower + StackSize;
+        stackSize = (Math.Max(stackSize, 4096) + 3) & ~3u;
+        var stackLower = AllocateSystem(stackSize);
+        var stackUpper = stackLower + stackSize;
         Memory.Write32(process + TaskOffsets.StackLower, stackLower);
         Memory.Write32(process + TaskOffsets.StackUpper, stackUpper);
-        Memory.Write32(process + ProcessOffsets.StackSize, StackSize);
+        Memory.Write32(process + ProcessOffsets.StackSize, stackSize);
         Memory.Write32(process + ProcessOffsets.StackBase, stackUpper >> 2);
-        Cpu.Sp = stackUpper;
 
         // pr_MsgPort signals the process with SIGB_DOS (bit 8).
         var port = process + ProcessOffsets.MsgPort;
@@ -469,8 +505,6 @@ public sealed class Core
         Memory.Write32(process + ProcessOffsets.InputStream, FileSystem.OpenConsole());
         Memory.Write32(process + ProcessOffsets.OutputStream, FileSystem.OpenConsole());
         Memory.Write32(process + ProcessOffsets.TaskNumber, 1);
-
-        Memory.Write32(ExecBase + ExecBaseOffsets.ThisTask, process);
         return process;
     }
 }
