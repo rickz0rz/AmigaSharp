@@ -42,5 +42,9 @@ done
 # The build writes the files of the configuration of the translator, which the native launcher does not use.
 rm -f "$OUT"/*.runtimeconfig.json "$OUT"/*.pdb
 rm -rf "$OUT"/*.dSYM
+
+# The script and the instructions for the people who use the programs.
+cp "$ROOT/scripts/dist/run-prevue.sh" "$ROOT/scripts/dist/README.txt" "$OUT"/
+chmod +x "$OUT/run-prevue.sh"
 echo "The programs are in $OUT:"
 ls -la "$OUT"

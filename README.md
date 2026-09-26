@@ -174,6 +174,14 @@ scripts/publish.sh              # For this host, for example osx-arm64.
 scripts/publish.sh osx-x64      # For a Mac with an Intel processor.
 ```
 
+The programs go to `dist/<runtime identifier>/`, with `run-prevue.sh` and `README.txt` for the users. The script
+copies the drive of a user to a data directory on the first run, unpacks the saved listings, and starts the launcher
+with the options of the Prevue machine. It can also start the listings of Channels DVR and the stream:
+
+```sh
+./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 --headless --stream 8091
+```
+
 The programs go to `dist/<runtime identifier>/`. Keep the files of the directory together: the launcher needs the
 SDL2 library next to it. Native AOT compiles only for the operating system of the host, so build the Linux programs
 on Linux and the Windows programs on Windows.
