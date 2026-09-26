@@ -93,6 +93,9 @@ public sealed class FileSystem
         _volumes[name] = Path.GetFullPath(hostDirectory);
     }
 
+    /// <summary>True if the name (without the colon) is a volume or an assign.</summary>
+    public bool HasName(string name) => _volumes.ContainsKey(name.TrimEnd(':')) || _assigns.ContainsKey(name.TrimEnd(':'));
+
     /// <summary>Removes a volume or an assign.</summary>
     public void RemoveVolume(string name)
     {

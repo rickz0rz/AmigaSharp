@@ -33,6 +33,8 @@ const string usage = """
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
+      --screenshot-every <n>    With --screenshot, also save a picture each n seconds until --seconds, with the time in
+                                the name, for example out-000120.png.
       --date <date>             The date and the time of the Amiga at the start, for example 2020-11-01T16:00. The
                                 default is the time of the host.
       --virtual-time            Use a virtual clock: time moves at each safe point, and waits end at once. A run is then
@@ -52,6 +54,8 @@ const string usage = """
                                 _ESQ_MainLoopUiTickEnabledFlag becomes 1 when its main loop starts.
       --stats                   Write the speed of the emulation each second: the frames that the display made and
                                 dropped, the time to make a frame, and the time that the program waited.
+      --watch <label>           Write each change of the word at a label of the listing, with the time. The option can
+                                occur more than once. This option needs --listing.
       --trace                   Write each library call to the standard error stream.
     """;
 
@@ -69,11 +73,13 @@ var trace = false;
 var serialPort = 5400;
 var scale = 1;
 var seconds = 10.0;
+double? screenshotEvery = null;
 var virtualTime = false;
 var stats = false;
 var fastCpu = false;
 double? turboSeconds = null;
 string? turboLabel = null;
+var watches = new List<string>();
 DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
 (double Seconds, string Path)? copperDump = null;
@@ -108,11 +114,13 @@ try
             case "--scale": scale = int.Parse(Next()); break;
             case "--screenshot": screenshot = Next(); break;
             case "--seconds": seconds = double.Parse(Next()); break;
+            case "--screenshot-every": screenshotEvery = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--trace": trace = true; break;
             case "--stats": stats = true; break;
             case "--fast-cpu": fastCpu = true; break;
             case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--turbo-until": turboLabel = Next(); break;
+            case "--watch": watches.Add(Next()); break;
             case "--virtual-time": virtualTime = true; break;
             case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--copper-dump":
@@ -140,8 +148,8 @@ try
         throw new ArgumentException("the executable is missing.");
     if (feedTrace != null && listing == null)
         throw new ArgumentException("--feed-trace needs --listing.");
-    if (turboLabel != null && listing == null)
-        throw new ArgumentException("--turbo-until needs --listing.");
+    if ((turboLabel != null || watches.Count > 0) && listing == null)
+        throw new ArgumentException("--turbo-until and --watch need --listing.");
 }
 catch (Exception e) when (e is ArgumentException or FormatException)
 {
@@ -206,6 +214,31 @@ using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrac
 TranslatedProgram program = interpret
     ? new InterpretedProgram(core)
     : (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+
+if (watches.Count > 0)
+{
+    var symbols = AmigaSharp.Translator.VasmListing.Read(listing!).Symbols;
+    var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
+    foreach (var label in watches)
+    {
+        if (!symbols.TryGetValue(label, out var symbol) || symbol.Section is not { } section || section >= bases.Length)
+        {
+            Console.Error.WriteLine($"error: the listing does not have the label {label}.");
+            return 2;
+        }
+
+        var address = bases[section] + symbol.Value;
+        int? last = null;
+        core.AddPollHandler(() =>
+        {
+            var value = core.Memory.Read16(address);
+            if (value == last)
+                return;
+            log.WriteLine($"{clock.Elapsed.TotalSeconds,10:F3}  {label} = {value} (${value:X4}, {(short)value})");
+            last = value;
+        });
+    }
+}
 
 if (turbo && !fastCpu)
 {
@@ -333,11 +366,27 @@ try
 {
     if (screenshot != null)
     {
+        void Save(string path)
+        {
+            var pixels = new uint[Display.Width * Display.Height];
+            core.Chipset.Display.CopyFrame(pixels);
+            File.WriteAllBytes(path, Png.Encode(Display.Width, Display.Height, pixels));
+            log.WriteLine($"Saved {path} (frame {core.Chipset.Display.FrameNumber}).");
+        }
+
+        if (screenshotEvery is { } every)
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(screenshot))!;
+            var name = Path.GetFileNameWithoutExtension(screenshot);
+            for (var time = every; time < seconds && !finished; time += every)
+            {
+                WaitForTime(time);
+                Save(Path.Combine(directory, $"{name}-{(int)time:D6}.png"));
+            }
+        }
+
         WaitForTime(seconds);
-        var pixels = new uint[Display.Width * Display.Height];
-        core.Chipset.Display.CopyFrame(pixels);
-        File.WriteAllBytes(screenshot, Png.Encode(Display.Width, Display.Height, pixels));
-        log.WriteLine($"Saved {screenshot} (frame {core.Chipset.Display.FrameNumber}).");
+        Save(screenshot);
     }
     else
     {

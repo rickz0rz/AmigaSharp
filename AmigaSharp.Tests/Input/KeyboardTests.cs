@@ -119,6 +119,21 @@ public sealed class KeyboardTests : IDisposable
             _harness.Call(_harness.ExecBase, OpenDevice, ("A0", _harness.String("trackdisk.device")), ("D0", 1), ("A1", other), ("D1", 0)));
     }
 
+    [Fact]
+    public void TrackDisk_HasADiskInDriveZero_WhenDf0IsAVolumeOrAnAssign()
+    {
+        _harness.Core.FileSystem.AddAssign("DF0", "SYS:");
+        var request = OpenDeviceRequest("trackdisk.device", 0);
+
+        _harness.Memory.Write16(request + IoRequestOffsets.Command, TrackDiskDevice.ChangeState);
+        _harness.Call(_harness.ExecBase, DoIO, ("A1", request));
+        Assert.Equal(0u, _harness.Memory.Read32(request + IoRequestOffsets.Actual));
+
+        _harness.Memory.Write16(request + IoRequestOffsets.Command, TrackDiskDevice.ProtectionStatus);
+        Assert.Equal(0u, _harness.Call(_harness.ExecBase, DoIO, ("A1", request)));
+        Assert.Equal(0u, _harness.Memory.Read32(request + IoRequestOffsets.Actual));
+    }
+
     private uint OpenDeviceRequest(string name, uint unit)
     {
         var request = _harness.Core.AllocateSystem(IoRequestOffsets.StandardSize);

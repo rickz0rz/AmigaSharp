@@ -23,6 +23,9 @@ const string usage = """
                             changes of the guide as a feed. ESQ then updates the grid while it runs.
       --interval <minutes>  The time between two reads of the guide with --serve. The default is 10.
       --ready <file>        Make this file when curday.dat and nxtday.dat are written. A script can wait for it.
+      --clock <date>        The time of the Amiga at the start, for example 2026-09-27T04:50, as the --date option of
+                            the launcher. The tool then chooses the broadcast days by the time of the Amiga, not by the
+                            time of the host.
     """;
 
 Uri? server = null;
@@ -35,6 +38,7 @@ var maxChannels = PrevueDataFile.MaximumChannels;
 string? serve = null;
 var interval = TimeSpan.FromMinutes(10);
 string? readyPath = null;
+var clockOffset = TimeSpan.Zero;
 try
 {
     for (var i = 0; i < args.Length; i++)
@@ -52,6 +56,7 @@ try
             case "--serve": serve = Next(); break;
             case "--interval": interval = TimeSpan.FromMinutes(double.Parse(Next(), CultureInfo.InvariantCulture)); break;
             case "--ready": readyPath = Next(); break;
+            case "--clock": clockOffset = DateTime.Parse(Next(), CultureInfo.InvariantCulture) - DateTime.Now; break;
             case "--help" or "-h":
                 Console.WriteLine(usage);
                 return 0;
@@ -108,12 +113,12 @@ while (true)
             known = now;
             if (changes.Length == 0)
             {
-                Console.WriteLine($"{DateTime.Now:HH:mm}: no changes.");
+                Console.WriteLine($"{DateTime.Now + clockOffset:HH:mm}: no changes.");
                 continue;
             }
 
             await stream.WriteAsync(changes);
-            Console.WriteLine($"{DateTime.Now:HH:mm}: sent {changes.Length} bytes of changes.");
+            Console.WriteLine($"{DateTime.Now + clockOffset:HH:mm}: sent {changes.Length} bytes of changes.");
         }
     }
     catch (Exception e) when (e is IOException or SocketException or HttpRequestException or TaskCanceledException)
@@ -126,7 +131,7 @@ while (true)
 async Task<PrevueDay[]> ReadDaysAsync()
 {
     // Before 5:00 AM, the current broadcast day is the day before.
-    var now = DateTime.Now;
+    var now = DateTime.Now + clockOffset;
     var date = fixedDate ?? DateOnly.FromDateTime(now.TimeOfDay < GuideConverter.DayStart.ToTimeSpan() ? now.AddDays(-1) : now);
     var start = GuideConverter.StartOf(date, zone);
     Console.WriteLine($"Reading the guide from {server} for the broadcast days of {date:yyyy-MM-dd} and the day after.");

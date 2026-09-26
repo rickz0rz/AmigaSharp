@@ -20,7 +20,8 @@
 #   CHANNELS_DVR_INTERVAL
 #                 The minutes between two reads of the guide. The default is 10.
 #   ESQ_DATE      The date and the time of the Amiga at the start. Without CHANNELS_DVR, the default is
-#                 2020-11-01T16:00, the date of the saved listings.
+#                 2020-11-01T16:00, the date of the saved listings. With CHANNELS_DVR, the listings tool uses it
+#                 too, to choose the current and the next broadcast day.
 #   ESQ_SCALE     The size of the window. The default is 2 (1536 by 960 pixels).
 set -eu
 
@@ -52,7 +53,7 @@ if [ -n "${CHANNELS_DVR:-}" ]; then
     dotnet build "$ROOT/AmigaSharp.PrevueListings" -c Release -v quiet -nologo >/dev/null
     dotnet "$ROOT/AmigaSharp.PrevueListings/bin/Release/net10.0/AmigaSharp.PrevueListings.dll" \
         --server "$CHANNELS_DVR" --output "$DRIVE" --ready "$READY" --serve localhost:5400 \
-        --interval "${CHANNELS_DVR_INTERVAL:-10}" &
+        --interval "${CHANNELS_DVR_INTERVAL:-10}" ${ESQ_DATE:+--clock $ESQ_DATE} &
     LISTINGS=$!
     trap 'kill $LISTINGS 2>/dev/null' EXIT INT TERM
     while [ ! -f "$READY" ]; do

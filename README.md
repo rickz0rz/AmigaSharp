@@ -36,6 +36,8 @@ Use `--help` to see all the options. These options are the most important:
 - `--turbo <seconds>` and `--turbo-until <label>` run the 68000 as fast as the host can at the start, and then at
   its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0. The script uses
   `--turbo-until _ESQ_MainLoopUiTickEnabledFlag`, so ESQ starts as fast as with `--fast-cpu`.
+- `--watch <label>` writes each change of the word at a label of the listing, for example
+  `--watch _Global_RefreshTickCounter`.
 - `--stats` writes the speed each second: the frames made and dropped, the time to make a frame, the time that the
   program waited, and the rate of the VERTB and AUD1 interrupts.
 - `--date <date>` sets the date and the time of the Amiga at the start, for example `--date 2020-11-01T16:00`.

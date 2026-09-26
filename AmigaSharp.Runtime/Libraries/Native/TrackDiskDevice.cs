@@ -3,9 +3,14 @@ using AmigaSharp.Runtime.Exec;
 namespace AmigaSharp.Runtime.Libraries.Native;
 
 /// <summary>
-/// trackdisk.device for a machine with one floppy drive (DF0:) and no disk in it. The other units do not exist.
-/// Programs read the files of their disks through dos.library and the volumes of the runtime.
+/// trackdisk.device for a machine with one floppy drive (DF0:). The other units do not exist. Programs read the files
+/// of their disks through dos.library and the volumes of the runtime.
 /// </summary>
+/// <remarks>
+/// If DF0: is a volume or an assign of the runtime, the drive has a disk that is not write-protected. Otherwise it is
+/// empty. Programs such as ESQ ask for the state of the disk and show a warning if it is missing. The disk has no
+/// sectors, so a read or a write of the device fails.
+/// </remarks>
 public class TrackDiskDevice(Core core) : AbstractDevice(core)
 {
     // The commands (devices/trackdisk.h).
@@ -28,6 +33,9 @@ public class TrackDiskDevice(Core core) : AbstractDevice(core)
     /// <summary>TDERR_DiskChanged: no disk is in the drive.</summary>
     public const int ErrorNoDisk = 29;
 
+    /// <summary>TDERR_NotSpecified: a general error.</summary>
+    public const int ErrorNotSpecified = 20;
+
     /// <summary>TDERR_BadUnitNum: the unit does not exist.</summary>
     public const int ErrorBadUnit = 32;
 
@@ -49,7 +57,11 @@ public class TrackDiskDevice(Core core) : AbstractDevice(core)
         {
             // io_Actual is not zero when no disk is in the drive.
             case ChangeState:
-                Complete(request, 1);
+                Complete(request, HasDisk ? 0u : 1u);
+                break;
+            // io_Actual is not zero when the disk is write-protected.
+            case ProtectionStatus when HasDisk:
+                Complete(request, 0);
                 break;
             case ChangeNumber or Motor:
                 Complete(request, 0);
@@ -82,13 +94,15 @@ public class TrackDiskDevice(Core core) : AbstractDevice(core)
                 break;
             case CommandRead or CommandWrite or Format or ProtectionStatus:
                 Memory.Write32(request + IoRequestOffsets.Actual, 0);
-                devices.Complete(request, ErrorNoDisk);
+                devices.Complete(request, HasDisk ? ErrorNotSpecified : ErrorNoDisk);
                 break;
             default:
                 devices.Complete(request, IoRequestOffsets.ErrorNoCommand);
                 break;
         }
     }
+
+    private bool HasDisk => Core.FileSystem.HasName("DF0");
 
     private void Complete(uint request, uint actual)
     {
