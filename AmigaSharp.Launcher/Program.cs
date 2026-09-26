@@ -31,6 +31,15 @@ const string usage = """
       --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
                                 to the file. This option needs --listing.
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
+      --deinterlace <mode>      How the window, the screenshots and the stream show an interlaced display: weave
+                                (both fields, as a TV; the default), bob (the last field, each row twice) or blend
+                                (the average of the two fields). bob and blend have no comb lines on moving content.
+      --headless                Do not open a window. Run until the program ends, or until Ctrl-C.
+      --stream <port>           Stream the display as live HLS video (H.264, with ffmpeg) on the HTTP port. The
+                                stream is /stream.m3u8, and /channels.m3u is a playlist for a custom channel of
+                                Channels DVR.
+      --stream-4x3              Make the stream 960 by 720 pixels. The default is 1280 by 720, with bars at the sides.
+      --stream-name <name>      The name of the channel in /channels.m3u. The default is the name of the command.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
       --screenshot-every <n>    With --screenshot, also save a picture each n seconds until --seconds, with the time in
@@ -76,6 +85,11 @@ var seconds = 10.0;
 double? screenshotEvery = null;
 var virtualTime = false;
 var stats = false;
+var deinterlace = DeinterlaceMode.Weave;
+var headless = false;
+int? streamPort = null;
+var streamWide = true;
+string? streamName = null;
 var fastCpu = false;
 double? turboSeconds = null;
 string? turboLabel = null;
@@ -117,6 +131,11 @@ try
             case "--screenshot-every": screenshotEvery = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--trace": trace = true; break;
             case "--stats": stats = true; break;
+            case "--deinterlace": deinterlace = Enum.Parse<DeinterlaceMode>(Next(), ignoreCase: true); break;
+            case "--headless": headless = true; break;
+            case "--stream": streamPort = int.Parse(Next()); break;
+            case "--stream-4x3": streamWide = false; break;
+            case "--stream-name": streamName = Next(); break;
             case "--fast-cpu": fastCpu = true; break;
             case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--turbo-until": turboLabel = Next(); break;
@@ -210,6 +229,11 @@ if (loggingConnection != null)
     core.Chipset.Custom.Serial.Connection = loggingConnection;
 
 using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrace);
+
+core.Chipset.Display.Deinterlace = deinterlace;
+using var videoStream = streamPort is { } port
+    ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log)
+    : null;
 
 TranslatedProgram program = interpret
     ? new InterpretedProgram(core)
@@ -390,6 +414,17 @@ try
 
         WaitForTime(seconds);
         Save(screenshot);
+    }
+    else if (headless)
+    {
+        var stop = false;
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            stop = true;
+        };
+        while (!finished && !stop)
+            Thread.Sleep(100);
     }
     else
     {

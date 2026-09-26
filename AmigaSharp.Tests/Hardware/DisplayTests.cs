@@ -174,6 +174,27 @@ public class DisplayTests
         Assert.Equal(Red, second[(row + 1) * Display.Width + FirstX]);
     }
 
+    [Theory]
+    [InlineData(DeinterlaceMode.Weave, Red, Black)]
+    [InlineData(DeinterlaceMode.Bob, Black, Black)]
+    [InlineData(DeinterlaceMode.Blend, 0xFF7F_0000u, 0xFF7F_0000u)]
+    public void Deinterlace_ShowsTheTwoFields_AsTheModeSays(DeinterlaceMode mode, uint evenRow, uint oddRow)
+    {
+        // The long field (even rows) has a red pixel. The short field (odd rows) that follows it has none.
+        SetUpLowResolution();
+        Write(0xDFF100, 0x1204); // BPLCON0: 1 plane, interlace.
+        _chipset.Display.Deinterlace = mode;
+        _memory.Write8(Plane, 0x80);
+        NextFrame();
+        _memory.Write8(Plane, 0x00);
+
+        var frame = NextFrame();
+
+        var row = (0x2C - Display.FirstLine) * 2;
+        Assert.Equal(evenRow, frame[row * Display.Width + FirstX]);
+        Assert.Equal(oddRow, frame[(row + 1) * Display.Width + FirstX]);
+    }
+
     [Fact]
     public void CopperList_CanSetTheListOfTheNextFrame()
     {

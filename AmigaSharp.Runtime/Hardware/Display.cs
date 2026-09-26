@@ -1,5 +1,18 @@
 namespace AmigaSharp.Runtime.Hardware;
 
+/// <summary>How the host shows the two fields of an interlaced display.</summary>
+public enum DeinterlaceMode
+{
+    /// <summary>Both fields, each on its rows, as a TV shows them. Moving content has comb lines.</summary>
+    Weave,
+
+    /// <summary>The last field only, each row twice. No comb lines, and half the vertical detail.</summary>
+    Bob,
+
+    /// <summary>The average of the two fields. No comb lines, and moving content is a little blurred.</summary>
+    Blend,
+}
+
 /// <summary>
 /// Makes the picture of each frame from the custom chip registers, as Denise shows it. At the end of each frame the
 /// copper runs from COP1LC, line by line. The bitplanes of each line are fetched, and each pixel gets its color. A
@@ -43,6 +56,8 @@ public sealed class Display
     // frame stay. The host reads the last complete picture from _front.
     private readonly uint[] _canvas = new uint[Width * Height];
     private readonly uint[] _front = new uint[Width * Height];
+    private bool _frontInterlaced;
+    private bool _frontOddField;
 
     // After the fetch of a line, each plane pointer moves to the next line of its plane. The display adds the
     // modulo when the last fetch of the line starts, at DDFSTOP. A copper write after that sets the pointer for the
@@ -80,12 +95,41 @@ public sealed class Display
     /// <summary>True if the last frame used interlace.</summary>
     public bool IsInterlaced { get; private set; }
 
+    /// <summary>How <see cref="CopyFrame"/> shows an interlaced display.</summary>
+    public DeinterlaceMode Deinterlace { get; set; } = DeinterlaceMode.Weave;
+
     /// <summary>Copies the last complete picture, as 0xAARRGGBB pixels.</summary>
     public void CopyFrame(uint[] target)
     {
         lock (_frameLock)
+        {
             Array.Copy(_front, target, Width * Height);
+            if (!_frontInterlaced)
+                return;
+
+            for (var row = 0; row < Height; row += 2)
+            {
+                var even = target.AsSpan(row * Width, Width);
+                var odd = target.AsSpan((row + 1) * Width, Width);
+                switch (Deinterlace)
+                {
+                    case DeinterlaceMode.Bob when _frontOddField:
+                        odd.CopyTo(even);
+                        break;
+                    case DeinterlaceMode.Bob:
+                        even.CopyTo(odd);
+                        break;
+                    case DeinterlaceMode.Blend:
+                        for (var x = 0; x < Width; x++)
+                            even[x] = odd[x] = Average(even[x], odd[x]);
+                        break;
+                }
+            }
+        }
     }
+
+    private static uint Average(uint a, uint b) =>
+        0xFF00_0000u | (((a & 0xFEFEFE) >> 1) + ((b & 0xFEFEFE) >> 1) + (a & b & 0x010101));
 
     /// <summary>
     /// The program wrote to COPJMP1 or COPJMP2. The copper starts again at COP1LC or COP2LC in the current frame.
@@ -160,7 +204,13 @@ public sealed class Display
         if (!render)
             return;
         lock (_frameLock)
+        {
             Array.Copy(_canvas, _front, _canvas.Length);
+            _frontInterlaced = IsInterlaced;
+            // The short frame fills the odd rows.
+            _frontOddField = !longFrame;
+        }
+
         FrameNumber++;
     }
 

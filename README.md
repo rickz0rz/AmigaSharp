@@ -113,6 +113,31 @@ The files use the time zone `6` in their configuration. ESQ adds (time zone - 6)
 and of the clock, so with `6`, the grid and the clock show the local time of the host. The saved 2020 files use `5`,
 and that is why their clock is one hour behind.
 
+## Stream the display as a TV channel
+
+The launcher can stream the display as live HLS video. ffmpeg (from the PATH) encodes it to H.264 at 29.97 pictures
+each second, with a silent AAC audio track. An HTTP server gives the stream and an M3U playlist of one channel:
+
+```sh
+CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
+    --stream-name "Prevue Guide"
+```
+
+- `http://<this host>:8091/stream.m3u8` is the stream.
+- `http://<this host>:8091/channels.m3u` is a playlist for a custom channel in Channels DVR. Add it as a custom
+  channel source of the type M3U playlist, with the address of this host that the server can reach.
+- The picture is 4:3 in a 1280 by 720 picture with black bars at the sides. `--stream-4x3` makes a 960 by 720
+  picture without bars.
+- `--headless` runs without a window until Ctrl-C. The stream also works with a window.
+- macOS can ask if the launcher can accept incoming network connections. Accept it, so that the server can connect.
+
+`--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
+
+- `weave` shows the two fields on their rows, as a TV does. Moving content has comb lines. This is the default.
+- `bob` shows the last field with each row twice. It has no comb lines, and half the vertical detail.
+- `blend` shows the average of the two fields. It has no comb lines, and moving content is a little blurred. It is
+  the best mode for a stream.
+
 ## Replay a serial feed
 
 Prevue gets its listings on the serial port. The launcher can replay a captured feed from a file:
