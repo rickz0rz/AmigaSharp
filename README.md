@@ -33,6 +33,9 @@ Use `--help` to see all the options. These options are the most important:
 - `--fast-cpu` runs the 68000 as fast as the host can. By default, the CPU runs at the speed of a real 68000
   (7.16 MHz) with a real-time clock. It sleeps when it is ahead, so a program that polls in a loop does not use a full
   host core.
+- `--turbo <seconds>` and `--turbo-until <label>` run the 68000 as fast as the host can at the start, and then at
+  its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0. The script uses
+  `--turbo-until _ESQ_MainLoopUiTickEnabledFlag`, so ESQ starts as fast as with `--fast-cpu`.
 - `--stats` writes the speed each second: the frames made and dropped, the time to make a frame, the time that the
   program waited, and the rate of the VERTB and AUD1 interrupts.
 - `--date <date>` sets the date and the time of the Amiga at the start, for example `--date 2020-11-01T16:00`.
@@ -85,7 +88,7 @@ a maximum of 200 channels. Set `CHANNELS_DVR` to use it with the script:
 CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh
 ```
 
-The script then writes new listing files to `build/drive/` before each run, and the Amiga uses the time of the host.
+The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run, and the Amiga uses the time of the host.
 To write the files to another drive, run the tool directly:
 
 ```sh

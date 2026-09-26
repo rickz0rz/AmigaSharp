@@ -3,7 +3,10 @@
 #
 # The first run copies the drive to build/drive/ and unpacks the saved 2020 listing files there. ESQ writes to its
 # drive, so the script never uses target-source/binaries directly. Delete build/drive/ to start again from the
-# original drive.
+# original drive. With CHANNELS_DVR, the script uses a separate copy in build/drive-channels-dvr/.
+#
+# The 68000 runs as fast as the host can until the main loop of ESQ starts, and then at its real speed. Add
+# --fast-cpu to run as fast as the host can all the time.
 #
 # Arguments after the script name go to the launcher. For example:
 #   scripts/run-esq.sh --scale 1
@@ -20,6 +23,9 @@ set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DRIVE=$ROOT/build/drive
+if [ -n "${CHANNELS_DVR:-}" ]; then
+    DRIVE=$ROOT/build/drive-channels-dvr
+fi
 ESQ=$ROOT/build/target/ESQ
 LAUNCHER="dotnet run --project $ROOT/AmigaSharp.Launcher -c Release --"
 
@@ -46,4 +52,4 @@ fi
 exec $LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
     --drive "$DRIVE" --volume "DH1=$DRIVE" \
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq \
-    $DATE_OPTION --scale "${ESQ_SCALE:-2}" "$@"
+    --turbo-until _ESQ_MainLoopUiTickEnabledFlag $DATE_OPTION --scale "${ESQ_SCALE:-2}" "$@"

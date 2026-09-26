@@ -384,7 +384,7 @@ public sealed class Core
 
     /// <summary>
     /// Set to false to run the CPU as fast as the host can with a real-time clock. By default, the CPU runs at the
-    /// speed of a 68000.
+    /// speed of a 68000. The value can change while the program runs, for example to run the start of a program fast.
     /// </summary>
     public bool PaceCpu { get; set; } = true;
 
@@ -403,10 +403,16 @@ public sealed class Core
     private void Pace()
     {
         var clock = Chipset.Beam.Clock;
-        if (!PaceCpu || !clock.IsRealTime || _pacing)
+        if (!clock.IsRealTime || _pacing)
             return;
 
         var now = (long)(clock.Elapsed.TotalSeconds * CycleEstimate.ClockHz);
+        if (!PaceCpu)
+        {
+            // The cycles follow the clock, so that the CPU does not sleep to pay back the time when the pacing starts.
+            Cpu.Cycles = now;
+            return;
+        }
         if (Cpu.Cycles < now - PaceBehindCycles)
         {
             Cpu.Cycles = now - PaceBehindCycles;

@@ -43,6 +43,11 @@ const string usage = """
                                 memory goes to the file with the name <file>.chip.
       --fast-cpu                Run the 68000 as fast as the host can. By default, it runs at the speed of a real
                                 68000 (7.16 MHz), and it sleeps when it is ahead.
+      --turbo <seconds>         Run the 68000 as fast as the host can for the first seconds of Amiga time, and then
+                                at the speed of a real 68000. The start of a program is then faster.
+      --turbo-until <label>     Run the 68000 as fast as the host can until the word at the label of the listing is
+                                not 0, and then at the speed of a real 68000. For ESQ, the label
+                                _ESQ_MainLoopUiTickEnabledFlag becomes 1 when its main loop starts.
       --stats                   Write the speed of the emulation each second: the frames that the display made and
                                 dropped, the time to make a frame, and the time that the program waited.
       --trace                   Write each library call to the standard error stream.
@@ -64,6 +69,8 @@ var seconds = 10.0;
 var virtualTime = false;
 var stats = false;
 var fastCpu = false;
+double? turboSeconds = null;
+string? turboLabel = null;
 DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
 (double Seconds, string Path)? copperDump = null;
@@ -100,6 +107,8 @@ try
             case "--trace": trace = true; break;
             case "--stats": stats = true; break;
             case "--fast-cpu": fastCpu = true; break;
+            case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+            case "--turbo-until": turboLabel = Next(); break;
             case "--virtual-time": virtualTime = true; break;
             case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--copper-dump":
@@ -127,6 +136,8 @@ try
         throw new ArgumentException("the executable is missing.");
     if (feedTrace != null && listing == null)
         throw new ArgumentException("--feed-trace needs --listing.");
+    if (turboLabel != null && listing == null)
+        throw new ArgumentException("--turbo-until needs --listing.");
 }
 catch (Exception e) when (e is ArgumentException or FormatException)
 {
@@ -144,7 +155,8 @@ var realTimeClock = virtualTime ? null : new RealTimeClock(start: false);
 IClock clock = realTimeClock ?? (IClock)new VirtualClock();
 var measuringClock = stats ? new MeasuringClock(clock) : null;
 clock = measuringClock ?? clock;
-var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace, PaceCpu = !fastCpu };
+var turbo = turboSeconds != null || turboLabel != null;
+var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
 if (date != null)
     core.SetDate(date.Value);
 foreach (var (name, path) in volumes)
@@ -188,6 +200,36 @@ using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrac
 TranslatedProgram program = interpret
     ? new InterpretedProgram(core)
     : (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+
+if (turbo && !fastCpu)
+{
+    // The launcher checks the end of the turbo at each safe point. The label is a word in the memory of the program.
+    uint? turboAddress = null;
+    if (turboLabel != null)
+    {
+        var symbols = AmigaSharp.Translator.VasmListing.Read(listing!).Symbols;
+        var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
+        if (!symbols.TryGetValue(turboLabel, out var symbol) || symbol.Section is not { } section || section >= bases.Length)
+        {
+            Console.Error.WriteLine($"error: the listing does not have the label {turboLabel}.");
+            return 2;
+        }
+
+        turboAddress = bases[section] + symbol.Value;
+    }
+
+    core.AddPollHandler(() =>
+    {
+        if (core.PaceCpu)
+            return;
+        var done = (turboSeconds != null && clock.Elapsed.TotalSeconds >= turboSeconds)
+                   || (turboAddress is { } address && core.Memory.Read16(address) != 0);
+        if (!done)
+            return;
+        core.PaceCpu = true;
+        log.WriteLine($"The turbo ended at {clock.Elapsed.TotalSeconds:F1} s. The 68000 now runs at its real speed.");
+    });
+}
 
 if (feedTraceWriter != null)
 {
