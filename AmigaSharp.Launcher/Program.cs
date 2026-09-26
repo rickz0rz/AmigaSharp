@@ -244,7 +244,12 @@ using var videoStream = streamPort is { } port
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
 // a constant in such a build, so the trimmer removes the compiler from it.
 TranslatedProgram program;
-if (!interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+if (!interpret && EmbeddedPrograms.TryGet(executable, out var createEmbedded))
+{
+    log.WriteLine("Using the translation that is built into the launcher.");
+    program = createEmbedded(core);
+}
+else if (!interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
 {
     program = CompileProgram(executable, listing, core, log);
 }

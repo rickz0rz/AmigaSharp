@@ -18,4 +18,52 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!--
+    Build-time translation: with the properties EmbeddedProgram (an executable) and EmbeddedListing (its vasm listing,
+    optional), the build runs the translator and compiles the translation into the launcher. See EmbeddedPrograms.cs.
+  -->
+  <!-- The paths are set in a target: IntermediateOutputPath has its last value (with the runtime identifier) only then. -->
+  <Target Name="SetEmbeddedProgramPaths" BeforeTargets="TranslateEmbeddedProgram;AddEmbeddedProgram">
+    <PropertyGroup>
+      <EmbeddedProgramSource>$(ProjectDir)$(IntermediateOutputPath)EmbeddedProgram.g.cs</EmbeddedProgramSource>
+      <EmbeddedProgramRegistry>$(ProjectDir)$(IntermediateOutputPath)EmbeddedPrograms.g.cs</EmbeddedProgramRegistry>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="TranslateEmbeddedProgram" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
+          DependsOnTargets="SetEmbeddedProgramPaths" Condition="'$(EmbeddedProgram)' != ''"
+          Inputs="$(EmbeddedProgram);$(EmbeddedListing)" Outputs="$(EmbeddedProgramSource)">
+    <ItemGroup>
+      <_Translator Include="@(_ResolvedProjectReferencePaths)" Condition="'%(Filename)' == 'AmigaSharp.Translator'" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_ListingOption Condition="'$(EmbeddedListing)' != ''">--listing &quot;$(EmbeddedListing)&quot;</_ListingOption>
+    </PropertyGroup>
+    <Error Condition="'@(_Translator)' == ''" Text="The build did not find the translator." />
+    <Exec Command="dotnet &quot;@(_Translator)&quot; &quot;$(EmbeddedProgram)&quot; $(_ListingOption) --namespace AmigaSharp.Embedded --class EmbeddedProgram --output &quot;$(EmbeddedProgramSource)&quot;" />
+  </Target>
+
+  <Target Name="AddEmbeddedProgram" AfterTargets="TranslateEmbeddedProgram" BeforeTargets="CoreCompile"
+          DependsOnTargets="SetEmbeddedProgramPaths" Condition="'$(EmbeddedProgram)' != ''">
+    <GetFileHash Files="$(EmbeddedProgram)" Algorithm="SHA256">
+      <Output TaskParameter="Hash" PropertyName="_EmbeddedProgramHash" />
+    </GetFileHash>
+    <PropertyGroup>
+      <_Registry>namespace AmigaSharp.Launcher%3B
+
+static partial class EmbeddedPrograms
+{
+    static partial void Register(System.Collections.Generic.Dictionary&lt;string, System.Func&lt;AmigaSharp.Runtime.Core, AmigaSharp.Runtime.TranslatedProgram&gt;&gt; programs)
+    {
+        programs[&quot;$(_EmbeddedProgramHash)&quot;] = core =&gt; new AmigaSharp.Embedded.EmbeddedProgram(core)%3B
+    }
+}</_Registry>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(EmbeddedProgramRegistry)" Lines="$(_Registry)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(EmbeddedProgramSource);$(EmbeddedProgramRegistry)" />
+      <FileWrites Include="$(EmbeddedProgramSource);$(EmbeddedProgramRegistry)" />
+    </ItemGroup>
+  </Target>
+
 </Project>

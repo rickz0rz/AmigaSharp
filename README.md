@@ -178,13 +178,33 @@ The programs go to `dist/<runtime identifier>/`. Keep the files of the directory
 SDL2 library next to it. Native AOT compiles only for the operating system of the host, so build the Linux programs
 on Linux and the Windows programs on Windows.
 
-A native launcher cannot compile a translation while it runs, so it always uses the interpreter. The interpreter
+A native launcher cannot compile a translation while it runs, so it uses the interpreter. The interpreter
 runs about 17 million instructions each second, and a 68000 runs less than 1 million, so the speed of a program does
 not change. A native build does not need the listing of the program. Without a listing, use `--turbo <seconds>` in
 place of `--turbo-until`. The users need these files, which are not part of the programs:
 
 - The program to run and its drive, for example `ESQ` and a copy of the drive of Prevue.
 - ffmpeg on the PATH, for `--stream`.
+
+The build can also translate one program and compile the translation into the launcher:
+
+```sh
+EMBEDDED_PROGRAM=build/target/ESQ EMBEDDED_LISTING=build/target/ESQ.lst scripts/publish.sh
+```
+
+The launcher then runs that program (found by its SHA-256) from the translation, and other programs in the
+interpreter. The launcher is then 19 MB, not 7 MB. It contains the code of the program, so give it only to people
+who can have that program. The speed of the emulated 68000 at full speed (`--fast-cpu`) for ESQ:
+
+| Launcher | Speed |
+|---|---|
+| .NET, translation at run time | about 5,950 MHz |
+| Native, translation at build time | about 4,350 MHz |
+| .NET, interpreter | about 265 MHz |
+| Native, interpreter | about 247 MHz |
+
+A real 68000 runs at 7.16 MHz. At the real speed, all four use about a third of a host core, most of it for the
+display and the pacing. The translation saves about 5% of a core.
 
 macOS stops programs from the internet that Apple did not check. A user can remove the mark with
 `xattr -dr com.apple.quarantine <directory>`, or the programs can be signed and notarized with an Apple developer
