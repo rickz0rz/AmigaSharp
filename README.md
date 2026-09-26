@@ -45,15 +45,18 @@ Use `--help` to see all the options. These options are the most important:
 
 In the window, the keys of the host go to the Amiga keyboard. F11 is the Help key.
 
-This command runs Prevue with the drive of the original machine:
+This command runs Prevue with a copy of the drive of the original machine. Prevue writes to its drive, so do not use
+`target-source/binaries` directly:
 
 ```sh
+cp -R target-source/binaries /tmp/prevue-drive
 dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive target-source/binaries --volume DH1=target-source/binaries \
+    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq
 ```
 
-Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing.
+Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing. `scripts/run-esq.sh` does all of
+these steps.
 
 ## Show the saved listings
 
