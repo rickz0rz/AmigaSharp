@@ -41,6 +41,8 @@ const string usage = """
       --copper-dump <seconds>=<file>
                                 Write the copper writes of the first frame after the time to the file. The chip
                                 memory goes to the file with the name <file>.chip.
+      --stats                   Write the speed of the emulation each second: the frames that the display made and
+                                dropped, the time to make a frame, and the time that the program waited.
       --trace                   Write each library call to the standard error stream.
     """;
 
@@ -58,6 +60,7 @@ var serialPort = 5400;
 var scale = 1;
 var seconds = 10.0;
 var virtualTime = false;
+var stats = false;
 DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
 (double Seconds, string Path)? copperDump = null;
@@ -92,6 +95,7 @@ try
             case "--screenshot": screenshot = Next(); break;
             case "--seconds": seconds = double.Parse(Next()); break;
             case "--trace": trace = true; break;
+            case "--stats": stats = true; break;
             case "--virtual-time": virtualTime = true; break;
             case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--copper-dump":
@@ -132,7 +136,10 @@ var executable = File.ReadAllBytes(executablePath);
 drive ??= Path.GetDirectoryName(Path.GetFullPath(executablePath))!;
 commandName ??= Path.GetFileName(executablePath);
 
-IClock clock = virtualTime ? new VirtualClock() : new RealTimeClock();
+var realTimeClock = virtualTime ? null : new RealTimeClock(start: false);
+IClock clock = realTimeClock ?? (IClock)new VirtualClock();
+var measuringClock = stats ? new MeasuringClock(clock) : null;
+clock = measuringClock ?? clock;
 var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace };
 if (date != null)
     core.SetDate(date.Value);
@@ -191,6 +198,7 @@ var runner = new Thread(() =>
 {
     try
     {
+        realTimeClock?.Start();
         var result = program.Run(executable, arguments, commandName);
         log.WriteLine($"The program returned {(int)result}.");
         exitCode = (int)result;
@@ -231,6 +239,36 @@ if (copperDump is var (dumpTime, dumpPath))
         core.Chipset.Display.CopperDump = new StreamWriter(dumpPath);
         File.WriteAllBytes(dumpPath + ".chip", core.Memory.Ram(0, 0x20_0000).ToArray());
     }) { IsBackground = true, Name = "Copper dump" }.Start();
+}
+
+if (measuringClock != null)
+{
+    new Thread(() =>
+    {
+        var display = core.Chipset.Display;
+        var custom = core.Chipset.Custom;
+        var host = System.Diagnostics.Stopwatch.StartNew();
+        var delivered = core.Interrupts.Delivered;
+        var (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) =
+            (TimeSpan.Zero, TimeSpan.Zero, 0L, 0L, TimeSpan.Zero, TimeSpan.Zero);
+        var (lastVertb, lastAudio1) = (0L, 0L);
+        while (!finished)
+        {
+            Thread.Sleep(1000);
+            var (now, amiga, frames, dropped, render, wait) = (host.Elapsed, clock.Elapsed, display.FrameNumber,
+                custom.FramesDropped, display.RenderTime, measuringClock.WaitTime);
+            var seconds = (now - lastHost).TotalSeconds;
+            var made = frames - lastFrames;
+            log.WriteLine($"stats: {made / seconds,5:F1} frames/s, {(dropped - lastDropped) / seconds,5:F1} dropped/s, " +
+                          $"{(made > 0 ? (render - lastRender).TotalMilliseconds / made : 0),5:F2} ms/frame, " +
+                          $"waiting {(wait - lastWait).TotalSeconds / seconds * 100,3:F0}%, " +
+                          $"Amiga time x{(amiga - lastAmiga).TotalSeconds / seconds:F2}, " +
+                          $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
+                          $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}");
+            (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);
+            (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) = (now, amiga, frames, dropped, render, wait);
+        }
+    }) { IsBackground = true, Name = "Stats" }.Start();
 }
 
 void WaitForTime(double time)

@@ -30,6 +30,8 @@ Use `--help` to see all the options. These options are the most important:
 - `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
   each time, and it is as fast as the host can run it.
 - `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
+- `--stats` writes the speed each second: the frames made and dropped, the time to make a frame, the time that the
+  program waited, and the rate of the VERTB and AUD1 interrupts.
 - `--date <date>` sets the date and the time of the Amiga at the start, for example `--date 2020-11-01T16:00`.
   Prevue shows saved listing data only on the date of that data.
 

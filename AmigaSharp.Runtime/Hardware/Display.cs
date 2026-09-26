@@ -74,6 +74,9 @@ public sealed class Display
     /// </summary>
     public TextWriter? CopperDump { get; set; }
 
+    /// <summary>The host time that the display used to make the frames.</summary>
+    public TimeSpan RenderTime { get; private set; }
+
     /// <summary>True if the last frame used interlace.</summary>
     public bool IsInterlaced { get; private set; }
 
@@ -96,6 +99,19 @@ public sealed class Display
     /// <param name="longFrame">True for the long frame of an interlaced display, which has 263 lines.</param>
     /// <param name="render">False to run only the copper, for a frame that the host does not show.</param>
     public void RunFrame(bool longFrame, bool render)
+    {
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            MakeFrame(longFrame, render);
+        }
+        finally
+        {
+            RenderTime += System.Diagnostics.Stopwatch.GetElapsedTime(start);
+        }
+    }
+
+    private void MakeFrame(bool longFrame, bool render)
     {
         // The display keeps its own copy of the registers, because the copper writes change the pixels from their
         // position in the line.

@@ -132,6 +132,9 @@ public sealed class CustomChips
     /// </summary>
     public bool LongFrame { get; private set; } = true;
 
+    /// <summary>The number of frames that ended with no picture, because the program did not reach a safe point.</summary>
+    public long FramesDropped { get; private set; }
+
     public ushort Dmacon { get; private set; }
     public ushort Intena { get; private set; }
     public ushort Intreq { get; private set; }
@@ -204,6 +207,8 @@ public sealed class CustomChips
             {
                 if (ended >= frame - 2)
                     FrameEnded?.Invoke(LongFrame, ended == frame - 1);
+                if (ended != frame - 1)
+                    FramesDropped++;
                 LongFrame = (this[CustomRegister.Bplcon0] & 0x0004) == 0 || !LongFrame;
             }
 

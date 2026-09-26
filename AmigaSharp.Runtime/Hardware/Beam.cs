@@ -16,18 +16,51 @@ public interface IClock
     }
 }
 
-/// <summary>Real time from the start of the runtime.</summary>
+/// <summary>Real time from the start of the clock.</summary>
 public sealed class RealTimeClock : IClock
 {
-    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+    private readonly Stopwatch _stopwatch = new();
+
+    /// <param name="start">
+    /// False to keep the time at 0 until <see cref="Start"/>. A host starts the clock when the program starts, so that
+    /// the time to load and compile the program does not count as Amiga time.
+    /// </param>
+    public RealTimeClock(bool start = true)
+    {
+        if (start)
+            _stopwatch.Start();
+    }
 
     public TimeSpan Elapsed => _stopwatch.Elapsed;
+
+    /// <summary>Starts the clock if it is stopped.</summary>
+    public void Start() => _stopwatch.Start();
 
     public void WaitUntil(TimeSpan time)
     {
         var remaining = time - Elapsed;
         if (remaining > TimeSpan.Zero)
             Thread.Sleep(remaining);
+    }
+}
+
+/// <summary>A clock that also measures the time that the program waits in <see cref="WaitUntil"/>.</summary>
+public sealed class MeasuringClock(IClock clock) : IClock
+{
+    private long _waitTicks;
+
+    public TimeSpan Elapsed => clock.Elapsed;
+
+    public void Tick() => clock.Tick();
+
+    /// <summary>The time in <see cref="WaitUntil"/>, from all threads.</summary>
+    public TimeSpan WaitTime => TimeSpan.FromTicks(Interlocked.Read(ref _waitTicks));
+
+    public void WaitUntil(TimeSpan time)
+    {
+        var start = Stopwatch.GetTimestamp();
+        clock.WaitUntil(time);
+        Interlocked.Add(ref _waitTicks, Stopwatch.GetElapsedTime(start).Ticks);
     }
 }
 
