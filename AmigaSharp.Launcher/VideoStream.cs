@@ -27,6 +27,7 @@ public sealed class VideoStream : IDisposable
     private readonly Process _ffmpeg;
     private readonly HttpListener _http = new();
     private readonly string _channelName;
+    private readonly Thread _sender;
     private volatile bool _stopped;
 
     /// <param name="port">The TCP port of the HTTP server. It listens on all the addresses of the host.</param>
@@ -60,7 +61,8 @@ public sealed class VideoStream : IDisposable
 
         _http.Prefixes.Add($"http://*:{port}/");
         _http.Start();
-        new Thread(SendFrames) { IsBackground = true, Name = "Video stream" }.Start();
+        _sender = new Thread(SendFrames) { IsBackground = true, Name = "Video stream" };
+        _sender.Start();
         new Thread(Serve) { IsBackground = true, Name = "Video stream HTTP" }.Start();
         log.WriteLine($"Streaming on http://localhost:{port}/{PlaylistName}. The playlist of the channel is " +
                       $"http://<address of this host>:{port}/channels.m3u.");
@@ -70,6 +72,8 @@ public sealed class VideoStream : IDisposable
     {
         _stopped = true;
         _http.Close();
+        // The sender must stop before the pipe closes. Otherwise it writes to a closed pipe.
+        _sender.Join(TimeSpan.FromSeconds(2));
         try
         {
             _ffmpeg.StandardInput.Close();
@@ -108,6 +112,10 @@ public sealed class VideoStream : IDisposable
             catch (IOException)
             {
                 _log.WriteLine("The video stream stopped: ffmpeg does not read the pictures.");
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
                 return;
             }
         }
