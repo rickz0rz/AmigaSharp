@@ -116,7 +116,7 @@ and that is why their clock is one hour behind.
 ## Stream the display as a TV channel
 
 The launcher can stream the display as live HLS video. ffmpeg (from the PATH) encodes it to H.264 at 29.97 pictures
-each second, with a silent AAC audio track. An HTTP server gives the stream and an M3U playlist of one channel:
+each second, with an AAC audio track. An HTTP server gives the stream and an M3U playlist of one channel:
 
 ```sh
 CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
@@ -128,6 +128,11 @@ CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh --headless --stream 80
   channel source of the type M3U playlist, with the address of this host that the server can reach.
 - The picture is 4:3 in a 1280 by 720 picture with black bars at the sides. `--stream-4x3` makes a 960 by 720
   picture without bars.
+- `--stream-audio <path>` gives the stream a sound: an M3U playlist, a text file with one audio file on each line,
+  or a directory of audio files. The files play in a loop, in the order of the playlist (or of their names in a
+  directory). A path in a playlist can be relative to the directory of the playlist. Files that do not exist or do
+  not play are skipped. If no file plays, the stream is silent, and the launcher tries the playlist again each
+  10 seconds. Without this option, the stream is silent.
 - `--headless` runs without a window until Ctrl-C. The stream also works with a window.
 - macOS can ask if the launcher can accept incoming network connections. Accept it, so that the server can connect.
 

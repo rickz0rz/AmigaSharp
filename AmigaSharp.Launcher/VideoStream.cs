@@ -8,7 +8,8 @@ namespace AmigaSharp.Launcher;
 
 /// <summary>
 /// Streams the display as a live HLS video over HTTP, for example as a custom channel of Channels DVR. ffmpeg encodes
-/// the pictures to H.264 with a silent AAC audio track, and writes segments of 2 seconds. An HTTP server gives the
+/// the pictures to H.264 and the sound to AAC, and writes segments of 2 seconds. The sound is a playlist of audio
+/// files in a loop, or silence. An HTTP server gives the
 /// segments, the playlist of the stream (/stream.m3u8) and an M3U playlist of one channel (/channels.m3u).
 /// </summary>
 /// <remarks>
@@ -28,32 +29,43 @@ public sealed class VideoStream : IDisposable
     private readonly HttpListener _http = new();
     private readonly string _channelName;
     private readonly Thread _sender;
+    private readonly AudioFeed? _audio;
     private volatile bool _stopped;
 
     /// <param name="port">The TCP port of the HTTP server. It listens on all the addresses of the host.</param>
     /// <param name="wide">True to add black bars for a 16:9 picture.</param>
-    public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log)
+    /// <param name="audioPlaylist">
+    /// A playlist or a directory of audio files that plays in a loop, or null for a silent stream. See
+    /// <see cref="AudioFeed"/>.
+    /// </param>
+    public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log, string? audioPlaylist = null)
     {
         _display = display;
         _log = log;
         _channelName = channelName;
+        _audio = audioPlaylist == null ? null : new AudioFeed(audioPlaylist, log);
+        string[] audioInput = _audio == null
+            ? ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
+            : ["-thread_queue_size", "1024", "-f", "s16le", "-ar", AudioFeed.SampleRate.ToString(), "-ac", "2",
+                "-i", $"tcp://127.0.0.1:{_audio.Port}"];
 
         var filter = wide ? "scale=960:720:flags=lanczos,pad=1280:720:160:0,setsar=1" : "scale=960:720:flags=lanczos,setsar=1";
-        var arguments = new[]
-        {
+        string[] arguments =
+        [
             "-hide_banner", "-loglevel", "error",
+            "-thread_queue_size", "64",
             "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{Display.Width}x{Display.Height}", "-framerate", "30000/1001",
             "-i", "pipe:0",
-            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            .. audioInput,
             "-map", "0:v", "-map", "1:a",
             "-vf", filter,
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
             "-g", "60", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "8M",
-            "-c:a", "aac", "-b:a", "64k",
+            "-c:a", "aac", "-b:a", "128k",
             "-f", "hls", "-hls_time", "2", "-hls_list_size", "10",
             "-hls_flags", "delete_segments+independent_segments",
             Path.Combine(_directory, PlaylistName),
-        };
+        ];
         var start = new ProcessStartInfo("ffmpeg") { RedirectStandardInput = true, UseShellExecute = false };
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
@@ -74,6 +86,8 @@ public sealed class VideoStream : IDisposable
         _http.Close();
         // The sender must stop before the pipe closes. Otherwise it writes to a closed pipe.
         _sender.Join(TimeSpan.FromSeconds(2));
+        // Close the two inputs of ffmpeg, so that it ends the stream and stops.
+        _audio?.Dispose();
         try
         {
             _ffmpeg.StandardInput.Close();

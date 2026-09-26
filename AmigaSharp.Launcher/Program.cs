@@ -40,6 +40,9 @@ const string usage = """
                                 Channels DVR.
       --stream-4x3              Make the stream 960 by 720 pixels. The default is 1280 by 720, with bars at the sides.
       --stream-name <name>      The name of the channel in /channels.m3u. The default is the name of the command.
+      --stream-audio <path>     The sound of the stream: an M3U playlist, a text file with one audio file on each
+                                line, or a directory of audio files. It plays in a loop. If it has no audio that
+                                plays, the stream is silent. Without this option, the stream is silent.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
       --screenshot-every <n>    With --screenshot, also save a picture each n seconds until --seconds, with the time in
@@ -90,6 +93,7 @@ var headless = false;
 int? streamPort = null;
 var streamWide = true;
 string? streamName = null;
+string? streamAudio = null;
 var fastCpu = false;
 double? turboSeconds = null;
 string? turboLabel = null;
@@ -136,6 +140,7 @@ try
             case "--stream": streamPort = int.Parse(Next()); break;
             case "--stream-4x3": streamWide = false; break;
             case "--stream-name": streamName = Next(); break;
+            case "--stream-audio": streamAudio = Next(); break;
             case "--fast-cpu": fastCpu = true; break;
             case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--turbo-until": turboLabel = Next(); break;
@@ -232,7 +237,7 @@ using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrac
 
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
-    ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log)
+    ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio)
     : null;
 
 TranslatedProgram program = interpret
