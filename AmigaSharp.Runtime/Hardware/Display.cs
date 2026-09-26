@@ -187,7 +187,7 @@ public sealed class Display
                      && (dmacon & (DmaEnable | BitplaneDma)) == (DmaEnable | BitplaneDma);
 
         var fetchStart = State(CustomRegister.Ddfstrt) & 0xFC;
-        var fetchStop = State(CustomRegister.Ddfstop) & 0xFC;
+        var fetchStop = FetchStop(fetchStart, State(CustomRegister.Ddfstop) & 0xFE, highResolution ? 4 : 8);
         var words = highResolution
             ? Math.Max((fetchStop - fetchStart) / 4 + 2, 0)
             : Math.Max((fetchStop - fetchStart) / 8 + 1, 0);
@@ -221,6 +221,22 @@ public sealed class Display
             var modulo = (short)State(plane % 2 == 0 ? CustomRegister.Bpl1mod : CustomRegister.Bpl2mod);
             SetPlanePointer(plane, (uint)(PlanePointer(plane) + _fetchedWords * 2 + modulo));
         }
+    }
+
+    /// <summary>The last position where Agnus can start a fetch unit.</summary>
+    private const int HardwareFetchStop = 0xD8;
+
+    /// <summary>
+    /// The position of the last fetch unit of a line. A fetch unit starts each 4 color clocks in high resolution and
+    /// each 8 in low resolution, from DDFSTRT. Agnus compares the start of each unit with DDFSTOP, and the fetch stops
+    /// after the unit that is equal to it. If no unit is equal to DDFSTOP, the fetch continues to the hardware limit
+    /// at $D8. For example, Prevue uses DDFSTRT $28 and DDFSTOP $D6 in high resolution, and gets 46 words.
+    /// </summary>
+    private static int FetchStop(int start, int stop, int unit)
+    {
+        if (stop >= start && stop <= HardwareFetchStop && (stop - start) % unit == 0)
+            return stop;
+        return start + Math.Max(HardwareFetchStop - start, 0) / unit * unit;
     }
 
     private void DrawPixels(int line, bool longFrame, ref int next, bool active, int planes, bool highResolution,

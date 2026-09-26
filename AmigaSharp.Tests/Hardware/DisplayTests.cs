@@ -78,6 +78,23 @@ public class DisplayTests
     }
 
     [Fact]
+    public void HighResolution_DdfstopThatNoFetchUnitMatches_FetchesToTheHardwareLimit()
+    {
+        // Prevue uses DDFSTRT $28 and DDFSTOP $D6. The units start at $28, $2C, ... so none is $D6, and the fetch
+        // continues to $D8: 46 words, 92 bytes. With a modulo of 0, the next line starts 92 bytes later.
+        SetUpLowResolution();
+        Write(0xDFF100, 0x9200); // BPLCON0: high resolution, 1 plane.
+        Write(0xDFF092, 0x28);
+        Write(0xDFF094, 0xD6);
+        _memory.Write8(Plane + 92 + 16, 0x80);
+
+        var frame = NextFrame();
+
+        // The first data pixel is at ($28 * 2 + 9 - $48) * 2 = 34, and byte 16 starts 128 pixels later.
+        Assert.Equal(Red, Pixel(frame, 34 + 128, 0x2D));
+    }
+
+    [Fact]
     public void CopperWait_ChangesAColorFromALine()
     {
         SetUpLowResolution(
