@@ -91,6 +91,9 @@ public sealed class CustomChips
     private readonly Beam _beam;
     private readonly ushort[] _registers = new ushort[0x100];
     private readonly AudioTimer[] _audio = new AudioTimer[4];
+
+    /// <summary>The number of late audio interrupts that Paula keeps before it drops the oldest.</summary>
+    private const int MaximumAudioBacklog = 4;
     private long _lastFrame;
 
     public CustomChips(Beam beam)
@@ -222,12 +225,18 @@ public sealed class CustomChips
             ref var timer = ref _audio[channel];
             if (!timer.Running)
                 continue;
+            // The runtime delivers interrupts only at safe points, so an interrupt can be late. On a real Amiga the
+            // CPU takes each interrupt at once, and a program does not lose one. So when more than one interrupt is
+            // due, the next request waits until the program clears the last one. The backlog has a limit, so that a
+            // long pause of the host does not make a burst of interrupts.
             var interval = AudioInterval(channel);
-            var interrupts = (clock - timer.StartClock) / interval + 1;
-            if (interrupts > timer.Interrupts)
+            var due = (clock - timer.StartClock) / interval + 1;
+            timer.Interrupts = Math.Max(timer.Interrupts, due - MaximumAudioBacklog);
+            var bit = InterruptBit.Audio0 + channel;
+            if (due > timer.Interrupts && (Intreq & (1 << bit)) == 0)
             {
-                timer.Interrupts = interrupts;
-                RequestInterrupt(InterruptBit.Audio0 + channel);
+                timer.Interrupts++;
+                RequestInterrupt(bit);
             }
         }
 

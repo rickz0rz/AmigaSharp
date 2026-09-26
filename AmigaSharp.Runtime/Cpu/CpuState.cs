@@ -27,6 +27,12 @@ public sealed class CpuState(Memory memory)
     /// <summary>STOP sets this flag. The CPU does nothing until an interrupt occurs.</summary>
     public bool Stopped;
 
+    /// <summary>
+    /// The estimated clock cycles that the CPU ran, from <see cref="CycleEstimate"/>. The translated code and the
+    /// interpreter add to it. The runtime uses it to run at the speed of a real 68000.
+    /// </summary>
+    public long Cycles;
+
     // The stack pointer of the mode that is not active.
     private uint _inactiveStackPointer;
 

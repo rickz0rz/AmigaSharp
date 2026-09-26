@@ -41,6 +41,8 @@ const string usage = """
       --copper-dump <seconds>=<file>
                                 Write the copper writes of the first frame after the time to the file. The chip
                                 memory goes to the file with the name <file>.chip.
+      --fast-cpu                Run the 68000 as fast as the host can. By default, it runs at the speed of a real
+                                68000 (7.16 MHz), and it sleeps when it is ahead.
       --stats                   Write the speed of the emulation each second: the frames that the display made and
                                 dropped, the time to make a frame, and the time that the program waited.
       --trace                   Write each library call to the standard error stream.
@@ -61,6 +63,7 @@ var scale = 1;
 var seconds = 10.0;
 var virtualTime = false;
 var stats = false;
+var fastCpu = false;
 DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
 (double Seconds, string Path)? copperDump = null;
@@ -96,6 +99,7 @@ try
             case "--seconds": seconds = double.Parse(Next()); break;
             case "--trace": trace = true; break;
             case "--stats": stats = true; break;
+            case "--fast-cpu": fastCpu = true; break;
             case "--virtual-time": virtualTime = true; break;
             case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--copper-dump":
@@ -140,7 +144,7 @@ var realTimeClock = virtualTime ? null : new RealTimeClock(start: false);
 IClock clock = realTimeClock ?? (IClock)new VirtualClock();
 var measuringClock = stats ? new MeasuringClock(clock) : null;
 clock = measuringClock ?? clock;
-var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace };
+var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace, PaceCpu = !fastCpu };
 if (date != null)
     core.SetDate(date.Value);
 foreach (var (name, path) in volumes)

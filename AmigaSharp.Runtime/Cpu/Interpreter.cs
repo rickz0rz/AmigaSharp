@@ -29,6 +29,7 @@ public sealed class Interpreter(CpuState cpu)
         var trace = cpu.T;
         var instruction = Decoder.Decode(cpu.Pc, _memory.Read16);
         cpu.Pc = instruction.NextAddress;
+        cpu.Cycles += CycleEstimate.Of(instruction);
 
         try
         {

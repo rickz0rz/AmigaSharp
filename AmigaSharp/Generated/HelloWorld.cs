@@ -23,6 +23,7 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
         // hello.s:11: Start:			LEA	DosName,A1		;dos.library name string
         // $200000  LEA $20002C(PC),A1
         {
+            cpu.Cycles += 48;
             cpu.A[1] = 0x20002Cu;
         }
         // hello.s:12: MOVEQ	#36,D0			;minimum required version (36 = Kick 2.0)
@@ -44,6 +45,7 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
         // hello.s:15: TST.L	D0			;zero if OpenLibrary() failed
         // $20000E  TST.L D0
         {
+            cpu.Cycles += 18;
             Ops.Logic(cpu, Size.Long, cpu.D[0]);
         }
         // hello.s:16: BEQ.S	NoDos			;if failed, skip to exit
@@ -54,6 +56,7 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
         // hello.s:18: MOVE.L	#Hello,D1		;string to print
         // $200012  MOVE.L #$200038,D1
         {
+            cpu.Cycles += 36;
             var v = 0x200038u;
             cpu.D[1] = v;
             Ops.Logic(cpu, Size.Long, v);
@@ -72,6 +75,7 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
         // hello.s:22: MOVEA.L	A6,A1			;DOSBase, library to close
         // $20001E  MOVEA.L A6,A1
         {
+            cpu.Cycles += 40;
             cpu.A[1] = cpu.A[6];
         }
         // hello.s:23: MOVEA.L	SysBase,A6
@@ -94,6 +98,7 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
         // hello.s:26: NoDos:			CLR.L	D0			;return 0 to the system
         // $200028  MOVEQ #$0,D0
         {
+            cpu.Cycles += 20;
             cpu.D[0] = Ops.Logic(cpu, Size.Long, 0x0u);
         }
         // hello.s:27: RTS

@@ -75,17 +75,22 @@ public sealed class CSharpProgramWriter
             bodies.Add((code, lines));
         }
 
+        var blockCycles = BlockCycles(bodies.Select(body => body.Code.Instruction).ToList(), flow.Labels);
+
         WriteFunctionComment(function);
         Line($"    public void {function.Name}()");
         Line("    {");
-        foreach (var (code, lines) in bodies)
+        for (var n = 0; n < bodies.Count; n++)
         {
+            var (code, lines) = bodies[n];
             var address = code.Instruction.Address;
             foreach (var comment in SourceComments(code, isFunctionStart: address == function.Start))
                 Line($"        {comment}");
             if (flow.Labels.Contains(address))
                 Line($"    L_{address:X6}:");
             Line("        {");
+            if (blockCycles[n] > 0)
+                Line($"            cpu.Cycles += {blockCycles[n]};");
             foreach (var line in lines)
                 Line($"            {line}");
             Line("        }");
@@ -93,6 +98,29 @@ public sealed class CSharpProgramWriter
 
         Line("    }");
     }
+
+    /// <summary>
+    /// The estimated cycles of each basic block, at the index of its first instruction, and 0 at the other indexes. A
+    /// block starts at a label, and after an instruction that can change the flow. So a loop adds the cycles of its
+    /// instructions each time that it runs.
+    /// </summary>
+    private static int[] BlockCycles(List<Instruction> instructions, HashSet<uint> labels)
+    {
+        var cycles = new int[instructions.Count];
+        var start = 0;
+        for (var n = 0; n < instructions.Count; n++)
+        {
+            if (n > 0 && (labels.Contains(instructions[n].Address) || ChangesFlow(instructions[n - 1])))
+                start = n;
+            cycles[start] += CycleEstimate.Of(instructions[n]);
+        }
+
+        return cycles;
+    }
+
+    private static bool ChangesFlow(Instruction instruction) => instruction.Operation is Operation.Bcc or Operation.Dbcc
+        or Operation.Bsr or Operation.Jsr or Operation.Jmp or Operation.Rts or Operation.Rtr or Operation.Rte
+        or Operation.Trap or Operation.Trapv or Operation.Chk or Operation.LineA or Operation.LineF;
 
     private void WriteFunctionComment(Function function)
     {

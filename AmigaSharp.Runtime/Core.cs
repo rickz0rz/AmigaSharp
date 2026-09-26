@@ -361,11 +361,18 @@ public sealed class Core
         if (--_pollCountdown > 0)
             return;
         _pollCountdown = PollInterval;
+        Pace();
         PollNow();
     }
 
     /// <summary>Makes the interrupt requests that time causes, updates the devices, and delivers the interrupts.</summary>
     public void PollNow()
+    {
+        UpdateHardware();
+        Scheduler?.Preempt();
+    }
+
+    private void UpdateHardware()
     {
         Chipset.Beam.Clock.Tick();
         Chipset.Custom.Update();
@@ -373,7 +380,57 @@ public sealed class Core
         Interrupts.Deliver();
         foreach (var handler in _pollHandlers)
             handler();
-        Scheduler?.Preempt();
+    }
+
+    /// <summary>
+    /// Set to false to run the CPU as fast as the host can with a real-time clock. By default, the CPU runs at the
+    /// speed of a 68000.
+    /// </summary>
+    public bool PaceCpu { get; set; } = true;
+
+    // The CPU can be this far ahead of the clock before it sleeps, and this far behind before it stops to catch up.
+    private static readonly long PaceAheadCycles = (long)(CycleEstimate.ClockHz * 0.001);
+    private static readonly long PaceBehindCycles = (long)(CycleEstimate.ClockHz * 0.002);
+    private static readonly TimeSpan PaceStep = TimeSpan.FromMicroseconds(250);
+    private bool _pacing;
+
+    /// <summary>
+    /// Runs the CPU at the speed of a 68000 with a real-time clock. If the estimated cycles of the CPU are ahead of the
+    /// clock, the CPU sleeps until the clock is there. It wakes each 250 microseconds to deliver the interrupts, as a
+    /// real CPU gets them while it runs. If the host is slower than a 68000, the CPU does not collect a debt of time:
+    /// it is never more than 2 ms behind the clock.
+    /// </summary>
+    private void Pace()
+    {
+        var clock = Chipset.Beam.Clock;
+        if (!PaceCpu || !clock.IsRealTime || _pacing)
+            return;
+
+        var now = (long)(clock.Elapsed.TotalSeconds * CycleEstimate.ClockHz);
+        if (Cpu.Cycles < now - PaceBehindCycles)
+        {
+            Cpu.Cycles = now - PaceBehindCycles;
+            return;
+        }
+
+        if (Cpu.Cycles <= now + PaceAheadCycles)
+            return;
+
+        // The interrupt code that runs while the CPU sleeps must not sleep again, and must not switch tasks.
+        _pacing = true;
+        try
+        {
+            var target = TimeSpan.FromSeconds(Cpu.Cycles / CycleEstimate.ClockHz);
+            while (clock.Elapsed < target)
+            {
+                clock.WaitUntil(Min(target, clock.Elapsed + PaceStep));
+                UpdateHardware();
+            }
+        }
+        finally
+        {
+            _pacing = false;
+        }
     }
 
     /// <summary>The state of the calls of a task that the scheduler saves when it switches tasks.</summary>

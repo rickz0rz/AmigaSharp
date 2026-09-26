@@ -101,6 +101,28 @@ public class SerialAndAudioTests
     }
 
     [Fact]
+    public void AudioDma_LateInterrupts_AreDeliveredOneByOne_AndNotLost()
+    {
+        _memory.Write16(0xDFF0B4, 1);
+        _memory.Write16(0xDFF0B6, 0x65B);
+        _memory.Write16(0xDFF096, 0x8202);
+        var interval = TimeSpan.FromSeconds(2 * 0x65B / Beam.ColorClockHz);
+        _chipset.Custom.Update();
+        _memory.Write16(0xDFF09C, 0x100);
+
+        // Two more interrupts are due before the program clears the request of the first.
+        _clock.Advance(interval * 2.5);
+        _chipset.Custom.Update();
+        Assert.NotEqual(0, _chipset.Custom.Intreq & 0x100);
+        _memory.Write16(0xDFF09C, 0x100);
+        _chipset.Custom.Update();
+        Assert.NotEqual(0, _chipset.Custom.Intreq & 0x100);
+        _memory.Write16(0xDFF09C, 0x100);
+        _chipset.Custom.Update();
+        Assert.Equal(0, _chipset.Custom.Intreq & 0x100);
+    }
+
+    [Fact]
     public void AudioDma_Off_StopsTheInterrupts()
     {
         _memory.Write16(0xDFF0B4, 1);

@@ -14,6 +14,9 @@ public interface IClock
     void Tick()
     {
     }
+
+    /// <summary>True if the time is the time of the host. The runtime then runs the CPU at the speed of a 68000.</summary>
+    bool IsRealTime => false;
 }
 
 /// <summary>Real time from the start of the clock.</summary>
@@ -33,15 +36,28 @@ public sealed class RealTimeClock : IClock
 
     public TimeSpan Elapsed => _stopwatch.Elapsed;
 
+    public bool IsRealTime => true;
+
     /// <summary>Starts the clock if it is stopped.</summary>
     public void Start() => _stopwatch.Start();
 
+    /// <remarks>
+    /// Thread.Sleep has a resolution of 1 ms, but the audio interrupts of a program can come each 0.9 ms. So on macOS
+    /// and Linux, the clock uses usleep, which can sleep for less than 1 ms.
+    /// </remarks>
     public void WaitUntil(TimeSpan time)
     {
         var remaining = time - Elapsed;
-        if (remaining > TimeSpan.Zero)
+        if (remaining <= TimeSpan.Zero)
+            return;
+        if (OperatingSystem.IsWindows())
             Thread.Sleep(remaining);
+        else
+            usleep((uint)Math.Max(1, remaining.TotalMicroseconds));
     }
+
+    [System.Runtime.InteropServices.DllImport("libc")]
+    private static extern int usleep(uint microseconds);
 }
 
 /// <summary>A clock that also measures the time that the program waits in <see cref="WaitUntil"/>.</summary>
@@ -52,6 +68,8 @@ public sealed class MeasuringClock(IClock clock) : IClock
     public TimeSpan Elapsed => clock.Elapsed;
 
     public void Tick() => clock.Tick();
+
+    public bool IsRealTime => clock.IsRealTime;
 
     /// <summary>The time in <see cref="WaitUntil"/>, from all threads.</summary>
     public TimeSpan WaitTime => TimeSpan.FromTicks(Interlocked.Read(ref _waitTicks));
