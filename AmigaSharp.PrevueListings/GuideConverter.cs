@@ -6,8 +6,18 @@ namespace AmigaSharp.PrevueListings;
 /// <summary>Converts the guide of a Channels DVR server to the listings of a Prevue broadcast day.</summary>
 public static class GuideConverter
 {
-    /// <summary>The broadcast day of Prevue starts at 5:00 AM.</summary>
+    /// <summary>The broadcast day of Prevue starts at 5:00 AM: slot 1 is 5:00 to 5:29 AM.</summary>
     public static readonly TimeOnly DayStart = new(5, 0);
+
+    /// <summary>
+    /// ESQ changes its current day at 5:30 AM, when the half-hour slot becomes 2 (ESQDISP_DrawStatusBanner_Impl).
+    /// Before that time, the current day is the broadcast day that started on the day before.
+    /// </summary>
+    public static readonly TimeOnly DayChange = new(5, 30);
+
+    /// <summary>The broadcast day that ESQ uses as its current day at the time.</summary>
+    public static DateOnly CurrentDay(DateTime time) =>
+        DateOnly.FromDateTime(time.TimeOfDay < DayChange.ToTimeSpan() ? time.AddDays(-1) : time);
 
     private const int MaximumTextLength = 120;
 

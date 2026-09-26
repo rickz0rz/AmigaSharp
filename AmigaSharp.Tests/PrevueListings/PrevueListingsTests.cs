@@ -60,6 +60,16 @@ public class PrevueListingsTests
         Assert.Equal("Cafe / \"Noir\" - Deja", programs.Single().Text);
     }
 
+    [Theory]
+    [InlineData("2026-09-27T05:29", "2026-09-26")]
+    [InlineData("2026-09-27T05:30", "2026-09-27")]
+    [InlineData("2026-09-27T00:10", "2026-09-26")]
+    [InlineData("2026-09-26T23:59", "2026-09-26")]
+    public void CurrentDay_ChangesAt530_AsEsqDoes(string time, string day)
+    {
+        Assert.Equal(DateOnly.Parse(day), GuideConverter.CurrentDay(DateTime.Parse(time)));
+    }
+
     [Fact]
     public void WriteCurrentDay_HasTheLayoutThatEsqReads()
     {

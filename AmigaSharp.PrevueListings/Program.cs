@@ -11,8 +11,8 @@ const string usage = """
     Options:
       --server <url>        The address of the Channels DVR server, for example http://192.168.0.195:8089.
       --output <dir>        The directory for curday.dat and nxtday.dat: the drive of Prevue.
-      --date <date>         The broadcast day, for example 2026-09-26. The default is the current broadcast day: the
-                            day starts at 5:00 AM.
+      --date <date>         The broadcast day, for example 2026-09-26. The default is the current day of ESQ: it
+                            changes at 5:30 AM.
       --max-channels <n>    The maximum number of channels. The default and the limit of ESQ is 200.
       --insecure            Accept any HTTPS certificate of the server.
       --feed <file>         Also write the listings as a Prevue serial data feed, for the --serial-file option of the
@@ -130,9 +130,7 @@ while (true)
 
 async Task<PrevueDay[]> ReadDaysAsync()
 {
-    // Before 5:00 AM, the current broadcast day is the day before.
-    var now = DateTime.Now + clockOffset;
-    var date = fixedDate ?? DateOnly.FromDateTime(now.TimeOfDay < GuideConverter.DayStart.ToTimeSpan() ? now.AddDays(-1) : now);
+    var date = fixedDate ?? GuideConverter.CurrentDay(DateTime.Now + clockOffset);
     var start = GuideConverter.StartOf(date, zone);
     Console.WriteLine($"Reading the guide from {server} for the broadcast days of {date:yyyy-MM-dd} and the day after.");
     var guide = await client.GetGuideAsync(start.AddHours(-6), TimeSpan.FromHours(54));
