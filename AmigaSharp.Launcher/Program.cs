@@ -337,6 +337,7 @@ if (measuringClock != null)
         var (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) =
             (TimeSpan.Zero, TimeSpan.Zero, 0L, 0L, TimeSpan.Zero, TimeSpan.Zero);
         var (lastVertb, lastAudio1) = (0L, 0L);
+        var lastInterpreted = 0L;
         while (!finished)
         {
             Thread.Sleep(1000);
@@ -349,7 +350,9 @@ if (measuringClock != null)
                           $"waiting {(wait - lastWait).TotalSeconds / seconds * 100,3:F0}%, " +
                           $"Amiga time x{(amiga - lastAmiga).TotalSeconds / seconds:F2}, " +
                           $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
-                          $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}");
+                          $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}, " +
+                          $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s");
+            lastInterpreted = core.InterpretedInstructions;
             (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);
             (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) = (now, amiga, frames, dropped, render, wait);
         }
@@ -402,6 +405,13 @@ try
 finally
 {
     Directory.Delete(ram, recursive: true);
+}
+
+if (stats && core.InterpreterEntries.Count > 0)
+{
+    log.WriteLine($"The interpreter ran {core.InterpretedInstructions} instructions. The most frequent entries:");
+    foreach (var (address, count) in core.InterpreterEntries.OrderByDescending(e => e.Value).Take(10).ToList())
+        log.WriteLine($"  ${address:X6}: {count} times");
 }
 
 return exitCode;

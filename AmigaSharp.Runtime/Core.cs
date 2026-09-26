@@ -507,8 +507,15 @@ public sealed class Core
     /// the frame is at the top of the stack now. A call from the interpreted code to a native or a translated function
     /// runs that function.
     /// </summary>
+    /// <summary>The number of instructions that the interpreter ran, because they have no translation.</summary>
+    public long InterpretedInstructions { get; private set; }
+
+    /// <summary>For each address where the code went into the interpreter, the number of times.</summary>
+    public Dictionary<uint, long> InterpreterEntries { get; } = new();
+
     private void RunInterpreted(uint address)
     {
+        InterpreterEntries[address] = InterpreterEntries.GetValueOrDefault(address) + 1;
         var frame = Cpu.Sp;
         Cpu.Pc = address;
         while (true)
@@ -529,6 +536,7 @@ public sealed class Core
                 Poll();
                 var opcode = Memory.Read16(pc);
                 Interpreter.Step();
+                InterpretedInstructions++;
                 // RTS, RTE and RTR are the only instructions that can return from the frame.
                 if (opcode is not (0x4E75 or 0x4E73 or 0x4E77))
                     continue;
