@@ -47,6 +47,17 @@ Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing.
 
 ## Show the saved listings
 
+The quickest way is the script. It opens Prevue in a window, with the saved 2020 listings:
+
+```sh
+scripts/run-esq.sh
+```
+
+The first run copies the drive to `build/drive/` and unpacks the listing files there. Delete `build/drive/` to start
+again from the original drive. The script sends its arguments to the launcher, for example `--scale 1`.
+
+To do the same steps by hand, follow the procedure below.
+
 The listing files of the drive (`curday.dat` and `nxtday.dat`) are packed with PowerPacker, and Prevue cannot read
 packed files. Unpack them in a copy of the drive, and run Prevue on the date of the data:
 
