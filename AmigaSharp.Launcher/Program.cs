@@ -38,6 +38,9 @@ const string usage = """
       --press <seconds>=<key>   Press a key at a time, for example 5=escape or 7.5=f1. The names are the letters, the
                                 digits, space, return, escape, backspace, tab, delete, help, up, down, left, right and
                                 f1 to f10. The option can occur more than once.
+      --copper-dump <seconds>=<file>
+                                Write the copper writes of the first frame after the time to the file. The chip
+                                memory goes to the file with the name <file>.chip.
       --trace                   Write each library call to the standard error stream.
     """;
 
@@ -57,6 +60,7 @@ var seconds = 10.0;
 var virtualTime = false;
 DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
+(double Seconds, string Path)? copperDump = null;
 
 try
 {
@@ -90,6 +94,12 @@ try
             case "--trace": trace = true; break;
             case "--virtual-time": virtualTime = true; break;
             case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+            case "--copper-dump":
+            {
+                var (time, path) = Pair();
+                copperDump = (double.Parse(time, System.Globalization.CultureInfo.InvariantCulture), path);
+                break;
+            }
             case "--press":
             {
                 var (time, key) = Pair();
@@ -211,6 +221,16 @@ if (presses.Count > 0)
             core.KeyboardInput.PostRawKey(rawKey, up: true);
         }
     }) { IsBackground = true, Name = "Key presses" }.Start();
+}
+
+if (copperDump is var (dumpTime, dumpPath))
+{
+    new Thread(() =>
+    {
+        WaitForTime(dumpTime);
+        core.Chipset.Display.CopperDump = new StreamWriter(dumpPath);
+        File.WriteAllBytes(dumpPath + ".chip", core.Memory.Ram(0, 0x20_0000).ToArray());
+    }) { IsBackground = true, Name = "Copper dump" }.Start();
 }
 
 void WaitForTime(double time)

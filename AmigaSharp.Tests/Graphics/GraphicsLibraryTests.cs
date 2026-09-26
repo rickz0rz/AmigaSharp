@@ -180,6 +180,57 @@ public sealed class GraphicsLibraryTests : IDisposable
     }
 
     [Fact]
+    public void Text_ColorFont_DrawsTheColors_AndColorOneInTheForegroundPen()
+    {
+        // A bitmap of 3 planes, all pixels pen 7. The font has 2 planes, as the Prevue fonts do.
+        var bitMap = NewBitMap(depth: 3);
+        _harness.Memory.Write32(_rastPort + RastPortOffsets.BitMap, bitMap);
+        Call(SetRast, ("A1", _rastPort), ("D0", 7));
+        Call(SetFont, ("A1", _rastPort), ("A0", NewColorFont()));
+        Pen(5);
+        Call(SetDrMd, ("A1", _rastPort), ("D0", (uint)DrawMode.Jam1));
+        Call(Move, ("A1", _rastPort), ("D0", 0), ("D1", 0));
+
+        Call(Text, ("A1", _rastPort), ("A0", _harness.String("A")), ("D0", 1));
+
+        // Color 1 gets the foreground pen 5. Colors 2 and 3 keep their pens, and the pixels of color 0 do not change.
+        var pens = PlanarImage.ReadPens(_harness.Memory, bitMap);
+        Assert.Equal("5527\n2223\n", PlanarImage.ToText(pens, 0, 0, 4, 2));
+    }
+
+    /// <summary>
+    /// A ColorTextFont of 2 planes with the character "A", 4 pixels wide and 2 rows high. Its colors are 1 1 2 0 in
+    /// row 0 and 2 2 2 3 in row 1. It has MAPCOLOR and an FgColor of $FF, as the Prevue fonts have.
+    /// </summary>
+    private uint NewColorFont()
+    {
+        var core = _harness.Core;
+        var memory = _harness.Memory;
+        var plane0 = core.AllocateSystem([0b1100_0000, 0b0001_0000]);
+        var plane1 = core.AllocateSystem([0b0010_0000, 0b1111_0000]);
+        var charLoc = core.AllocateSystem(8);
+        memory.Write32(charLoc, 4);
+        var font = core.AllocateSystem(ColorTextFontOffsets.CharData + 8 * 4);
+        memory.Write16(font + TextFontOffsets.YSize, 2);
+        memory.Write8(font + TextFontOffsets.Style, TextFontOffsets.ColorFontStyle);
+        memory.Write16(font + TextFontOffsets.XSize, 4);
+        memory.Write16(font + TextFontOffsets.Baseline, 0);
+        memory.Write8(font + TextFontOffsets.LoChar, (byte)'A');
+        memory.Write8(font + TextFontOffsets.HiChar, (byte)'A');
+        memory.Write32(font + TextFontOffsets.CharData, plane0);
+        memory.Write16(font + TextFontOffsets.Modulo, 1);
+        memory.Write32(font + TextFontOffsets.CharLoc, charLoc);
+        memory.Write16(font + ColorTextFontOffsets.Flags, ColorTextFontOffsets.MapColor);
+        memory.Write8(font + ColorTextFontOffsets.Depth, 2);
+        memory.Write8(font + ColorTextFontOffsets.FgColor, 0xFF);
+        memory.Write8(font + ColorTextFontOffsets.High, 3);
+        memory.Write8(font + ColorTextFontOffsets.PlanePick, 0xFF);
+        memory.Write32(font + ColorTextFontOffsets.CharData, plane0);
+        memory.Write32(font + ColorTextFontOffsets.CharData + 4, plane1);
+        return font;
+    }
+
+    [Fact]
     public void TextLength_OfTheBuiltInFont_IsEightForEachCharacter()
     {
         Assert.Equal(40u, Call(TextLength, ("A1", _rastPort), ("A0", _harness.String("Hello")), ("D0", 5)));

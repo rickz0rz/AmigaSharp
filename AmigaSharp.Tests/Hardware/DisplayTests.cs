@@ -58,6 +58,26 @@ public class DisplayTests
     }
 
     [Fact]
+    public void PlanePointerWrite_AfterDdfstop_IsTheStartOfTheNextLine()
+    {
+        // At the end of line $2C, after DDFSTOP ($D0), the copper points plane 1 to a new row. The display must
+        // not add the modulo to that value.
+        const uint newRow = Plane + 0x1000;
+        SetUpLowResolution(
+            Wait(0x2C, 0xD4),
+            Move(0x0E0, newRow >> 16),
+            Move(0x0E2, newRow & 0xFFFF));
+        Write(0xDFF108, 40); // BPL1MOD
+        _memory.Write8(Plane + 80, 0x80); // The row that the modulo gives.
+        _memory.Write8(newRow, 0x40);
+
+        var frame = NextFrame();
+
+        Assert.Equal(Black, Pixel(frame, FirstX, 0x2D));
+        Assert.Equal(Red, Pixel(frame, FirstX + 2, 0x2D));
+    }
+
+    [Fact]
     public void CopperWait_ChangesAColorFromALine()
     {
         SetUpLowResolution(

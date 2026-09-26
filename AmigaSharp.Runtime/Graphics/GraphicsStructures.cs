@@ -94,6 +94,9 @@ public static class TextFontOffsets
     public const uint CharKern = 48;
     public const uint Size = 52;
 
+    /// <summary>tf_Style: the font is a ColorTextFont.</summary>
+    public const byte ColorFontStyle = 1 << 6;
+
     /// <summary>tf_Flags: the font is in ROM.</summary>
     public const byte RomFont = 1 << 0;
 
@@ -104,6 +107,26 @@ public static class TextFontOffsets
     public const byte Proportional = 1 << 5;
 
     public const byte NodeTypeFont = 12;
+}
+
+/// <summary>
+/// <c>struct ColorTextFont</c> (graphics/text.h): a TextFont with more than one plane. Each plane has its own
+/// CharData. The other fields are the same as in the TextFont.
+/// </summary>
+public static class ColorTextFontOffsets
+{
+    public const uint Flags = 52;
+    public const uint Depth = 54;
+    public const uint FgColor = 55;
+    public const uint Low = 56;
+    public const uint High = 57;
+    public const uint PlanePick = 58;
+    public const uint PlaneOnOff = 59;
+    public const uint CharData = 64;
+    public const int MaximumDepth = 8;
+
+    /// <summary>ctf_Flags: the pixels of color ctf_FgColor get the foreground pen of the RastPort.</summary>
+    public const ushort MapColor = 1 << 0;
 }
 
 /// <summary><c>struct GfxBase</c> (graphics/gfxbase.h).</summary>

@@ -44,6 +44,14 @@ public sealed class Display
     private readonly uint[] _canvas = new uint[Width * Height];
     private readonly uint[] _front = new uint[Width * Height];
 
+    // After the fetch of a line, each plane pointer moves to the next line of its plane. The display adds the
+    // modulo when the last fetch of the line starts, at DDFSTOP. A copper write after that sets the pointer for the
+    // next line as written.
+    private bool _moduloPending;
+    private int _moduloPosition;
+    private int _fetchedPlanes;
+    private int _fetchedWords;
+
     // The address where the copper starts in the next frame. The copper starts at COP1LC at the start of the frame,
     // before the program handles the vertical blank. A change of COP1LC in the handler is for the frame after that.
     private uint? _frameStart;
@@ -59,6 +67,12 @@ public sealed class Display
 
     /// <summary>The number of frames that the display made. The host shows a new frame when it changes.</summary>
     public long FrameNumber { get; private set; }
+
+    /// <summary>
+    /// Set a writer to dump the next frame that the host shows. The dump has the registers at the start of the frame
+    /// and each copper write with its line and horizontal position. The display then sets the property to null.
+    /// </summary>
+    public TextWriter? CopperDump { get; set; }
 
     /// <summary>True if the last frame used interlace.</summary>
     public bool IsInterlaced { get; private set; }
@@ -95,6 +109,14 @@ public sealed class Display
         else
             _copper.Stop();
 
+        var dump = render ? CopperDump : null;
+        dump?.WriteLine($"frame {FrameNumber + 1}, {(longFrame ? "long" : "short")}, copper at ${(_frameStart ?? Location(CustomRegister.Cop1lc)):X6}");
+        if (dump != null)
+        {
+            for (var offset = 0x080; offset < 0x1C0; offset += 2)
+                dump.WriteLine($"  start {offset:X3} = {_state[offset >> 1]:X4}");
+        }
+
         var interlaced = (_state[CustomRegister.Bplcon0 >> 1] & Interlace) != 0;
         var lines = interlaced && longFrame ? 263 : 262;
         for (var line = 0; line < lines; line++)
@@ -102,7 +124,19 @@ public sealed class Display
             _writes.Clear();
             if (copper)
                 _copper.RunLine(line, _writes);
+            if (dump != null)
+            {
+                foreach (var write in _writes)
+                    dump.WriteLine($"  line {line,3} h {write.Horizontal:X2}: {write.Offset:X3} = {write.Value:X4}");
+            }
+
             RenderLine(line, render, longFrame);
+        }
+
+        if (dump != null)
+        {
+            dump.Flush();
+            CopperDump = null;
         }
 
         IsInterlaced = (_state[CustomRegister.Bplcon0 >> 1] & Interlace) != 0;
@@ -146,24 +180,31 @@ public sealed class Display
         {
             for (var plane = 0; plane < planes; plane++)
                 _memory.Ram(PlanePointer(plane), words * 2).CopyTo(_planeData[plane]);
+            _moduloPending = true;
+            _moduloPosition = fetchStop;
+            _fetchedPlanes = planes;
+            _fetchedWords = words;
         }
 
         if (render && line >= FirstLine && line < FirstLine + Height / 2)
             DrawPixels(line, longFrame, ref next, active, planes, highResolution, fetchStart, words,
                 horizontalStart, horizontalStop);
 
-        // After the fetch, each pointer moves to the next line of its plane: the bytes of the line and the modulo.
-        // The odd planes use BPL1MOD and the even planes use BPL2MOD.
-        if (active)
-        {
-            for (var plane = 0; plane < planes; plane++)
-            {
-                var modulo = (short)State(plane % 2 == 0 ? CustomRegister.Bpl1mod : CustomRegister.Bpl2mod);
-                SetPlanePointer(plane, (uint)(PlanePointer(plane) + words * 2 + modulo));
-            }
-        }
-
         ApplyWrites(ref next, int.MaxValue);
+    }
+
+    /// <summary>
+    /// Moves each fetched plane pointer to the next line of its plane: the bytes of the line and the modulo. The odd
+    /// planes use BPL1MOD and the even planes use BPL2MOD.
+    /// </summary>
+    private void AddModulo()
+    {
+        _moduloPending = false;
+        for (var plane = 0; plane < _fetchedPlanes; plane++)
+        {
+            var modulo = (short)State(plane % 2 == 0 ? CustomRegister.Bpl1mod : CustomRegister.Bpl2mod);
+            SetPlanePointer(plane, (uint)(PlanePointer(plane) + _fetchedWords * 2 + modulo));
+        }
     }
 
     private void DrawPixels(int line, bool longFrame, ref int next, bool active, int planes, bool highResolution,
@@ -245,8 +286,13 @@ public sealed class Display
         while (next < _writes.Count && _writes[next].Horizontal <= horizontal)
         {
             var write = _writes[next++];
+            if (_moduloPending && write.Horizontal >= _moduloPosition)
+                AddModulo();
             _state[write.Offset >> 1] = write.Value;
         }
+
+        if (_moduloPending && horizontal >= _moduloPosition)
+            AddModulo();
     }
 
     private ushort State(int offset) => _state[offset >> 1];

@@ -86,10 +86,10 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
         int x = (short)_memory.Read16(rastPort + RastPortOffsets.X);
         var top = (short)_memory.Read16(rastPort + RastPortOffsets.Y) - _memory.Read16(font + TextFontOffsets.Baseline);
         var height = _memory.Read16(font + TextFontOffsets.YSize);
-        var charData = _memory.Read32(font + TextFontOffsets.CharData);
         var modulo = _memory.Read16(font + TextFontOffsets.Modulo);
         var spacing = (short)_memory.Read16(rastPort + RastPortOffsets.TxSpacing);
         var drawCell = target.Mode.HasFlag(DrawMode.Jam2) || target.Mode.HasFlag(DrawMode.InverseVideo);
+        var color = ColorFont.Read(_memory, font);
 
         for (uint i = 0; i < count; i++)
         {
@@ -100,12 +100,22 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
             var cellEnd = drawCell ? Math.Max(x + glyph.Space, glyphX + glyph.Width) : glyphX + glyph.Width;
             for (var row = 0; row < height; row++)
             {
-                var rowAddress = charData + (uint)(row * modulo);
+                var rowOffset = (uint)(row * modulo);
                 for (var column = cellStart; column < cellEnd; column++)
                 {
                     var bitIndex = column - glyphX;
-                    var set = bitIndex >= 0 && bitIndex < glyph.Width
-                              && (_memory.Read8(rowAddress + (uint)((glyph.Offset + bitIndex) >> 3)) & (0x80 >> ((glyph.Offset + bitIndex) & 7))) != 0;
+                    var inGlyph = bitIndex >= 0 && bitIndex < glyph.Width;
+                    if (color is { } colorFont)
+                    {
+                        var value = inGlyph ? colorFont.ColorAt(_memory, rowOffset, glyph.Offset + bitIndex) : 0;
+                        if (value != 0 && !target.Mode.HasFlag(DrawMode.Complement))
+                            _renderer.WritePixel(target, column, top + row, colorFont.Pen(value, target.FgPen));
+                        else if (value != 0 || drawCell)
+                            _renderer.PatternPixel(target, column, top + row, value != 0);
+                        continue;
+                    }
+
+                    var set = inGlyph && GlyphBit(_memory.Read32(font + TextFontOffsets.CharData) + rowOffset, glyph.Offset + bitIndex);
                     if (set || drawCell)
                         _renderer.PatternPixel(target, column, top + row, set);
                 }
@@ -115,6 +125,86 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
         }
 
         _memory.Write16(rastPort + RastPortOffsets.X, (ushort)x);
+    }
+
+    private bool GlyphBit(uint rowAddress, int bit) =>
+        (_memory.Read8(rowAddress + (uint)(bit >> 3)) & (0x80 >> (bit & 7))) != 0;
+
+    /// <summary>
+    /// The planes of a ColorTextFont. A pixel of a glyph has a color: bit k of the color is the bit in font plane k.
+    /// Font plane k goes to the destination plane of bit k of PlanePick, counted from bit 0. Each other destination
+    /// plane gets its bit of PlaneOnOff. The pixels of color 0 are the background.
+    /// </summary>
+    private sealed class ColorFont
+    {
+        private readonly uint[] _planes;
+        private readonly byte _planePick;
+        private readonly byte _planeOnOff;
+        private readonly int? _mappedColor;
+
+        private ColorFont(uint[] planes, byte planePick, byte planeOnOff, int? mappedColor)
+        {
+            _planes = planes;
+            _planePick = planePick;
+            _planeOnOff = planeOnOff;
+            _mappedColor = mappedColor;
+        }
+
+        /// <summary>Returns null if the font is not a color font.</summary>
+        public static ColorFont? Read(Memory memory, uint font)
+        {
+            if ((memory.Read8(font + TextFontOffsets.Style) & TextFontOffsets.ColorFontStyle) == 0)
+                return null;
+            var depth = Math.Min((int)memory.Read8(font + ColorTextFontOffsets.Depth), ColorTextFontOffsets.MaximumDepth);
+            var planes = new uint[depth];
+            for (var k = 0; k < depth; k++)
+                planes[k] = memory.Read32(font + ColorTextFontOffsets.CharData + (uint)k * 4);
+
+            // With MAPCOLOR, the color FgColor gets the foreground pen. The Prevue fonts have MAPCOLOR and an FgColor
+            // of $FF, which is not between Low and High. On the real machine, color 1 of these fonts gets the
+            // foreground pen: the text is in the pen, and the outline (color 2) stays. So color 1 is the default.
+            int? mapped = null;
+            if ((memory.Read16(font + ColorTextFontOffsets.Flags) & ColorTextFontOffsets.MapColor) != 0)
+            {
+                var fgColor = memory.Read8(font + ColorTextFontOffsets.FgColor);
+                var inRange = fgColor >= memory.Read8(font + ColorTextFontOffsets.Low)
+                              && fgColor <= memory.Read8(font + ColorTextFontOffsets.High);
+                mapped = inRange ? fgColor : 1;
+            }
+
+            return new ColorFont(planes, memory.Read8(font + ColorTextFontOffsets.PlanePick),
+                memory.Read8(font + ColorTextFontOffsets.PlaneOnOff), mapped);
+        }
+
+        public int ColorAt(Memory memory, uint rowOffset, int bit)
+        {
+            var value = 0;
+            for (var k = 0; k < _planes.Length; k++)
+            {
+                if (_planes[k] != 0 && (memory.Read8(_planes[k] + rowOffset + (uint)(bit >> 3)) & (0x80 >> (bit & 7))) != 0)
+                    value |= 1 << k;
+            }
+
+            return value;
+        }
+
+        /// <summary>The pen of a pixel of the color in the destination planes.</summary>
+        public int Pen(int value, int fgPen)
+        {
+            if (value == _mappedColor)
+                return fgPen;
+            var pen = 0;
+            var fontPlane = 0;
+            for (var plane = 0; plane < 8; plane++)
+            {
+                var bit = (_planeOnOff >> plane) & 1;
+                if ((_planePick & (1 << plane)) != 0)
+                    bit = fontPlane < _planes.Length ? (value >> fontPlane++) & 1 : bit;
+                pen |= bit << plane;
+            }
+
+            return pen;
+        }
     }
 
     // SetFont(rp, font)
