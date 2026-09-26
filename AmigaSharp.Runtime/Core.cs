@@ -393,6 +393,7 @@ public sealed class Core
     private static readonly long PaceBehindCycles = (long)(CycleEstimate.ClockHz * 0.002);
     private static readonly TimeSpan PaceStep = TimeSpan.FromMicroseconds(250);
     private bool _pacing;
+    private long _paceOffset;
 
     /// <summary>
     /// Runs the CPU at the speed of a 68000 with a real-time clock. If the estimated cycles of the CPU are ahead of the
@@ -406,27 +407,31 @@ public sealed class Core
         if (!clock.IsRealTime || _pacing)
             return;
 
+        // The pacing compares the cycles since the last change of the offset with the clock. Cpu.Cycles itself only
+        // grows, so it also shows how fast the CPU runs.
         var now = (long)(clock.Elapsed.TotalSeconds * CycleEstimate.ClockHz);
+        var cycles = Cpu.Cycles - _paceOffset;
         if (!PaceCpu)
         {
             // The cycles follow the clock, so that the CPU does not sleep to pay back the time when the pacing starts.
-            Cpu.Cycles = now;
-            return;
-        }
-        if (Cpu.Cycles < now - PaceBehindCycles)
-        {
-            Cpu.Cycles = now - PaceBehindCycles;
+            _paceOffset = Cpu.Cycles - now;
             return;
         }
 
-        if (Cpu.Cycles <= now + PaceAheadCycles)
+        if (cycles < now - PaceBehindCycles)
+        {
+            _paceOffset = Cpu.Cycles - (now - PaceBehindCycles);
+            return;
+        }
+
+        if (cycles <= now + PaceAheadCycles)
             return;
 
         // The interrupt code that runs while the CPU sleeps must not sleep again, and must not switch tasks.
         _pacing = true;
         try
         {
-            var target = TimeSpan.FromSeconds(Cpu.Cycles / CycleEstimate.ClockHz);
+            var target = TimeSpan.FromSeconds(cycles / CycleEstimate.ClockHz);
             while (clock.Elapsed < target)
             {
                 clock.WaitUntil(Min(target, clock.Elapsed + PaceStep));

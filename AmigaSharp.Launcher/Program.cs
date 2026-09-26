@@ -378,6 +378,7 @@ if (measuringClock != null)
             (TimeSpan.Zero, TimeSpan.Zero, 0L, 0L, TimeSpan.Zero, TimeSpan.Zero);
         var (lastVertb, lastAudio1) = (0L, 0L);
         var lastInterpreted = 0L;
+        var lastCycles = 0L;
         while (!finished)
         {
             Thread.Sleep(1000);
@@ -391,8 +392,10 @@ if (measuringClock != null)
                           $"Amiga time x{(amiga - lastAmiga).TotalSeconds / seconds:F2}, " +
                           $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
                           $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}, " +
-                          $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s");
+                          $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s, " +
+                          $"68000 at {(core.Cpu.Cycles - lastCycles) / seconds / 1e6:F2} MHz");
             lastInterpreted = core.InterpretedInstructions;
+            lastCycles = core.Cpu.Cycles;
             (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);
             (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) = (now, amiga, frames, dropped, render, wait);
         }
