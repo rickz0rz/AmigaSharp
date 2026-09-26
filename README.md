@@ -59,6 +59,27 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --date 2020-11-01T16:00
 ```
 
+## Replay a serial feed
+
+Prevue gets its listings on the serial port. The launcher can replay a captured feed from a file:
+
+- `--serial-file <file>` replays the bytes of the file in place of the TCP bridge. The bytes go at the baud rate of
+  SERPER. The replay starts when the program enables the RBF interrupt.
+- `--serial-start <seconds>` delays the replay. Prevue empties its receive buffer while it starts, so use 8 or more.
+- `--serial-log <file>` writes each byte in the two directions to the file, with the time of the Amiga clock.
+- `--feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters. For
+  example, a change of `_DATACErrs` shows a checksum error. This option needs `--listing`.
+
+Use `--virtual-time` with a replay. The run is then the same each time. Run the replay on a copy of the drive,
+because Prevue writes the data that it receives to the drive:
+
+```sh
+dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
+    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
+    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --virtual-time \
+    --serial-file feed.bin --serial-start 8 --serial-log serial.log --feed-trace feed.log
+```
+
 ## Tests
 
 ```sh

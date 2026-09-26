@@ -69,7 +69,10 @@ public sealed partial class VasmListing
                 var symbol = SymbolPattern().Match(text);
                 if (!symbol.Success)
                 {
-                    inSymbols = false;
+                    // An external symbol has no value, for example "NAME external EXP". The table ends at the next
+                    // table or at an empty line.
+                    if (text.Length == 0 || text.StartsWith("Symbols by", StringComparison.Ordinal))
+                        inSymbols = false;
                     continue;
                 }
 
@@ -215,6 +218,6 @@ public sealed partial class VasmListing
     [GeneratedRegex(@"^(?:(?<section>[0-9A-F]{2}):(?<offset>[0-9A-F]{8}) (?<bytes>[0-9A-F]+))?\s*(?:\t\s*(?<line>\d+)(?<kind>[:M]) ?(?<source>.*))?$")]
     private static partial Regex LinePattern();
 
-    [GeneratedRegex(@"^(?<name>\S+)\s+(?<section>[0-9A-F]{2}|E):(?<value>[0-9A-F]{8})$")]
+    [GeneratedRegex(@"^(?<name>\S+)\s+(?<section>[0-9A-F]{2}|E):(?<value>[0-9A-F]{8})(?:\s+\S+)*$")]
     private static partial Regex SymbolPattern();
 }

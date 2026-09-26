@@ -19,6 +19,29 @@ public class VasmListingTests
     }
 
     [Fact]
+    public void Parse_ReadsSymbolsWithFlags_AndSkipsExternalSymbols()
+    {
+        string[] lines =
+        [
+            "Symbols by name:",
+            "Alpha                            00:00000010",
+            "Exported                         01:0000A336 EXP",
+            "Imported                        external EXP",
+            "Zulu                             00:00000020",
+            "",
+            "Symbols by value:",
+            "00000010 Alpha",
+        ];
+
+        var listing = VasmListing.Parse(lines);
+
+        Assert.Equal(new ListingSymbol("Exported", 1, 0xA336), listing.Symbols["Exported"]);
+        Assert.Equal(new ListingSymbol("Zulu", 0, 0x20), listing.Symbols["Zulu"]);
+        Assert.False(listing.Symbols.ContainsKey("Imported"));
+        Assert.Equal(3, listing.Symbols.Count);
+    }
+
+    [Fact]
     public void Parse_JoinsContinuationBytes_AndKeepsTheMacroCall()
     {
         string[] lines =

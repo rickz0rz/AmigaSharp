@@ -21,6 +21,13 @@ const string usage = """
       --arguments <text>        The command line arguments of the program.
       --command-name <name>     The name of the command. The default is the name of the executable.
       --serial-port <port>      The TCP port of the serial bridge. The default is 5400. 0 turns the bridge off.
+      --serial-file <file>      Replay a captured feed on the serial port, in place of the bridge. The replay starts
+                                when the program enables the RBF interrupt, and it goes at the baud rate of SERPER.
+      --serial-start <seconds>  The time of the Amiga clock before the replay can start. The default is 0. ESQ empties
+                                its receive buffer while it starts, so give it time: for example 8.
+      --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
+      --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
+                                to the file. This option needs --listing.
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
@@ -38,6 +45,8 @@ if (args.Length > 0 && args[0] == "unpack")
     return Unpack(args[1..]);
 
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
+string? serialFile = null, serialLog = null, feedTrace = null;
+var serialStart = 0.0;
 var volumes = new List<(string Name, string Path)>();
 var assigns = new List<(string Name, string Path)>();
 var interpret = false;
@@ -71,6 +80,10 @@ try
             case "--arguments": arguments = Next(); break;
             case "--command-name": commandName = Next(); break;
             case "--serial-port": serialPort = int.Parse(Next()); break;
+            case "--serial-file": serialFile = Next(); break;
+            case "--serial-start": serialStart = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
+            case "--serial-log": serialLog = Next(); break;
+            case "--feed-trace": feedTrace = Next(); break;
             case "--scale": scale = int.Parse(Next()); break;
             case "--screenshot": screenshot = Next(); break;
             case "--seconds": seconds = double.Parse(Next()); break;
@@ -94,6 +107,8 @@ try
 
     if (executablePath == null)
         throw new ArgumentException("the executable is missing.");
+    if (feedTrace != null && listing == null)
+        throw new ArgumentException("--feed-trace needs --listing.");
 }
 catch (Exception e) when (e is ArgumentException or FormatException)
 {
@@ -123,16 +138,41 @@ core.FileSystem.AddVolume("RAM", ram);
 if (assigns.All(assign => !assign.Name.Equals("T", StringComparison.OrdinalIgnoreCase)))
     core.FileSystem.AddAssign("T", "RAM:T");
 
-using var bridge = serialPort > 0 ? new TcpSerialBridge(serialPort, log: log) : null;
+using var bridge = serialPort > 0 && serialFile == null ? new TcpSerialBridge(serialPort, log: log) : null;
 if (bridge != null)
 {
     core.Chipset.Custom.Serial.Connection = bridge;
     log.WriteLine($"Serial bridge on localhost:{bridge.Port}. For example: nc localhost {bridge.Port}");
 }
 
+if (serialFile != null)
+{
+    var feed = File.ReadAllBytes(serialFile);
+    var custom = core.Chipset.Custom;
+    core.Chipset.Custom.Serial.Connection = new ReplaySerialConnection(feed,
+        () => clock.Elapsed.TotalSeconds >= serialStart && (custom.Intena & (1 << InterruptBit.Rbf)) != 0);
+    log.WriteLine($"Replaying {feed.Length} bytes from {serialFile} on the serial port.");
+}
+
+using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
+using var loggingConnection = serialLogWriter == null
+    ? null
+    : new LoggingSerialConnection(core.Chipset.Custom.Serial.Connection, serialLogWriter,
+        () => clock.Elapsed);
+if (loggingConnection != null)
+    core.Chipset.Custom.Serial.Connection = loggingConnection;
+
+using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrace);
+
 TranslatedProgram program = interpret
     ? new InterpretedProgram(core)
     : (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+
+if (feedTraceWriter != null)
+{
+    var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
+    FeedTrace.Create(core, AmigaSharp.Translator.VasmListing.Read(listing!), bases, feedTraceWriter);
+}
 
 // The program runs on its own thread. The main thread shows the window, or waits for the screenshot.
 var finished = false;
