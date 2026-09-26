@@ -60,6 +60,12 @@ public sealed class SerialPort(Beam beam)
     /// <summary>SERPER: bits 14 to 0 are the period in color clocks minus 1. Bit 15 selects 9 data bits.</summary>
     public ushort Period { get; set; }
 
+    /// <summary>
+    /// The speed of the line as a factor of the baud rate. A value above 1 receives the bytes faster than a real
+    /// serial port can, for example to send a large data feed. The program must parse the bytes fast enough.
+    /// </summary>
+    public double SpeedFactor { get; set; } = 1;
+
     /// <summary>The baud rate that SERPER gives.</summary>
     public double BaudRate => Beam.ColorClockHz / ((Period & 0x7FFF) + 1);
 
@@ -85,7 +91,7 @@ public sealed class SerialPort(Beam beam)
 
         // In 8-bit mode, bit 8 is the stop bit. In 9-bit mode, bit 9 is the stop bit.
         _received = (ushort)(value | ((Period & 0x8000) != 0 ? 0x200 : 0x100));
-        _nextReceive = now + ByteTime;
+        _nextReceive = now + ByteTime / SpeedFactor;
         return true;
     }
 

@@ -28,13 +28,14 @@ public static class GuideConverter
     /// for example "( 3:25) NFL Football", as in the Prevue data. If two programs start in one slot, the grid shows the
     /// first. The times are the times of the zone: the files use the time zone '6', so ESQ does not change them.
     /// </remarks>
-    public static PrevueDay Convert(IEnumerable<GuideEntry> guide, DateOnly date, TimeZoneInfo zone)
+    public static PrevueDay Convert(IEnumerable<GuideEntry> guide, DateOnly date, TimeZoneInfo zone,
+        int maximumChannels = PrevueDataFile.MaximumChannels)
     {
         var start = StartOf(date, zone);
         var channels = guide
             .Where(entry => entry.Channel is { HD: true, Hidden: false })
             .OrderBy(entry => ChannelKey(entry.Channel.Number))
-            .Take(PrevueDataFile.MaximumChannels)
+            .Take(Math.Min(maximumChannels, PrevueDataFile.MaximumChannels))
             .Select(entry => new PrevueChannel(entry.Channel.Number, Label(entry.Channel), Programs(entry.Airings, start, zone)))
             .ToList();
         return new PrevueDay(date, channels);

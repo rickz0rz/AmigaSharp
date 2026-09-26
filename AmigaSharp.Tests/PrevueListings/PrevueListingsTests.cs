@@ -63,18 +63,22 @@ public class PrevueListingsTests
     [Fact]
     public void WriteCurrentDay_HasTheLayoutThatEsqReads()
     {
-        var day = new PrevueDay(Day, [new PrevueChannel("4.1", "WDIVDT", [new PrevueProgram(21, "News |")])]);
+        var channel = new PrevueChannel("4.1", "WDIVDT", [new PrevueProgram(21, "News |")]);
+        var day = new PrevueDay(Day, [channel]);
 
         var bytes = PrevueDataFile.WriteCurrentDay(day);
 
         // The configuration (21 bytes, time zone '6'), the countdown, the revision, two empty strings, the group code
-        // (day 268 modulo 256), 1 channel, and a checksum and a length of 0.
-        var header = Encoding.Latin1.GetBytes("BE3366N\x01\x01" + "6YYNNNYANN\0\0" + "0\0DREV 5\0\0\0" + "12\0" + "1\0" + "0\0" + "0\0");
+        // (day 268 modulo 256), 1 channel, and the checksum and the length of the channel lineup command.
+        var lineup = PrevueFeed.ChannelLineupData(Day, [("WDIVDT", channel)]);
+        var header = Encoding.Latin1.GetBytes("BE3366N\x01\x01" + "6YYNNNYANN\0\0" + "0\0DREV 5\0\0\0" + "12\0" + "1\0" +
+                                              $"{PrevueFeed.Checksum((byte)'C', lineup)}\0{lineup.Length}\0");
         Assert.Equal(header, bytes[..header.Length]);
         var record = bytes.AsSpan(header.Length, 48);
         Assert.Equal(12, record[0]);
         Assert.Equal("4.1 ", Encoding.ASCII.GetString(record[1..5]));
-        Assert.Equal("WDIVDT", Encoding.ASCII.GetString(record[12..18]));
+        Assert.Equal("WDIVDT", Encoding.ASCII.GetString(record[12..18])); // The source name.
+        Assert.Equal("WDIVDT", Encoding.ASCII.GetString(record[19..25])); // The call letters.
         Assert.Equal("WDIVDT\0" + "21\0" + "1\0" + "0\0" + "0\0" + "0\0" + "News |\0" + "49\0",
             Encoding.Latin1.GetString(bytes[(header.Length + 48)..]));
     }
@@ -84,7 +88,8 @@ public class PrevueListingsTests
     {
         var bytes = PrevueDataFile.WriteNextDay(new PrevueDay(Day.AddDays(1), []));
 
-        Assert.Equal("13\0" + "0\0" + "0\0" + "0\0", Encoding.Latin1.GetString(bytes));
+        // The lineup of no channels is only the group code: its checksum is $FF XOR 'C' XOR 13, and its length is 1.
+        Assert.Equal("13\0" + "0\0" + $"{0xFF ^ 'C' ^ 13}\0" + "1\0", Encoding.Latin1.GetString(bytes));
     }
 
     private static GuideEntry Entry(string number, params GuideAiring[] airings) => Entry(number, true, airings);

@@ -88,14 +88,21 @@ a maximum of 200 channels. Set `CHANNELS_DVR` to use it with the script:
 CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh
 ```
 
-The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run, and the Amiga uses the time of the host.
+The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run,
+and the Amiga uses the time of the host. While ESQ runs, the tool reads the guide again every 10 minutes
+(`CHANNELS_DVR_INTERVAL`). It sends the changes to the serial port as a Prevue data feed, so the grid stays current.
+The feed has the same commands as the satellite feed of Prevue: `C` for the channel lineup and `P` for each program.
+A day that ESQ does not have yet, for example the next day after the change at 5:00 AM, gets all its programs. The
+launcher receives the feed at 4 times 2400 baud (`--serial-speed 4`). ESQ has no flow control, and it parses about
+6 times 2400 baud, so a larger factor can fill its receive buffer.
 To write the files to another drive, run the tool directly:
 
 ```sh
 dotnet run --project AmigaSharp.PrevueListings -- --server http://192.168.0.195:8089 --output <drive directory>
 ```
 
-Use `--insecure` for an HTTPS address with a certificate that does not match the server.
+Use `--insecure` for an HTTPS address with a certificate that does not match the server. Use `--feed <file>` to
+also write all the listings as a feed, for `--serial-file` of the launcher.
 
 The files use the time zone `6` in their configuration. ESQ adds (time zone - 6) hours to the times of the listings
 and of the clock, so with `6`, the grid and the clock show the local time of the host. The saved 2020 files use `5`,

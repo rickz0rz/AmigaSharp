@@ -27,7 +27,6 @@ public sealed class FeedTrace
         ("_ESQ_SerialRbfErrorCount", 2, "a received byte with an overrun"),
         ("_SCRIPT_SerialReadModeOverflowCount", 4, "the ring buffer is almost full"),
         ("_ESQPARS2_ReadModeFlags", 2, "the read mode. $102: the ring buffer is almost full"),
-        ("_Global_WORD_H_VALUE", 2, "the head of the ring buffer: the RBF interrupt stored a byte"),
         ("_ESQPARS_ResetArmedFlag", 2, "1: a reset is armed"),
     ];
 

@@ -15,7 +15,10 @@
 # Environment variables:
 #   CHANNELS_DVR  The address of a Channels DVR server, for example http://192.168.0.195:8089. The script then writes
 #                 new listing files from the guide of the server before each run, and the Amiga uses the time of the
-#                 host.
+#                 host. While ESQ runs, the listings tool sends the changes of the guide to the serial port (TCP port
+#                 5400), so the grid stays current.
+#   CHANNELS_DVR_INTERVAL
+#                 The minutes between two reads of the guide. The default is 10.
 #   ESQ_DATE      The date and the time of the Amiga at the start. Without CHANNELS_DVR, the default is
 #                 2020-11-01T16:00, the date of the saved listings.
 #   ESQ_SCALE     The size of the window. The default is 2 (1536 by 960 pixels).
@@ -40,16 +43,35 @@ if [ ! -d "$DRIVE" ]; then
     $LAUNCHER unpack "$DRIVE"/curday.dat "$DRIVE"/nxtday.dat "$DRIVE"/PWI? --output "$DRIVE"
 fi
 
+EXTRA_OPTIONS=""
 if [ -n "${CHANNELS_DVR:-}" ]; then
-    dotnet run --project "$ROOT/AmigaSharp.PrevueListings" -c Release -- --server "$CHANNELS_DVR" --output "$DRIVE"
-    DATE_OPTION=${ESQ_DATE:+--date $ESQ_DATE}
+    # The listings tool writes the files, makes the ready file, and then sends the changes of the guide to the
+    # serial bridge of the launcher until the script stops it.
+    READY=$DRIVE/.listings-ready
+    rm -f "$READY"
+    dotnet build "$ROOT/AmigaSharp.PrevueListings" -c Release -v quiet -nologo >/dev/null
+    dotnet "$ROOT/AmigaSharp.PrevueListings/bin/Release/net10.0/AmigaSharp.PrevueListings.dll" \
+        --server "$CHANNELS_DVR" --output "$DRIVE" --ready "$READY" --serve localhost:5400 \
+        --interval "${CHANNELS_DVR_INTERVAL:-10}" &
+    LISTINGS=$!
+    trap 'kill $LISTINGS 2>/dev/null' EXIT INT TERM
+    while [ ! -f "$READY" ]; do
+        if ! kill -0 "$LISTINGS" 2>/dev/null; then
+            echo "error: the listings tool stopped." >&2
+            exit 1
+        fi
+        sleep 1
+    done
+    # A feed of changes can be large, for example the listings of the next day. At 4 times 2400 baud, ESQ parses the
+    # bytes faster than they arrive.
+    EXTRA_OPTIONS="--serial-speed 4 ${ESQ_DATE:+--date $ESQ_DATE}"
 else
-    DATE_OPTION="--date ${ESQ_DATE:-2020-11-01T16:00}"
+    EXTRA_OPTIONS="--date ${ESQ_DATE:-2020-11-01T16:00}"
 fi
 
-# DATE_OPTION is not in quotes, so that an empty value adds no argument.
+# EXTRA_OPTIONS is not in quotes, so that each option is a separate argument.
 # shellcheck disable=SC2086
-exec $LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
+$LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
     --drive "$DRIVE" --volume "DH1=$DRIVE" \
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq \
-    --turbo-until _ESQ_MainLoopUiTickEnabledFlag $DATE_OPTION --scale "${ESQ_SCALE:-2}" "$@"
+    --turbo-until _ESQ_MainLoopUiTickEnabledFlag $EXTRA_OPTIONS --scale "${ESQ_SCALE:-2}" "$@"

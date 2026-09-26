@@ -25,6 +25,8 @@ const string usage = """
                                 when the program enables the RBF interrupt, and it goes at the baud rate of SERPER.
       --serial-start <seconds>  The time of the Amiga clock before the replay can start. The default is 0. ESQ empties
                                 its receive buffer while it starts, so give it time: for example 8.
+      --serial-speed <n>        Receive the serial bytes n times faster than the baud rate of SERPER. The default is 1.
+                                ESQ has no flow control: a factor that is too large fills its receive buffer.
       --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
       --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
                                 to the file. This option needs --listing.
@@ -59,6 +61,7 @@ if (args.Length > 0 && args[0] == "unpack")
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
 string? serialFile = null, serialLog = null, feedTrace = null;
 var serialStart = 0.0;
+var serialSpeed = 1.0;
 var volumes = new List<(string Name, string Path)>();
 var assigns = new List<(string Name, string Path)>();
 var interpret = false;
@@ -100,6 +103,7 @@ try
             case "--serial-file": serialFile = Next(); break;
             case "--serial-start": serialStart = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--serial-log": serialLog = Next(); break;
+            case "--serial-speed": serialSpeed = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--feed-trace": feedTrace = Next(); break;
             case "--scale": scale = int.Parse(Next()); break;
             case "--screenshot": screenshot = Next(); break;
@@ -186,6 +190,8 @@ if (serialFile != null)
         () => clock.Elapsed.TotalSeconds >= serialStart && (custom.Intena & (1 << InterruptBit.Rbf)) != 0);
     log.WriteLine($"Replaying {feed.Length} bytes from {serialFile} on the serial port.");
 }
+
+core.Chipset.Custom.Serial.SpeedFactor = serialSpeed;
 
 using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
 using var loggingConnection = serialLogWriter == null
