@@ -206,8 +206,8 @@ public sealed class LibraryManager(Core core)
     private Action CreateCall(AbstractLibrary library, MethodInfo method)
     {
         var cpu = Expression.Constant(core.Cpu);
-        var dataRegisters = Expression.Field(cpu, nameof(Cpu.CpuState.D));
-        var addressRegisters = Expression.Field(cpu, nameof(Cpu.CpuState.A));
+        var dataRegisters = Expression.Field(cpu, typeof(Cpu.CpuState).GetField(nameof(Cpu.CpuState.D))!);
+        var addressRegisters = Expression.Field(cpu, typeof(Cpu.CpuState).GetField(nameof(Cpu.CpuState.A))!);
 
         var arguments = method.GetParameters().Select<ParameterInfo, Expression>(parameter =>
         {

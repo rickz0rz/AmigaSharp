@@ -164,6 +164,32 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
     --serial-file feed.bin --serial-start 8 --serial-log serial.log --feed-trace feed.log
 ```
 
+## Build programs for other people
+
+`scripts/publish.sh` builds the launcher and the listings tool as native programs with Native AOT. The people who use
+them do not need .NET:
+
+```sh
+scripts/publish.sh              # For this host, for example osx-arm64.
+scripts/publish.sh osx-x64      # For a Mac with an Intel processor.
+```
+
+The programs go to `dist/<runtime identifier>/`. Keep the files of the directory together: the launcher needs the
+SDL2 library next to it. Native AOT compiles only for the operating system of the host, so build the Linux programs
+on Linux and the Windows programs on Windows.
+
+A native launcher cannot compile a translation while it runs, so it always uses the interpreter. The interpreter
+runs about 17 million instructions each second, and a 68000 runs less than 1 million, so the speed of a program does
+not change. A native build does not need the listing of the program. Without a listing, use `--turbo <seconds>` in
+place of `--turbo-until`. The users need these files, which are not part of the programs:
+
+- The program to run and its drive, for example `ESQ` and a copy of the drive of Prevue.
+- ffmpeg on the PATH, for `--stream`.
+
+macOS stops programs from the internet that Apple did not check. A user can remove the mark with
+`xattr -dr com.apple.quarantine <directory>`, or the programs can be signed and notarized with an Apple developer
+account.
+
 ## Tests
 
 ```sh

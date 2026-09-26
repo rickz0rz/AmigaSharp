@@ -23,6 +23,10 @@ public sealed record GuideEntry(
     [property: JsonPropertyName("Channel")] GuideChannel Channel,
     [property: JsonPropertyName("Airings")] GuideAiring[] Airings);
 
+/// <summary>The JSON types of the guide. The serializer code is generated at build time, as Native AOT needs.</summary>
+[JsonSerializable(typeof(GuideEntry[]))]
+internal sealed partial class GuideJsonContext : JsonSerializerContext;
+
 /// <summary>Reads the guide of a Channels DVR server with its HTTP API.</summary>
 public sealed class ChannelsDvrClient(Uri server, bool acceptAnyCertificate = false) : IDisposable
 {
@@ -43,7 +47,7 @@ public sealed class ChannelsDvrClient(Uri server, bool acceptAnyCertificate = fa
     {
         var path = $"devices/ANY/guide?time={start.ToUnixTimeSeconds()}&duration={(long)duration.TotalSeconds}";
         await using var stream = await _http.GetStreamAsync(path);
-        return await JsonSerializer.DeserializeAsync<GuideEntry[]>(stream) ?? [];
+        return await JsonSerializer.DeserializeAsync(stream, GuideJsonContext.Default.GuideEntryArray) ?? [];
     }
 
     public void Dispose() => _http.Dispose();

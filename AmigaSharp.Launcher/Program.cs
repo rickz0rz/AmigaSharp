@@ -14,7 +14,8 @@ const string usage = """
 
     Options:
       --listing <file.lst>      The vasm listing of the executable. The translator uses its instructions and labels.
-      --interpret               Run the program in the interpreter. Do not translate it.
+      --interpret               Run the program in the interpreter. Do not translate it. A native (AOT) build always
+                                uses the interpreter.
       --drive <directory>       The host directory of SYS:. The default is the directory of the executable.
       --volume <NAME>=<dir>     A volume on a host directory, for example DH1=/path/to/drive.
       --assign <NAME>=<path>    An assign to an AmigaDOS directory, for example DF0=DH1: or FONTS=SYS:fonts.
@@ -240,9 +241,19 @@ using var videoStream = streamPort is { } port
     ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio)
     : null;
 
-TranslatedProgram program = interpret
-    ? new InterpretedProgram(core)
-    : (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+// A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
+// a constant in such a build, so the trimmer removes the compiler from it.
+TranslatedProgram program;
+if (!interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+{
+    program = CompileProgram(executable, listing, core, log);
+}
+else
+{
+    if (!interpret)
+        log.WriteLine("This build cannot compile a translation while it runs. The program runs in the interpreter.");
+    program = new InterpretedProgram(core);
+}
 
 if (watches.Count > 0)
 {
@@ -455,6 +466,11 @@ if (stats && core.InterpreterEntries.Count > 0)
 }
 
 return exitCode;
+
+[System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Compiles and loads the translation of the program.")]
+[System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Loads the translation of the program as an assembly.")]
+static TranslatedProgram CompileProgram(byte[] executable, string? listing, Core core, TextWriter log) =>
+    (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
 
 static int Unpack(string[] arguments)
 {

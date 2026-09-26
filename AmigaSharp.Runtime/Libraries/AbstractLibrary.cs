@@ -1,5 +1,9 @@
 namespace AmigaSharp.Runtime.Libraries;
 
+// The runtime finds the library functions by reflection, so trimming and Native AOT must keep the public methods of
+// each library class. The attribute also applies to the classes that derive from this class.
+[System.Diagnostics.CodeAnalysis.DynamicallyAccessedMembers(
+    System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods)]
 public abstract class AbstractLibrary
 {
     public abstract string Name { get; }
