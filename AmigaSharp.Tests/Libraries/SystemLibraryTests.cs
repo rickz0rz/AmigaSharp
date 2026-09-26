@@ -63,6 +63,23 @@ public sealed class SystemLibraryTests : IDisposable
     }
 
     [Fact]
+    public void SetDate_ChangesDateStampAndTheBatteryClock()
+    {
+        const short dateStamp = -192;
+        var date = new DateTime(2020, 11, 1, 16, 0, 0);
+        _harness.Core.SetDate(date);
+
+        var stamp = _harness.Core.AllocateSystem(12);
+        _harness.Call(_harness.DosBase, dateStamp, ("D1", stamp));
+        var battClock = _harness.Call(_harness.ExecBase, OpenResource, ("A1", _harness.String("battclock.resource")));
+        var seconds = _harness.Call(battClock, ReadBattClock);
+
+        Assert.Equal((uint)(date.Date - new DateTime(1978, 1, 1)).Days, _harness.Memory.Read32(stamp));
+        Assert.Equal(16u * 60, _harness.Memory.Read32(stamp + 4));
+        Assert.InRange(seconds, (uint)(date - new DateTime(1978, 1, 1)).TotalSeconds, (uint)(date - new DateTime(1978, 1, 1)).TotalSeconds + 5);
+    }
+
+    [Fact]
     public void Intuition_HasTheWorkbenchScreen_WithContiguousPlanes()
     {
         var intuition = _harness.Core.OpenLibrary("intuition.library", 0)!.Base;

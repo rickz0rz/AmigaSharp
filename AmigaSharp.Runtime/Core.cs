@@ -97,6 +97,17 @@ public sealed class Core
     /// <summary>The address that the last RTS, RTR or RTE returned to.</summary>
     public uint LastReturnAddress { get; set; }
 
+    private DateTime _startDate = DateTime.Now;
+
+    /// <summary>
+    /// The date and the time of the emulated Amiga: the start date plus the time of the hardware clock. So a virtual
+    /// clock also moves the date. DateStamp and battclock.resource use it.
+    /// </summary>
+    public DateTime Now => _startDate + Chipset.Beam.Clock.Elapsed;
+
+    /// <summary>Sets the date and the time of the emulated Amiga, for example the date of saved listing data.</summary>
+    public void SetDate(DateTime date) => _startDate = date - Chipset.Beam.Clock.Elapsed;
+
     /// <param name="output">The console output. The default is the standard output of the host.</param>
     /// <param name="input">The console input. The default is the standard input of the host.</param>
     /// <param name="rootDirectory">The host directory of the volume SYS:. The default is the current directory.</param>
@@ -127,7 +138,7 @@ public sealed class Core
         Libraries.Register("diskfont.library", core => new DiskFontLibrary(core));
         Libraries.Register("intuition.library", core => new IntuitionLibrary(core));
         Libraries.Register("utility.library", core => new UtilityLibrary(core));
-        Libraries.RegisterResource("battclock.resource", _ => new BattClockResource());
+        Libraries.RegisterResource("battclock.resource", core => new BattClockResource(core));
         Libraries.Register("serial.device", core => new SerialDevice(core));
         Libraries.Register("input.device", core => new InputDevice(core));
         Libraries.Register("console.device", core => new ConsoleDevice(core));

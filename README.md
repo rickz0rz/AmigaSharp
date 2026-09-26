@@ -30,6 +30,8 @@ Use `--help` to see all the options. These options are the most important:
 - `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
   each time, and it is as fast as the host can run it.
 - `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
+- `--date <date>` sets the date and the time of the Amiga at the start, for example `--date 2020-11-01T16:00`.
+  Prevue shows saved listing data only on the date of that data.
 
 In the window, the keys of the host go to the Amiga keyboard. F11 is the Help key.
 
@@ -42,6 +44,20 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
 ```
 
 Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing.
+
+## Show the saved listings
+
+The listing files of the drive (`curday.dat` and `nxtday.dat`) are packed with PowerPacker, and Prevue cannot read
+packed files. Unpack them in a copy of the drive, and run Prevue on the date of the data:
+
+```sh
+cp -R target-source/binaries /tmp/prevue-drive
+dotnet run --project AmigaSharp.Launcher -c Release -- unpack /tmp/prevue-drive/curday.dat \
+    /tmp/prevue-drive/nxtday.dat /tmp/prevue-drive/PWI? --output /tmp/prevue-drive
+dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
+    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
+    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --date 2020-11-01T16:00
+```
 
 ## Tests
 

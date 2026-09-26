@@ -195,7 +195,7 @@ public class DosLibrary(Core core) : AbstractLibrary
     [LibraryFunctionOffset(-192)]
     public uint DateStamp([D1] uint dateStamp)
     {
-        var elapsed = DateTime.Now - AmigaEpoch;
+        var elapsed = core.Now - AmigaEpoch;
         _memory.Write32(dateStamp, (uint)elapsed.Days);
         _memory.Write32(dateStamp + 4, (uint)(elapsed.Hours * 60 + elapsed.Minutes));
         _memory.Write32(dateStamp + 8, (uint)(elapsed.Seconds * 50 + elapsed.Milliseconds / 20));

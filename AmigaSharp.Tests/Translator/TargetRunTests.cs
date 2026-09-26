@@ -1,4 +1,5 @@
 using AmigaSharp.Runtime;
+using AmigaSharp.Runtime.Dos;
 using AmigaSharp.Runtime.Hardware;
 using AmigaSharp.Runtime.Input;
 
@@ -18,6 +19,7 @@ public sealed class TargetRunTests : IDisposable
     private const uint Text = 0xFFCC_CC00;
     private const uint Banner = 0xFF55_1122;
     private const uint MenuPanel = 0xFF55_5555;
+    private const uint ListingCell = 0xFF00_0055;
 
     private readonly string _drive = Directory.CreateTempSubdirectory("AmigaSharp-drive-").FullName;
     private readonly string _ram = Directory.CreateTempSubdirectory("AmigaSharp-RAM-").FullName;
@@ -37,6 +39,16 @@ public sealed class TargetRunTests : IDisposable
     }
 
     [Fact]
+    public void WithTheSavedListings_ShowsThePrograms()
+    {
+        // The listing files of the drive are from 1 November 2020, and they are packed with PowerPacker. Prevue reads
+        // them unpacked, and it shows them when the date of the Amiga is their date.
+        var frames = Run(seconds: 16, firstFrame: 12, date: new DateTime(2020, 11, 1, 16, 0, 0), unpack: true);
+
+        Assert.Contains(frames, pixels => Count(pixels, ListingCell) > 40_000 && Count(pixels, Text) > 8_000);
+    }
+
+    [Fact]
     public void Escape_OpensTheMenu()
     {
         var pixels = Run(seconds: 14, firstFrame: 14, pressEscapeAt: 11)[^1];
@@ -46,14 +58,27 @@ public sealed class TargetRunTests : IDisposable
     }
 
     /// <summary>Runs the program and returns a frame each half second from <paramref name="firstFrame"/> seconds.</summary>
-    private List<uint[]> Run(double seconds, double firstFrame, double? pressEscapeAt = null)
+    private List<uint[]> Run(double seconds, double firstFrame, double? pressEscapeAt = null, DateTime? date = null,
+        bool unpack = false)
     {
         if (!TargetProgram.IsBuilt || !Directory.Exists(TargetProgram.DriveDirectory))
             Assert.Skip("The target or the drive is missing. Run scripts/build-target.sh and copy the drive to target-source/binaries.");
 
         CopyDirectory(TargetProgram.DriveDirectory, _drive);
+        if (unpack)
+        {
+            foreach (var file in Directory.GetFiles(_drive))
+            {
+                var data = File.ReadAllBytes(file);
+                if (PowerPacker.IsPacked(data))
+                    File.WriteAllBytes(file, PowerPacker.Unpack(data));
+            }
+        }
+
         var clock = new VirtualClock();
         var core = new Core(new MemoryStream(), new MemoryStream(), _drive, clock) { Log = TextWriter.Null };
+        if (date != null)
+            core.SetDate(date.Value);
         core.FileSystem.AddVolume("DH1", _drive);
         core.FileSystem.AddAssign("DF0", "DH1:");
         core.FileSystem.AddAssign("ENV", "DH1:");

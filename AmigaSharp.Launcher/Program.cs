@@ -8,6 +8,10 @@ const string usage = """
 
     Translates an AmigaOS executable, compiles it and runs it. The picture of the display shows in a window.
 
+    Usage: AmigaSharp.Launcher unpack <file>... --output <directory>
+
+    Unpacks PowerPacker files (files that start with PP20) to the directory.
+
     Options:
       --listing <file.lst>      The vasm listing of the executable. The translator uses its instructions and labels.
       --interpret               Run the program in the interpreter. Do not translate it.
@@ -20,6 +24,8 @@ const string usage = """
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
+      --date <date>             The date and the time of the Amiga at the start, for example 2020-11-01T16:00. The
+                                default is the time of the host.
       --virtual-time            Use a virtual clock: time moves at each safe point, and waits end at once. A run is then
                                 the same each time, and it is as fast as the host can run it.
       --press <seconds>=<key>   Press a key at a time, for example 5=escape or 7.5=f1. The names are the letters, the
@@ -27,6 +33,9 @@ const string usage = """
                                 f1 to f10. The option can occur more than once.
       --trace                   Write each library call to the standard error stream.
     """;
+
+if (args.Length > 0 && args[0] == "unpack")
+    return Unpack(args[1..]);
 
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
 var volumes = new List<(string Name, string Path)>();
@@ -37,6 +46,7 @@ var serialPort = 5400;
 var scale = 1;
 var seconds = 10.0;
 var virtualTime = false;
+DateTime? date = null;
 var presses = new List<(double Seconds, byte RawKey)>();
 
 try
@@ -66,6 +76,7 @@ try
             case "--seconds": seconds = double.Parse(Next()); break;
             case "--trace": trace = true; break;
             case "--virtual-time": virtualTime = true; break;
+            case "--date": date = DateTime.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--press":
             {
                 var (time, key) = Pair();
@@ -98,6 +109,8 @@ commandName ??= Path.GetFileName(executablePath);
 
 IClock clock = virtualTime ? new VirtualClock() : new RealTimeClock();
 var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace };
+if (date != null)
+    core.SetDate(date.Value);
 foreach (var (name, path) in volumes)
     core.FileSystem.AddVolume(name, path);
 foreach (var (name, path) in assigns)
@@ -193,3 +206,40 @@ finally
 }
 
 return exitCode;
+
+static int Unpack(string[] arguments)
+{
+    var output = arguments.SkipWhile(argument => argument != "--output").Skip(1).FirstOrDefault();
+    var files = arguments.TakeWhile(argument => argument != "--output").ToList();
+    if (output == null || files.Count == 0)
+    {
+        Console.Error.WriteLine("error: unpack needs files and --output <directory>.");
+        return 2;
+    }
+
+    Directory.CreateDirectory(output);
+    var result = 0;
+    foreach (var file in files)
+    {
+        var data = File.ReadAllBytes(file);
+        if (!AmigaSharp.Runtime.Dos.PowerPacker.IsPacked(data))
+        {
+            Console.WriteLine($"{file}: not packed.");
+            continue;
+        }
+
+        try
+        {
+            var unpacked = AmigaSharp.Runtime.Dos.PowerPacker.Unpack(data);
+            File.WriteAllBytes(Path.Combine(output, Path.GetFileName(file)), unpacked);
+            Console.WriteLine($"{file}: {data.Length} bytes, unpacked {unpacked.Length} bytes.");
+        }
+        catch (InvalidDataException e)
+        {
+            Console.Error.WriteLine($"{file}: {e.Message}");
+            result = 1;
+        }
+    }
+
+    return result;
+}
