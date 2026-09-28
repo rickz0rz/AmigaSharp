@@ -19,15 +19,15 @@ Show the saved listings of the drive on their date, for example:
 
 Show the listings of a Channels DVR server. The listings stay current while Prevue runs:
 
-    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089
 
 Show the programs of premium channels on a red background. Give their channel numbers or call signs:
 
-    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 --premium 222,HBOHD
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 --premium 222,HBOHD
 
 Stream Prevue as a TV channel, without a window, with music:
 
-    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 \
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 \
         --headless --stream 8091 --audio /path/to/music.m3u
 
 Then add http://<this computer>:8091/channels.m3u as a custom channel (M3U playlist) in Channels DVR.

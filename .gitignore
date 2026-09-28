@@ -7,3 +7,7 @@ target-source/
 build/
 screenshots/
 /dist/
+.mcp.json
+.claude/
+TestResults/
+/M68KASMtoCSharp/

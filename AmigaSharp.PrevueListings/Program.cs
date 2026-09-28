@@ -9,7 +9,7 @@ const string usage = """
     have the HD channels of the guide, in the order of their numbers, and a maximum of 200 channels.
 
     Options:
-      --server <url>        The address of the Channels DVR server, for example http://192.168.0.195:8089.
+      --server <url>        The address of the Channels DVR server, for example http://channels-dvr.local:8089.
       --output <dir>        The directory for curday.dat and nxtday.dat: the drive of Prevue.
       --date <date>         The broadcast day, for example 2026-09-26. The default is the current day of ESQ: it
                             changes at 5:30 AM.

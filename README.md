@@ -3,6 +3,41 @@
 AmigaSharp translates AmigaOS executables for the 68000 to C#, and runs them on a runtime that emulates the Amiga
 libraries and a part of the chipset.
 
+## Status
+
+AmigaSharp is a hobby project. Its main target is Prevue Guide (ESQ), the Amiga program of the Prevue Channel.
+
+- It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs.
+- It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
+  of each library call.
+- It emulates only the parts of the chipset that ESQ and the samples use.
+
+Other programs can use library calls or hardware that the runtime does not emulate.
+
+## Requirements
+
+- The .NET 10 SDK.
+- vasm (`vasmm68k_mot`), only to rebuild the samples or to assemble the target program.
+- ffmpeg on the PATH, only for `--stream`.
+
+The launcher gets SDL2 from the Silk.NET.SDL package. You do not install SDL2.
+
+## Files that the repository does not contain
+
+This repository does not contain Prevue Guide or its data. The ESQ steps in this document need two directories that
+are not public:
+
+- `target-source/asm/` contains the assembly source of ESQ. `scripts/build-target.sh` assembles it to
+  `build/target/ESQ` and its listing, and compares the result with a SHA-256 hash.
+- `target-source/binaries/` contains a copy of the drive of a Prevue machine, with the fonts and the listing files.
+
+Without these directories, the ESQ scripts stop with an error, and the tests of the target program skip. The samples,
+the translator, the runtime and the other tests do not need them. If you have a copy of ESQ and its drive, give their
+paths to the launcher or to `run-prevue.sh`.
+
+This project is not related to the owners of Amiga, Prevue or Channels DVR, and they do not support it. These names
+are trademarks of their owners.
+
 ## Projects
 
 | Project | Purpose |
@@ -90,7 +125,7 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
 a maximum of 200 channels. Set `CHANNELS_DVR` to use it with the script:
 
 ```sh
-CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh
+CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh
 ```
 
 The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run,
@@ -100,10 +135,15 @@ The feed has the same commands as the satellite feed of Prevue: `C` for the chan
 A day that ESQ does not have yet, for example the next day after the change at 5:00 AM, gets all its programs. The
 launcher receives the feed at 4 times 2400 baud (`--serial-speed 4`). ESQ has no flow control, and it parses about
 6 times 2400 baud, so a larger factor can fill its receive buffer.
+
+To show premium channels on a red background, set `CHANNELS_DVR_PREMIUM` to their channel numbers or call signs,
+with commas between them. For example, use `CHANNELS_DVR_PREMIUM=222,HBOHD`. The tool itself uses
+`--premium <list>`. The text of a movie has the title in quotation marks, the year, the summary, and the rating.
+
 To write the files to another drive, run the tool directly:
 
 ```sh
-dotnet run --project AmigaSharp.PrevueListings -- --server http://192.168.0.195:8089 --output <drive directory>
+dotnet run --project AmigaSharp.PrevueListings -- --server http://channels-dvr.local:8089 --output <drive directory>
 ```
 
 Use `--insecure` for an HTTPS address with a certificate that does not match the server. Use `--feed <file>` to
@@ -119,7 +159,7 @@ The launcher can stream the display as live HLS video. ffmpeg (from the PATH) en
 each second, with an AAC audio track. An HTTP server gives the stream and an M3U playlist of one channel:
 
 ```sh
-CHANNELS_DVR=http://192.168.0.195:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
+CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
     --stream-name "Prevue Guide"
 ```
 
@@ -179,12 +219,11 @@ copies the drive of a user to a data directory on the first run, unpacks the sav
 with the options of the Prevue machine. It can also start the listings of Channels DVR and the stream:
 
 ```sh
-./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 --headless --stream 8091
+./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 --headless --stream 8091
 ```
 
-The programs go to `dist/<runtime identifier>/`. Keep the files of the directory together: the launcher needs the
-SDL2 library next to it. Native AOT compiles only for the operating system of the host, so build the Linux programs
-on Linux and the Windows programs on Windows.
+Keep the files of the directory together. The launcher needs the SDL2 library next to it. Native AOT compiles only
+for the operating system of the host, so build the Linux programs on Linux and the Windows programs on Windows.
 
 A native launcher cannot compile a translation while it runs, so it uses the interpreter. The interpreter
 runs about 17 million instructions each second, and a 68000 runs less than 1 million, so the speed of a program does
@@ -225,3 +264,7 @@ scripts/fetch-cpu-tests.sh   # The 68000 test vectors. The CPU tests skip withou
 scripts/build-target.sh      # The target program. The target tests skip without it.
 dotnet test
 ```
+
+## License
+
+AmigaSharp uses the MIT license. See `LICENSE`.

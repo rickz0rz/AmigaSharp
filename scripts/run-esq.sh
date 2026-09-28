@@ -13,7 +13,7 @@
 #   scripts/run-esq.sh --serial-port 0
 #
 # Environment variables:
-#   CHANNELS_DVR  The address of a Channels DVR server, for example http://192.168.0.195:8089. The script then writes
+#   CHANNELS_DVR  The address of a Channels DVR server, for example http://channels-dvr.local:8089. The script then writes
 #                 new listing files from the guide of the server before each run, and the Amiga uses the time of the
 #                 host. While ESQ runs, the listings tool sends the changes of the guide to the serial port (TCP port
 #                 5400), so the grid stays current.

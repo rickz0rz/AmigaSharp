@@ -8,7 +8,7 @@
 #                            the first run, and never changes the original.
 #   --esq <file>             The ESQ program. The default is ESQ on the drive.
 #   --code <code>            The selection code of the machine. The default is GA24005.
-#   --channels-dvr <url>     Show the listings of a Channels DVR server, for example http://192.168.0.195:8089. The
+#   --channels-dvr <url>     Show the listings of a Channels DVR server, for example http://channels-dvr.local:8089. The
 #                            listings stay current while Prevue runs.
 #   --interval <minutes>     The minutes between two reads of the guide. The default is 10.
 #   --premium <list>         The premium channels of the Channels DVR listings: channel numbers or call signs, with
