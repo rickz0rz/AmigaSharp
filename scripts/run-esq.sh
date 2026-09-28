@@ -19,6 +19,9 @@
 #                 5400), so the grid stays current.
 #   CHANNELS_DVR_INTERVAL
 #                 The minutes between two reads of the guide. The default is 10.
+#   CHANNELS_DVR_PREMIUM
+#                 The premium channels: channel numbers or call signs, with commas between them, for example
+#                 222,HBOHD. Their programs have a red background.
 #   ESQ_DATE      The date and the time of the Amiga at the start. Without CHANNELS_DVR, the default is
 #                 2020-11-01T16:00, the date of the saved listings. With CHANNELS_DVR, the listings tool uses it
 #                 too, to choose the current and the next broadcast day.
@@ -53,7 +56,8 @@ if [ -n "${CHANNELS_DVR:-}" ]; then
     dotnet build "$ROOT/AmigaSharp.PrevueListings" -c Release -v quiet -nologo >/dev/null
     dotnet "$ROOT/AmigaSharp.PrevueListings/bin/Release/net10.0/AmigaSharp.PrevueListings.dll" \
         --server "$CHANNELS_DVR" --output "$DRIVE" --ready "$READY" --serve localhost:5400 \
-        --interval "${CHANNELS_DVR_INTERVAL:-10}" ${ESQ_DATE:+--clock $ESQ_DATE} &
+        --interval "${CHANNELS_DVR_INTERVAL:-10}" ${CHANNELS_DVR_PREMIUM:+--premium "$CHANNELS_DVR_PREMIUM"} \
+        ${ESQ_DATE:+--clock $ESQ_DATE} &
     LISTINGS=$!
     trap 'kill $LISTINGS 2>/dev/null' EXIT INT TERM
     while [ ! -f "$READY" ]; do

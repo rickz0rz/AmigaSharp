@@ -51,7 +51,7 @@ public static class PrevueFeed
         foreach (var (source, channel) in channels)
         {
             data.Add(SourceStart);
-            data.Add(0x01); // The source attribute: bit 0 is always 1.
+            data.Add(channel.SourceAttribute);
             data.AddRange(Encoding.ASCII.GetBytes(source));
             data.Add(ChannelNumber);
             data.AddRange(Encoding.ASCII.GetBytes(channel.Number));

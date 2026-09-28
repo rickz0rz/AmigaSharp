@@ -27,7 +27,23 @@ public class PrevueListingsTests
         var programs = GuideConverter.Convert([Entry("4.1", game, movie)], Day, Utc).Channels.Single().Programs;
 
         Assert.Equal(new PrevueProgram(21, "( 3:25) NFL Football |"), programs[0]);
-        Assert.Equal(new PrevueProgram(29, "Casablanca", Movie: true), programs[1]);
+        Assert.Equal(new PrevueProgram(29, "\"Casablanca\"", Movie: true), programs[1]);
+    }
+
+    [Fact]
+    public void Convert_WritesAMovieInThePrevueMovieFormat()
+    {
+        var movie = Airing(0, 120, "Say \"Cheese\" (1999)") with
+        {
+            Categories = ["Movie"],
+            Tags = ["CC"],
+            Summary = "A photographer finds love.",
+            ContentRating = "PG-13",
+        };
+
+        var program = GuideConverter.Convert([Entry("4.1", movie)], Day, Utc).Channels.Single().Programs.Single();
+
+        Assert.Equal(new PrevueProgram(1, "\"Say 'Cheese'\" (1999) A photographer finds love. (PG-13) |", Movie: true), program);
     }
 
     [Fact]
@@ -49,6 +65,34 @@ public class PrevueListingsTests
         var numbers = GuideConverter.Convert(entries, Day, Utc).Channels.Select(c => c.Number);
 
         Assert.Equal(["2.2", "2.10", "38.1", "104.1"], numbers);
+    }
+
+    [Fact]
+    public void Convert_MarksPremiumChannels_ByNumberOrCallSign()
+    {
+        var entries = new[]
+        {
+            Entry("2.1"), Entry("222"),
+            new GuideEntry(new GuideChannel("300", "HBO", "HBOHD", HD: true, Hidden: false), []),
+        };
+
+        var channels = GuideConverter.Convert(entries, Day, Utc, premium: ["222", "hbohd"]).Channels;
+
+        Assert.Equal([false, true, true], channels.Select(c => c.Premium));
+    }
+
+    [Fact]
+    public void WriteCurrentDay_SetsBit1OfTheSourceAttribute_ForAPremiumChannel()
+    {
+        var day = new PrevueDay(Day, [new PrevueChannel("222", "AMCHD", [], Premium: true)]);
+
+        var bytes = PrevueDataFile.WriteCurrentDay(day);
+
+        // The record starts after the header, which ends with the length of the lineup command.
+        var lineup = PrevueFeed.ChannelLineupData(Day, PrevueFeed.SourceNames(day.Channels));
+        var recordStart = Encoding.Latin1.GetString(bytes).IndexOf($"\0{lineup.Length}\0", StringComparison.Ordinal)
+                          + $"\0{lineup.Length}\0".Length;
+        Assert.Equal(0x03, bytes[recordStart + 27]);
     }
 
     [Fact]
@@ -89,6 +133,7 @@ public class PrevueListingsTests
         Assert.Equal("4.1 ", Encoding.ASCII.GetString(record[1..5]));
         Assert.Equal("WDIVDT", Encoding.ASCII.GetString(record[12..18])); // The source name.
         Assert.Equal("WDIVDT", Encoding.ASCII.GetString(record[19..25])); // The call letters.
+        Assert.Equal(0x01, record[27]); // The source attribute.
         Assert.Equal("WDIVDT\0" + "21\0" + "1\0" + "0\0" + "0\0" + "0\0" + "News |\0" + "49\0",
             Encoding.Latin1.GetString(bytes[(header.Length + 48)..]));
     }

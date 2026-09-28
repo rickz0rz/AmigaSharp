@@ -11,13 +11,19 @@ public sealed record GuideChannel(
     [property: JsonPropertyName("HD")] bool HD,
     [property: JsonPropertyName("Hidden")] bool Hidden);
 
-/// <summary>A program on a channel of the guide. <see cref="Time"/> is a Unix time, and the duration is in seconds.</summary>
+/// <summary>
+/// A program on a channel of the guide. <see cref="Time"/> is a Unix time, and the duration is in seconds. The content
+/// rating is for example "TV-PG" or "PG-13".
+/// </summary>
 public sealed record GuideAiring(
     [property: JsonPropertyName("Time")] long Time,
     [property: JsonPropertyName("Duration")] long Duration,
     [property: JsonPropertyName("Title")] string? Title,
     [property: JsonPropertyName("Categories")] string[]? Categories,
-    [property: JsonPropertyName("Tags")] string[]? Tags);
+    [property: JsonPropertyName("Tags")] string[]? Tags,
+    [property: JsonPropertyName("Summary")] string? Summary = null,
+    [property: JsonPropertyName("ContentRating")] string? ContentRating = null,
+    [property: JsonPropertyName("ReleaseYear")] int? ReleaseYear = null);
 
 public sealed record GuideEntry(
     [property: JsonPropertyName("Channel")] GuideChannel Channel,

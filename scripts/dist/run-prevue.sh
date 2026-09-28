@@ -11,6 +11,8 @@
 #   --channels-dvr <url>     Show the listings of a Channels DVR server, for example http://192.168.0.195:8089. The
 #                            listings stay current while Prevue runs.
 #   --interval <minutes>     The minutes between two reads of the guide. The default is 10.
+#   --premium <list>         The premium channels of the Channels DVR listings: channel numbers or call signs, with
+#                            commas between them, for example 222,HBOHD. Their programs have a red background.
 #   --date <date>            The date and the time of the Amiga, for example 2020-11-01T16:00. Use it to show the saved
 #                            listings of the drive on their date. The default is the time of this computer.
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
@@ -38,7 +40,7 @@ fail() {
     exit 2
 }
 
-DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 DATE="" STREAM="" AUDIO="" NAME="Prevue Guide"
+DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" NAME="Prevue Guide"
 HEADLESS="" RESET=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -47,6 +49,7 @@ while [ $# -gt 0 ]; do
         --code) [ $# -ge 2 ] || fail "$1 needs a value."; CODE=$2; shift 2 ;;
         --channels-dvr) [ $# -ge 2 ] || fail "$1 needs a value."; CHANNELS_DVR=$2; shift 2 ;;
         --interval) [ $# -ge 2 ] || fail "$1 needs a value."; INTERVAL=$2; shift 2 ;;
+        --premium) [ $# -ge 2 ] || fail "$1 needs a value."; PREMIUM=$2; shift 2 ;;
         --date) [ $# -ge 2 ] || fail "$1 needs a value."; DATE=$2; shift 2 ;;
         --stream) [ $# -ge 2 ] || fail "$1 needs a value."; STREAM=$2; shift 2 ;;
         --audio) [ $# -ge 2 ] || fail "$1 needs a value."; AUDIO=$2; shift 2 ;;
@@ -107,7 +110,7 @@ if [ -n "$CHANNELS_DVR" ]; then
     READY=$PREVUE_DATA/listings-ready
     rm -f "$READY"
     "$LISTINGS" --server "$CHANNELS_DVR" --output "$WORK" --ready "$READY" --serve localhost:5400 \
-        --interval "$INTERVAL" ${DATE:+--clock "$DATE"} &
+        --interval "$INTERVAL" ${PREMIUM:+--premium "$PREMIUM"} ${DATE:+--clock "$DATE"} &
     TOOL=$!
     trap 'kill $TOOL 2>/dev/null' EXIT INT TERM
     while [ ! -f "$READY" ]; do

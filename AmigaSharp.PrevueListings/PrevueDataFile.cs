@@ -10,7 +10,16 @@ public sealed record PrevueProgram(int Slot, string Text, bool Movie = false);
 
 /// <param name="Number">The channel number, for example "4" or "56.2".</param>
 /// <param name="CallLetters">The name of the channel. Prevue shows a maximum of 6 characters.</param>
-public sealed record PrevueChannel(string Number, string CallLetters, IReadOnlyList<PrevueProgram> Programs);
+/// <param name="Premium">True for a premium channel. The grid shows its programs on a red background.</param>
+public sealed record PrevueChannel(string Number, string CallLetters, IReadOnlyList<PrevueProgram> Programs,
+    bool Premium = false)
+{
+    /// <summary>
+    /// The source attribute of the channel: bit 0 is always 1, and bit 1 marks a premium channel. ESQ then draws the
+    /// row with pen 4, the red gradient (NEWGRID_SelectEntryPen).
+    /// </summary>
+    public byte SourceAttribute => (byte)(Premium ? 0x03 : 0x01);
+}
 
 /// <summary>The listings of one broadcast day. The day starts at 5:00 AM and ends at 4:59 AM of the next day.</summary>
 public sealed record PrevueDay(DateOnly Date, IReadOnlyList<PrevueChannel> Channels);
@@ -121,7 +130,7 @@ public static class PrevueDataFile
         Encoding.ASCII.GetBytes(number[..Math.Min(number.Length, 11)]).CopyTo(record, 1);
         Encoding.ASCII.GetBytes(source).CopyTo(record, 12);
         Encoding.ASCII.GetBytes(CallLetters(channel.CallLetters)).CopyTo(record, 19);
-        record[27] = 0x01;
+        record[27] = channel.SourceAttribute;
         for (var i = 28; i < 34; i++)
             record[i] = 0xFF;
         record[40] = 0x8A;

@@ -21,6 +21,10 @@ Show the listings of a Channels DVR server. The listings stay current while Prev
 
     ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089
 
+Show the programs of premium channels on a red background. Give their channel numbers or call signs:
+
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 --premium 222,HBOHD
+
 Stream Prevue as a TV channel, without a window, with music:
 
     ./run-prevue.sh --drive /path/to/drive --channels-dvr http://192.168.0.195:8089 \

@@ -38,6 +38,16 @@ public class PrevueFeedTests
     }
 
     [Fact]
+    public void ChannelLineup_SetsBit1OfTheSourceAttribute_ForAPremiumChannel()
+    {
+        var channel = new PrevueChannel("222", "AMCHD", [], Premium: true);
+
+        var data = PrevueFeed.ChannelLineupData(Day, [("AMCHD", channel)]);
+
+        Assert.Equal(0x03, data[2]);
+    }
+
+    [Fact]
     public void SourceNames_AreDifferent_ForTheSameCallLetters()
     {
         var channels = new[] { Channel("4.1", "WDIVDT"), Channel("104.1", "WDIVDT"), Channel("7.1", "") };

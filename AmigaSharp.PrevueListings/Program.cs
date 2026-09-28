@@ -14,6 +14,9 @@ const string usage = """
       --date <date>         The broadcast day, for example 2026-09-26. The default is the current day of ESQ: it
                             changes at 5:30 AM.
       --max-channels <n>    The maximum number of channels. The default and the limit of ESQ is 200.
+      --premium <list>      The premium channels: channel numbers or call signs, with commas between them, for example
+                            "222,HBOHD". The grid shows their programs on a red background. The option can occur
+                            more than once.
       --insecure            Accept any HTTPS certificate of the server.
       --feed <file>         Also write the listings as a Prevue serial data feed, for the --serial-file option of the
                             launcher.
@@ -35,6 +38,7 @@ var insecure = false;
 string? feedPath = null;
 var selection = "*";
 var maxChannels = PrevueDataFile.MaximumChannels;
+var premium = new List<string>();
 string? serve = null;
 var interval = TimeSpan.FromMinutes(10);
 string? readyPath = null;
@@ -53,6 +57,7 @@ try
             case "--feed": feedPath = Next(); break;
             case "--max-channels": maxChannels = Math.Clamp(int.Parse(Next()), 1, PrevueDataFile.MaximumChannels); break;
             case "--selection": selection = Next(); break;
+            case "--premium": premium.AddRange(Next().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)); break;
             case "--serve": serve = Next(); break;
             case "--interval": interval = TimeSpan.FromMinutes(double.Parse(Next(), CultureInfo.InvariantCulture)); break;
             case "--ready": readyPath = Next(); break;
@@ -136,8 +141,8 @@ async Task<PrevueDay[]> ReadDaysAsync()
     var guide = await client.GetGuideAsync(start.AddHours(-6), TimeSpan.FromHours(54));
     return
     [
-        GuideConverter.Convert(guide, date, zone, maxChannels),
-        GuideConverter.Convert(guide, date.AddDays(1), zone, maxChannels),
+        GuideConverter.Convert(guide, date, zone, maxChannels, premium),
+        GuideConverter.Convert(guide, date.AddDays(1), zone, maxChannels, premium),
     ];
 }
 
