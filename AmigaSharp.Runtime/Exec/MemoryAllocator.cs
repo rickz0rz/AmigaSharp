@@ -28,6 +28,9 @@ public sealed class MemoryAllocator(Memory memory)
 
     private readonly List<Region> _regions = [];
 
+    // The emulation changes the free lists, and another thread can read them, for example to show the free memory.
+    private readonly Lock _lock = new();
+
     private sealed class Region(uint start, uint end, bool isChip)
     {
         public uint Start { get; } = start;
@@ -46,6 +49,12 @@ public sealed class MemoryAllocator(Memory memory)
 
     /// <summary>Removes a range from the free memory, for example the memory of a loaded hunk.</summary>
     public void Reserve(uint start, uint size)
+    {
+        lock (_lock)
+            ReserveLocked(start, size);
+    }
+
+    private void ReserveLocked(uint start, uint size)
     {
         var first = start & ~(BlockSize - 1);
         var end = RoundUp(start + size);
@@ -66,6 +75,12 @@ public sealed class MemoryAllocator(Memory memory)
 
     /// <summary>AllocMem: returns the address of the memory, or 0 if no block is large enough.</summary>
     public uint Allocate(uint size, MemoryFlags flags)
+    {
+        lock (_lock)
+            return AllocateLocked(size, flags);
+    }
+
+    private uint AllocateLocked(uint size, MemoryFlags flags)
     {
         if (size == 0)
             return 0;
@@ -108,6 +123,12 @@ public sealed class MemoryAllocator(Memory memory)
     /// <exception cref="InvalidOperationException">The memory is already free, or it is not in a region.</exception>
     public void Free(uint address, uint size)
     {
+        lock (_lock)
+            FreeLocked(address, size);
+    }
+
+    private void FreeLocked(uint address, uint size)
+    {
         // Cleanup code often frees a null pointer. Exec does nothing for it.
         if (size == 0 || address == 0)
             return;
@@ -143,6 +164,12 @@ public sealed class MemoryAllocator(Memory memory)
 
     /// <summary>AvailMem: the free memory, the largest free block (MEMF_LARGEST), or all memory (MEMF_TOTAL).</summary>
     public uint Available(MemoryFlags flags)
+    {
+        lock (_lock)
+            return AvailableLocked(flags);
+    }
+
+    private uint AvailableLocked(MemoryFlags flags)
     {
         var regions = CandidateRegions(flags).ToList();
         if (flags.HasFlag(MemoryFlags.Total))

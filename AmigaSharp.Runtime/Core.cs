@@ -46,6 +46,7 @@ public sealed class Core
     private const int PollInterval = 64;
 
     private readonly Dictionary<uint, Action> _functions = new();
+    private readonly Dictionary<uint, ProcessMemory> _processMemory = new();
     private readonly List<Func<bool>> _idleHandlers = [];
     private readonly List<Action> _pollHandlers = [];
     private int _nativeCallDepth;
@@ -150,6 +151,8 @@ public sealed class Core
 
         FileSystem = new FileSystem(this, rootDirectory ?? Directory.GetCurrentDirectory());
         MainProcess = CreateProcess("AmigaSharp", 0, StackSize);
+        Memory.Write32(MainProcess + ProcessOffsets.InputStream, FileSystem.OpenConsole());
+        Memory.Write32(MainProcess + ProcessOffsets.OutputStream, FileSystem.OpenConsole());
         Cpu.Sp = Memory.Read32(MainProcess + TaskOffsets.StackUpper);
         Memory.Write32(ExecBase + ExecBaseOffsets.ThisTask, MainProcess);
         Scheduler = new Scheduler(this, MainProcess);
@@ -571,13 +574,14 @@ public sealed class Core
     }
 
     /// <summary>
-    /// Makes a <c>struct Process</c> with a message port, a stack, and console input and output. The process does not
-    /// run until the scheduler starts it. The main process is the task that runs the program.
+    /// Makes a <c>struct Process</c> with a message port and a stack. The process has no input or output streams. The
+    /// process does not run until the scheduler starts it. The main process is the task that runs the program.
     /// </summary>
     public uint CreateProcess(string name, sbyte priority, uint stackSize)
     {
         var process = AllocateSystem(ProcessOffsets.Size);
-        var namePointer = AllocateSystem(Encoding.Latin1.GetBytes(name + "\0"));
+        var nameBytes = Encoding.Latin1.GetBytes(name + "\0");
+        var namePointer = AllocateSystem(nameBytes);
         Memory.Write8(process + NodeOffsets.Type, NodeType.Process);
         Memory.Write8(process + NodeOffsets.Priority, (byte)priority);
         Memory.Write32(process + NodeOffsets.Name, namePointer);
@@ -588,6 +592,7 @@ public sealed class Core
 
         stackSize = (Math.Max(stackSize, 4096) + 3) & ~3u;
         var stackLower = AllocateSystem(stackSize);
+        _processMemory[process] = new ProcessMemory(namePointer, (uint)nameBytes.Length, stackLower, stackSize);
         var stackUpper = stackLower + stackSize;
         Memory.Write32(process + TaskOffsets.StackLower, stackLower);
         Memory.Write32(process + TaskOffsets.StackUpper, stackUpper);
@@ -602,9 +607,23 @@ public sealed class Core
         Memory.Write32(port + MsgPortOffsets.SignalTask, process);
         ExecList.Initialize(Memory, port + MsgPortOffsets.MessageList, NodeType.Message);
 
-        Memory.Write32(process + ProcessOffsets.InputStream, FileSystem.OpenConsole());
-        Memory.Write32(process + ProcessOffsets.OutputStream, FileSystem.OpenConsole());
         Memory.Write32(process + ProcessOffsets.TaskNumber, 1);
         return process;
     }
+
+    /// <summary>
+    /// Frees the memory that <see cref="CreateProcess"/> allocated for a process: the structure, the name, and the
+    /// stack. Exec does this when a task ends. The streams of the process stay open, because they belong to the parent.
+    /// </summary>
+    public void DeleteProcess(uint process)
+    {
+        if (!_processMemory.Remove(process, out var memory))
+            return;
+        FreeSystem(memory.Stack, memory.StackSize);
+        FreeSystem(memory.Name, memory.NameSize);
+        FreeSystem(process, ProcessOffsets.Size);
+    }
+
+    // The sizes come from the allocation, because the program can change the fields of the process.
+    private readonly record struct ProcessMemory(uint Name, uint NameSize, uint Stack, uint StackSize);
 }

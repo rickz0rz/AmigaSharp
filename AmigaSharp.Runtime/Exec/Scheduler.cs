@@ -237,11 +237,15 @@ public sealed class Scheduler
         Exit(state);
     }
 
-    /// <summary>Ends a task and gives the CPU to the next ready task. If no task is ready, waits for one here.</summary>
+    /// <summary>
+    /// Ends a task, frees its memory, and gives the CPU to the next ready task. If no task is ready, waits for one here.
+    /// </summary>
     private void Exit(TaskState state)
     {
         state.Finished = true;
         _tasks.Remove(state);
+        // The code of the task does not run again, so its stack is free too.
+        _core.DeleteProcess(state.Address);
         var clock = _core.Chipset.Beam.Clock;
         while (true)
         {

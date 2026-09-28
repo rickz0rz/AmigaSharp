@@ -1,5 +1,6 @@
 using AmigaSharp.Launcher;
 using AmigaSharp.Runtime;
+using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Graphics;
 using AmigaSharp.Runtime.Hardware;
 
@@ -66,7 +67,8 @@ const string usage = """
                                 not 0, and then at the speed of a real 68000. For ESQ, the label
                                 _ESQ_MainLoopUiTickEnabledFlag becomes 1 when its main loop starts.
       --stats                   Write the speed of the emulation each second: the frames that the display made and
-                                dropped, the time to make a frame, and the time that the program waited.
+                                dropped, the time to make a frame, the time that the program waited, and the free
+                                memory of the Amiga.
       --watch <label>           Write each change of the word at a label of the listing, with the time. The option can
                                 occur more than once. This option needs --listing.
       --trace                   Write each library call to the standard error stream.
@@ -398,7 +400,9 @@ if (measuringClock != null)
                           $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
                           $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}, " +
                           $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s, " +
-                          $"68000 at {(core.Cpu.Cycles - lastCycles) / seconds / 1e6:F2} MHz");
+                          $"68000 at {(core.Cpu.Cycles - lastCycles) / seconds / 1e6:F2} MHz, " +
+                          $"free chip {core.Allocator.Available(MemoryFlags.Chip) / 1024} KB " +
+                          $"fast {core.Allocator.Available(MemoryFlags.Fast) / 1024} KB");
             lastInterpreted = core.InterpretedInstructions;
             lastCycles = core.Cpu.Cycles;
             (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);

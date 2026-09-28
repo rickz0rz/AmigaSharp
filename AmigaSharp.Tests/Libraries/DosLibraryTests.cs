@@ -18,7 +18,9 @@ public sealed class DosLibraryTests : IDisposable
     private const short UnLock = -90;
     private const short CurrentDir = -126;
     private const short IoErr = -132;
+    private const short CreateProc = -138;
     private const short DateStamp = -192;
+    private const short Delay = -198;
     private const short IsInteractive = -216;
     private const short PutStr = -948;
     private const short VPrintf = -954;
@@ -115,6 +117,25 @@ public sealed class DosLibraryTests : IDisposable
         Assert.True(File.Exists(Path.Combine(_harness.Root, "new.txt")));
         Assert.Equal(unchecked((uint)-1), _harness.Call(Dos, DeleteFile, ("D1", _harness.String("NEW.TXT"))));
         Assert.False(File.Exists(Path.Combine(_harness.Root, "new.txt")));
+    }
+
+    [Fact]
+    public void CreateProc_FreesTheMemoryOfTheProcessWhenItEnds()
+    {
+        // A segment is the BPTR to the next segment, and then the code: RTS.
+        var segment = _harness.Core.AllocateSystem([0, 0, 0, 0, 0x4E, 0x75]);
+        var name = _harness.String("child");
+        var free = _harness.Core.Allocator.Available(MemoryFlags.Any);
+
+        for (var i = 0; i < 3; i++)
+        {
+            _harness.Call(Dos, CreateProc, ("D1", name), ("D2", 0), ("D3", segment >> 2), ("D4", 8192));
+            // The child runs while the main task waits.
+            while (_harness.Core.Scheduler.Tasks.Count() > 1)
+                _harness.Call(Dos, Delay, ("D1", 1));
+        }
+
+        Assert.Equal(free, _harness.Core.Allocator.Available(MemoryFlags.Any));
     }
 
     [Fact]
