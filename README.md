@@ -50,8 +50,21 @@ are trademarks of their owners.
 | `AmigaSharp.Runtime` | The 68000 CPU and its interpreter, the memory, the HLE libraries, and the chipset model. |
 | `AmigaSharp.Translator` | Translates an executable and its vasm listing to a C# class. |
 | `AmigaSharp.Launcher` | Translates, compiles and runs an executable, and shows its display in a window. |
+| `AmigaSharp.PrevueListings` | Writes Prevue listing files and a Prevue data feed from the guide of a Channels DVR server. |
 | `AmigaSharp` | Runs the translated Hello World sample. |
 | `AmigaSharp.Tests` | The tests. |
+
+## Build
+
+Run this command in the root of the repository:
+
+```sh
+dotnet build -c Release
+```
+
+You do not have to build first to use the examples in this document. `dotnet run` builds the project before it runs
+it. To make native programs that do not need .NET, see
+[Build programs for other people](#build-programs-for-other-people).
 
 ## Run a program
 
@@ -261,6 +274,98 @@ display and the pacing. The translation saves about 5% of a core.
 macOS stops programs from the internet that Apple did not check. A user can remove the mark with
 `xattr -dr com.apple.quarantine <directory>`, or the programs can be signed and notarized with an Apple developer
 account.
+
+## How it works
+
+AmigaSharp does not emulate a full Amiga. It runs the code of the program, and C# code does the work of the
+operating system.
+
+### Translation
+
+The translator reads the hunk executable and the vasm listing of the program. The listing tells which bytes are
+instructions, and it gives the labels and the source lines. Without a listing, the translator follows the code from
+the entry point. Each function of the program becomes a C# method, and each instruction becomes a block of C#. A
+comment above each block shows the source line. This is a part of the translation of `samples/HelloWorld/hello.s`:
+
+```csharp
+// hello.s:14: JSR	OpenLibrary(A6)
+// $20000A  JSR -552(A6)
+{
+    var target = cpu.A[6] - 552u;
+    core.CallAddress(0x20000Eu, target);
+}
+// hello.s:15: TST.L	D0			;zero if OpenLibrary() failed
+// $20000E  TST.L D0
+{
+    cpu.Cycles += 18;
+    Ops.Logic(cpu, Size.Long, cpu.D[0]);
+}
+// hello.s:16: BEQ.S	NoDos			;if failed, skip to exit
+// $200010  BEQ $200028
+{
+    if (cpu.Z) { NoDos(); return; }
+}
+```
+
+The program loads at fixed addresses, so the translated code contains the addresses as constants. The launcher
+compiles the C# code with Roslyn and keeps the assembly in a cache. The name of the cache file is a hash of the
+executable, the listing and the translator.
+
+### The interpreter
+
+Some code has no translated method. For example, a program can copy code into memory, or the translator can miss a
+function. The interpreter runs this code one instruction at a time. At each call, the runtime looks for a translated
+method at the address. If there is no method, the interpreter runs the code. So translated code and interpreted code
+can call each other.
+
+The tests compare the translated code with the interpreter. The SingleStepTests 68000 test vectors check the
+interpreter. A native launcher cannot compile C# code while it runs, so it uses only the interpreter.
+
+### The libraries
+
+The runtime has no Kickstart ROM. Each library is a C# class, and each library function is a method of that class.
+The library base and its jump table are in the emulated memory, as on a real Amiga. Each vector is a `JMP` to a stub
+address in the ROM area. When the code jumps to a stub, the runtime calls the C# method. So a program can read the
+jump table or change a vector with `SetFunction`.
+
+The runtime has these libraries, devices and resources:
+
+- `exec.library`, `dos.library`, `graphics.library`, `intuition.library`, `diskfont.library` and `utility.library`.
+- `serial.device`, `input.device`, `console.device` and `trackdisk.device`.
+- `battclock.resource`.
+
+Each library has only the functions that ESQ and the samples use. A call to another function stops the program. The
+error message gives the name of the library and the offset of the function. `dos.library` maps the AmigaDOS volumes
+and assigns to host directories.
+
+### Tasks and interrupts
+
+Each Amiga task runs on its own host thread, because the translated code of a task keeps its calls on the C# stack.
+Only one task runs at a time. A task gives the CPU to another task when it waits, or at a safe point when its time
+slice ends.
+
+Translated code cannot stop at each instruction for an interrupt. So the runtime delivers the interrupts at safe
+points: in each library call, in each wait, in the interpreter, and at each backward branch of translated code. A
+loop that waits for an interrupt has a backward branch, so the loop can end.
+
+### Timing
+
+The runtime adds an estimate of the clock cycles of each instruction. It uses the estimate to run the CPU at the
+speed of a 7.16 MHz 68000. When the CPU is ahead of the real time, the runtime sleeps. The estimate uses the main
+rules of the 68000 timing tables, so it is near the real time, but not equal to it.
+
+### The chipset
+
+The runtime emulates only the parts of the chipset that ESQ uses:
+
+- The display: the bitplanes, the copper, the display window, the scroll, dual playfield, extra half-brite and
+  interlace. It does not show sprites or HAM.
+- The interrupts of the vertical blank, the audio channels and the serial port. The audio channels make their
+  interrupts, but they do not make a sound.
+- The serial port. A TCP port or a file on the host is the other end of the cable.
+- The ports and the time-of-day counters of the two CIAs. The CIA timers are not emulated.
+
+`graphics.library` draws into the bitmaps in C#, so the runtime does not emulate the blitter.
 
 ## Tests
 
