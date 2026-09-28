@@ -3,6 +3,11 @@
 AmigaSharp translates AmigaOS executables for the 68000 to C#, and runs them on a runtime that emulates the Amiga
 libraries and a part of the chipset.
 
+![Prevue Guide in AmigaSharp, with the saved listings of November 1, 2020](docs/prevue-guide.png)
+
+The picture shows Prevue Guide with the saved listings of November 1, 2020. The top half of the screen is black,
+because the Prevue Channel showed a video in that area.
+
 ## Status
 
 AmigaSharp is a hobby project. Its main target is Prevue Guide (ESQ), the Amiga program of the Prevue Channel.
