@@ -20,9 +20,15 @@ public enum DeinterlaceMode
 /// copper changes the pixels from its horizontal position, and a write of the CPU changes the lines after the beam.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The picture is 768 by 480 pixels in high resolution: lines 21 to 260 of NTSC, two rows for each line. An interlaced
 /// frame fills one row of the two: the long frame fills the even rows. The display shows the bitplanes, the display
-/// window, the scroll, dual playfield and extra half-brite. It does not show sprites or HAM.
+/// window, the scroll, dual playfield, extra half-brite and sprites. It does not show HAM.
+/// </para>
+/// <para>
+/// A pixel that is the genlock key has alpha 0, and the other pixels have alpha $FF. A genlock shows its video in the
+/// key pixels. See <see cref="IsGenlockKey"/>.
+/// </para>
 /// </remarks>
 public sealed class Display
 {
@@ -46,6 +52,13 @@ public sealed class Display
     private const int BitplaneDma = 0x0100;
     private const int CopperDma = 0x0080;
     private const int SpriteDma = 0x0020;
+
+    // Genlock bits: BPLCON0 ECSENA, BPLCON2 ZDBPEN and ZDCTEN, BPLCON3 BRDNTRAN.
+    private const int EcsEnable = 0x0001;
+    private const int KeyBitplaneEnable = 0x0800;
+    private const int KeyColorTableEnable = 0x0400;
+    private const int Bplcon3 = 0x106;
+    private const int BorderNotTransparent = 0x0010;
 
     // Sprite registers.
     private const int Spr0pt = 0x120;
@@ -164,8 +177,9 @@ public sealed class Display
         }
     }
 
+    // The alpha channel is averaged too: a pixel that is the genlock key in one field only is half transparent.
     private static uint Average(uint a, uint b) =>
-        0xFF00_0000u | (((a & 0xFEFEFE) >> 1) + ((b & 0xFEFEFE) >> 1) + (a & b & 0x010101));
+        ((a & 0xFEFEFEFE) >> 1) + ((b & 0xFEFEFEFE) >> 1) + (a & b & 0x01010101);
 
     /// <summary>
     /// The program wrote to COPJMP1 or COPJMP2. The copper starts again at COP1LC or COP2LC in the current frame.
@@ -462,7 +476,10 @@ public sealed class Display
             var sprite = spritesOnLine && insideVertically && lowResolution >= horizontalStart && lowResolution < horizontalStop
                 ? SpritePixel(lowResolution, index, dualPlayfield)
                 : 0;
-            target[x] = sprite != 0 ? Rgb(State(CustomRegister.Color00 + sprite * 2), false) : Color(index, dualPlayfield, extraHalfBrite);
+            var border = !insideVertically || lowResolution < horizontalStart || lowResolution >= horizontalStop;
+            target[x] = sprite != 0
+                ? Rgb(State(CustomRegister.Color00 + sprite * 2), false)
+                : PlayfieldPixel(index, dualPlayfield, extraHalfBrite, border);
         }
 
         if (!interlaced)
@@ -470,7 +487,40 @@ public sealed class Display
     }
 
     /// <summary>The color of a pixel from the bits of its planes.</summary>
-    private uint Color(int index, bool dualPlayfield, bool extraHalfBrite)
+    /// <summary>
+    /// The color of a playfield pixel. A pixel that is the genlock key has alpha 0: a genlock shows its video there. The
+    /// other pixels have alpha $FF.
+    /// </summary>
+    private uint PlayfieldPixel(int planes, bool dualPlayfield, bool extraHalfBrite, bool border)
+    {
+        var register = ColorRegister(planes, dualPlayfield);
+        var color = Rgb(State(CustomRegister.Color00 + (register & 31) * 2), extraHalfBrite && register >= 32);
+        return IsGenlockKey(planes, register, border) ? color & 0x00FF_FFFF : color;
+    }
+
+    /// <summary>
+    /// True if the pixel is the genlock key (the ZD pin of Denise). With ZDBPEN (BPLCON2 bit 11), the key is the
+    /// bitplane that ZDBPSEL (bits 14 to 12) selects. With ZDCTEN (bit 10), it is bit 15 of the color register of the
+    /// pixel. Else it is color 0. The border is the key, except with BRDNTRAN (BPLCON3 bit 4) of the ECS Denise.
+    /// </summary>
+    private bool IsGenlockKey(int planes, int register, bool border)
+    {
+        if (border)
+        {
+            var ecs = (State(CustomRegister.Bplcon0) & EcsEnable) != 0;
+            return !(ecs && (State(Bplcon3) & BorderNotTransparent) != 0);
+        }
+
+        var bplcon2 = State(CustomRegister.Bplcon2);
+        if ((bplcon2 & KeyBitplaneEnable) != 0)
+            return ((planes >> ((bplcon2 >> 12) & 7)) & 1) != 0;
+        if ((bplcon2 & KeyColorTableEnable) != 0)
+            return (State(CustomRegister.Color00 + (register & 31) * 2) & 0x8000) != 0;
+        return register == 0;
+    }
+
+    /// <summary>The color register of a pixel from the bits of its planes. With extra half-brite, it can be 32 to 63.</summary>
+    private int ColorRegister(int index, bool dualPlayfield)
     {
         if (dualPlayfield)
         {
@@ -484,7 +534,7 @@ public sealed class Display
                 index = playfield1 != 0 ? playfield1 : playfield2 != 0 ? playfield2 + 8 : 0;
         }
 
-        return Rgb(State(CustomRegister.Color00 + (index & 31) * 2), extraHalfBrite && index >= 32);
+        return index;
     }
 
     private static uint Rgb(ushort rgb, bool halfBrite)

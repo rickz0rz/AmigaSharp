@@ -13,9 +13,17 @@ namespace AmigaSharp.Launcher;
 /// segments, the playlist of the stream (/stream.m3u8) and an M3U playlist of one channel (/channels.m3u).
 /// </summary>
 /// <remarks>
+/// <para>
 /// The stream has 29.97 pictures each second, as NTSC video. A thread takes the last complete picture of the display
 /// at that rate, so the emulation never waits for the encoder. The picture is 4:3: 960 by 720 pixels, or in a 1280 by
 /// 720 picture with black bars at the sides for a 16:9 screen.
+/// </para>
+/// <para>
+/// With a genlock source, the stream works as the genlock of the Prevue machine: the video of the source shows where
+/// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). The video fills the 4:3
+/// picture, and its sides are cut. A file plays in a loop at its real speed. A URL, for example a channel of Channels
+/// DVR, plays live. Without an audio playlist, the stream has the sound of the source.
+/// </para>
 /// </remarks>
 public sealed class VideoStream : IDisposable
 {
@@ -38,7 +46,9 @@ public sealed class VideoStream : IDisposable
     /// A playlist or a directory of audio files that plays in a loop, or null for a silent stream. See
     /// <see cref="AudioFeed"/>.
     /// </param>
-    public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log, string? audioPlaylist = null)
+    /// <param name="genlockSource">A video file or a URL that shows behind the display, or null.</param>
+    public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log,
+        string? audioPlaylist = null, string? genlockSource = null)
     {
         _display = display;
         _log = log;
@@ -49,7 +59,24 @@ public sealed class VideoStream : IDisposable
             : ["-thread_queue_size", "1024", "-f", "s16le", "-ar", AudioFeed.SampleRate.ToString(), "-ac", "2",
                 "-i", $"tcp://127.0.0.1:{_audio.Port}"];
 
-        var filter = wide ? "scale=960:720:flags=lanczos,pad=1280:720:160:0,setsar=1" : "scale=960:720:flags=lanczos,setsar=1";
+        var pad = wide ? ",pad=1280:720:160:0" : "";
+        string[] genlockInput = genlockSource == null
+            ? []
+            : File.Exists(genlockSource)
+                ? ["-stream_loop", "-1", "-re", "-i", genlockSource]
+                : ["-thread_queue_size", "1024", "-i", genlockSource];
+        // The genlock source is input 2. The Amiga picture keeps its alpha when it is scaled, and the overlay uses it.
+        string[] video = genlockSource == null
+            ? ["-map", "0:v", "-vf", $"scale=960:720:flags=lanczos{pad},setsar=1"]
+            :
+            [
+                "-filter_complex",
+                "[2:v]fps=30000/1001,scale=960:720:force_original_aspect_ratio=increase,crop=960:720,setsar=1[video];" +
+                "[0:v]scale=960:720:flags=lanczos,setsar=1[amiga];" +
+                $"[video][amiga]overlay=eof_action=repeat{pad}[out]",
+                "-map", "[out]",
+            ];
+        var audioMap = genlockSource != null && _audio == null ? "2:a:0?" : "1:a";
         string[] arguments =
         [
             "-hide_banner", "-loglevel", "error",
@@ -57,8 +84,9 @@ public sealed class VideoStream : IDisposable
             "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{Display.Width}x{Display.Height}", "-framerate", "30000/1001",
             "-i", "pipe:0",
             .. audioInput,
-            "-map", "0:v", "-map", "1:a",
-            "-vf", filter,
+            .. genlockInput,
+            .. video,
+            "-map", audioMap,
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
             "-g", "60", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "8M",
             "-c:a", "aac", "-b:a", "128k",

@@ -242,6 +242,19 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
   netsh advfirewall firewall add rule name="AmigaSharp stream" dir=in action=allow protocol=TCP localport=8091
   ```
 
+The Prevue channel showed its grid over a video: a genlock put the video in each pixel of color 0. `--genlock <file
+or URL>` does the same in the stream. A file plays in a loop, and a URL plays live, for example a channel of your
+Channels DVR server:
+
+```sh
+CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
+    --genlock http://channels-dvr.local:8089/devices/ANY/channels/2.1/stream.mpg
+```
+
+- The video fills the 4:3 picture, and its sides are cut.
+- The top half of the screen, and the border at the sides of the grid, show the video. The grid does not use color 0.
+- Without `--stream-audio`, the stream has the sound of the video.
+
 `--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
 
 - `weave` shows the two fields on their rows, as a TV does. Moving content has comb lines. This is the default.
@@ -417,7 +430,8 @@ rules of the 68000 timing tables, so it is near the real time, but not equal to 
 The runtime emulates the parts of an Amiga 2000 (ECS, NTSC) that ESQ and the Amiga Test Kit use:
 
 - The display: the bitplanes, the copper, sprites, the display window, the scroll, dual playfield, extra half-brite
-  and interlace. It makes each line when the beam passes it. It does not show HAM.
+  and interlace. It makes each line when the beam passes it. It does not show HAM. The pixels of the genlock key
+  (color 0, or the ECS key of BPLCON2) have alpha 0 in the picture.
 - The blitter: area, fill and line blits. A blit ends at once.
 - The interrupts of the custom chips and the CIAs. A program can use the handlers of exec, or write its own handlers
   to the exception vectors.

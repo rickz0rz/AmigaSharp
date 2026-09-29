@@ -18,6 +18,9 @@
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
 #                            for Channels DVR is http://<this computer>:<port>/channels.m3u.
 #   --audio <path>           The sound of the stream: an M3U playlist or a directory of audio files.
+#   --genlock <file or URL>  Show a video behind the grid of the stream, as the genlock of the Prevue channel did. A
+#                            file plays in a loop. A URL plays live, for example a channel of Channels DVR. Without
+#                            --audio, the stream has the sound of this video.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
@@ -32,7 +35,7 @@ LAUNCHER=$HERE/AmigaSharp.Launcher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -40,7 +43,7 @@ fail() {
     exit 2
 }
 
-DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" NAME="Prevue Guide"
+DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" NAME="Prevue Guide"
 HEADLESS="" RESET=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -53,6 +56,7 @@ while [ $# -gt 0 ]; do
         --date) [ $# -ge 2 ] || fail "$1 needs a value."; DATE=$2; shift 2 ;;
         --stream) [ $# -ge 2 ] || fail "$1 needs a value."; STREAM=$2; shift 2 ;;
         --audio) [ $# -ge 2 ] || fail "$1 needs a value."; AUDIO=$2; shift 2 ;;
+        --genlock) [ $# -ge 2 ] || fail "$1 needs a value."; GENLOCK=$2; shift 2 ;;
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
         --reset) RESET=1; shift ;;
@@ -102,6 +106,7 @@ set -- "$ESQ" --drive "$WORK" --volume "DH1=$WORK" --assign DF0=DH1: --assign EN
 if [ -n "$STREAM" ]; then
     set -- "$@" --stream "$STREAM" --stream-name "$NAME"
     [ -n "$AUDIO" ] && set -- "$@" --stream-audio "$AUDIO"
+    [ -n "$GENLOCK" ] && set -- "$@" --genlock "$GENLOCK"
 fi
 
 if [ -n "$CHANNELS_DVR" ]; then

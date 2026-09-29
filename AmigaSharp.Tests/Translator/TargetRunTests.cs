@@ -13,7 +13,8 @@ namespace AmigaSharp.Tests.Translator;
 public sealed class TargetRunTests : IDisposable
 {
     // The colors of the picture.
-    private const uint Genlock = 0xFF00_0000;
+    // The area of the genlock video: color 0, black, and the genlock key (alpha 0).
+    private const uint Genlock = 0x0000_0000;
     private const uint Background = 0xFF00_0033;
     private const uint GridCell = 0xFF22_3388;
     private const uint Text = 0xFFCC_CC00;
@@ -135,7 +136,13 @@ public sealed class TargetRunTests : IDisposable
         return pixels;
     }
 
-    private static int Count(uint[] pixels, uint color) => pixels.Count(pixel => pixel == color);
+    /// <summary>
+    /// Counts the pixels of a color. An opaque color matches its RGB value, with or without the genlock key: for
+    /// example, the border has the color of the grid background and is the key. A color with alpha 0 must match
+    /// exactly.
+    /// </summary>
+    private static int Count(uint[] pixels, uint color) =>
+        color >> 24 == 0 ? pixels.Count(pixel => pixel == color) : pixels.Count(pixel => (pixel | 0xFF00_0000) == color);
 
     private static void CopyDirectory(string source, string destination)
     {

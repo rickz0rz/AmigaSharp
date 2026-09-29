@@ -53,7 +53,11 @@ const string usage = """
       --stream-name <name>      The name of the channel in /channels.m3u. The default is the name of the command.
       --stream-audio <path>     The sound of the stream: an M3U playlist, a text file with one audio file on each
                                 line, or a directory of audio files. It plays in a loop. If it has no audio that
-                                plays, the stream is silent. Without this option, the stream is silent.
+                                plays, the stream is silent. Without this option, the stream has the sound of the
+                                --genlock source, or it is silent.
+      --genlock <file or URL>   Show a video behind the stream, as the genlock of Prevue: the video shows where the
+                                display has color 0 (the genlock key). A file plays in a loop. A URL plays live, for
+                                example a channel of Channels DVR. This option needs --stream.
       --audio-file <file.wav>   Write the sound of the audio channels to a WAV file. Without this option, the window
                                 plays the sound.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
@@ -110,6 +114,7 @@ int? streamPort = null;
 var streamWide = true;
 string? streamName = null;
 string? streamAudio = null;
+string? genlock = null;
 var fastCpu = false;
 double? turboSeconds = null;
 string? turboLabel = null;
@@ -158,6 +163,7 @@ try
             case "--stream-4x3": streamWide = false; break;
             case "--stream-name": streamName = Next(); break;
             case "--stream-audio": streamAudio = Next(); break;
+            case "--genlock": genlock = Next(); break;
             case "--fast-cpu": fastCpu = true; break;
             case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--turbo-until": turboLabel = Next(); break;
@@ -187,6 +193,8 @@ try
 
     if (executablePath == null)
         throw new ArgumentException("the executable is missing.");
+    if (genlock != null && streamPort == null)
+        throw new ArgumentException("--genlock needs --stream.");
     if (feedTrace != null && listing == null)
         throw new ArgumentException("--feed-trace needs --listing.");
     if ((turboLabel != null || watches.Count > 0) && listing == null)
@@ -288,7 +296,7 @@ using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.C
 
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
-    ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio)
+    ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock)
     : null;
 
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is

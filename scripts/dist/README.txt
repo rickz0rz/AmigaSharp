@@ -32,6 +32,11 @@ Stream Prevue as a TV channel, without a window, with music:
 
 Then add http://<this computer>:8091/channels.m3u as a custom channel (M3U playlist) in Channels DVR.
 
+Show a video behind the grid, as the Prevue channel did. Give a video file, or the URL of a channel of Channels DVR:
+
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 \
+        --headless --stream 8091 --genlock http://channels-dvr.local:8089/devices/ANY/channels/2.1/stream.mpg
+
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.
 

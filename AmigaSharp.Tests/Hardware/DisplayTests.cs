@@ -191,8 +191,8 @@ public class DisplayTests
         var frame = NextFrame();
 
         var row = (0x2C - Display.FirstLine) * 2;
-        Assert.Equal(evenRow, frame[row * Display.Width + FirstX]);
-        Assert.Equal(oddRow, frame[(row + 1) * Display.Width + FirstX]);
+        Assert.Equal(evenRow, frame[row * Display.Width + FirstX] | 0xFF00_0000);
+        Assert.Equal(oddRow, frame[(row + 1) * Display.Width + FirstX] | 0xFF00_0000);
     }
 
     [Fact]
@@ -292,6 +292,57 @@ public class DisplayTests
             _memory.Write16(address + (uint)i * 2, words[i]);
     }
 
+    [Fact]
+    public void GenlockKey_IsColor0_AndTheBorder_ButNotASprite()
+    {
+        const uint sprite = 0x3_0000;
+        Words(sprite, 0x3040, 0x3100, 0x8000, 0x0000, 0x0000, 0x0000);
+        _memory.Write8(Plane + (0x2E - 0x2C) * 40, 0x80);
+        SetUpLowResolution(Move(0x120, sprite >> 16), Move(0x122, sprite & 0xFFFF), Move(0x1A2, 0x0F0));
+        Write(0xDFF096, 0x8020);
+
+        NextFrame();
+        var frame = NextFrame();
+
+        Assert.False(IsKey(frame, FirstX, 0x2E)); // Color 1.
+        Assert.True(IsKey(frame, FirstX + 2, 0x2E)); // Color 0.
+        Assert.True(IsKey(frame, FirstX - 2, 0x2E)); // The border.
+        Assert.False(IsKey(frame, FirstX, 0x30)); // The sprite.
+    }
+
+    [Fact]
+    public void GenlockKey_CanBeABitplane_OrBit15OfTheColor()
+    {
+        _memory.Write8(Plane, 0x80);
+        // ZDBPEN with ZDBPSEL 0: the pixels of plane 1 are the key, and color 0 is not.
+        SetUpLowResolution(Move(0x104, 0x0800));
+        NextFrame();
+        var frame = NextFrame();
+        Assert.True(IsKey(frame, FirstX, 0x2C));
+        Assert.False(IsKey(frame, FirstX + 2, 0x2C));
+
+        // ZDCTEN: a color with bit 15 is the key.
+        SetUpLowResolution(Move(0x104, 0x0400), Move(0x182, 0x8F00));
+        NextFrame();
+        frame = NextFrame();
+        Assert.True(IsKey(frame, FirstX, 0x2C));
+        Assert.Equal(Red, Pixel(frame, FirstX, 0x2C));
+        Assert.False(IsKey(frame, FirstX + 2, 0x2C));
+    }
+
+    [Fact]
+    public void GenlockKey_IsNotTheBorder_WithBrdntran()
+    {
+        // BPLCON0 with ECSENA, and BPLCON3 with BRDNTRAN.
+        SetUpLowResolution(Move(0x100, 0x1201), Move(0x106, 0x0010));
+
+        NextFrame();
+        var frame = NextFrame();
+
+        Assert.False(IsKey(frame, FirstX - 2, 0x2C));
+        Assert.True(IsKey(frame, FirstX + 2, 0x2C));
+    }
+
     /// <summary>A display of 320 by 200 low-resolution pixels with 1 plane at <see cref="Plane"/>, color 1 red.</summary>
     private void SetUpLowResolution(params uint[][] extra)
     {
@@ -323,8 +374,13 @@ public class DisplayTests
         return frame;
     }
 
+    /// <summary>The color of a pixel, without its genlock key.</summary>
     private static uint Pixel(uint[] frame, int x, int line) =>
-        frame[(line - Display.FirstLine) * 2 * Display.Width + x];
+        frame[(line - Display.FirstLine) * 2 * Display.Width + x] | 0xFF00_0000;
+
+    /// <summary>True if the pixel is the genlock key: its alpha is 0.</summary>
+    private static bool IsKey(uint[] frame, int x, int line) =>
+        frame[(line - Display.FirstLine) * 2 * Display.Width + x] >> 24 == 0;
 
     private void WriteCopperList(uint address, params uint[][] instructions)
     {
