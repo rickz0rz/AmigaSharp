@@ -27,6 +27,39 @@ Other programs can use library calls or hardware that the runtime does not emula
 
 The launcher gets SDL2 from the Silk.NET.SDL package. You do not install SDL2.
 
+## Windows
+
+AmigaSharp runs on macOS, Linux and Windows. Each shell script in `scripts/` has a PowerShell version, with the same
+name and the extension `.ps1`. The PowerShell scripts work in Windows PowerShell 5.1, which Windows 10 and 11 contain,
+and in PowerShell 7. The examples in this document use the shell scripts. On Windows, use the PowerShell script with
+the same name.
+
+Windows does not run PowerShell scripts by default. Let PowerShell run the scripts on your computer, one time:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+The shell scripts get their settings from environment variables. The PowerShell scripts get them from parameters, and
+they also read the same environment variables:
+
+| Shell script | PowerShell script |
+|---|---|
+| `CHANNELS_DVR=<url> scripts/run-esq.sh` | `scripts\run-esq.ps1 -ChannelsDvr <url>` |
+| `CHANNELS_DVR_INTERVAL`, `CHANNELS_DVR_PREMIUM` | `-Interval`, `-Premium` |
+| `ESQ_DATE`, `ESQ_SCALE` | `-Date`, `-Scale` |
+| `VASM`, `TARGET_SOURCE` of `build-target.sh` | `-Vasm`, `-TargetSource` |
+| `EMBEDDED_PROGRAM`, `EMBEDDED_LISTING` of `publish.sh` | `-EmbeddedProgram`, `-EmbeddedListing` |
+
+The other arguments of `run-esq.ps1` go to the launcher, as with `run-esq.sh`. For example, use
+`scripts\run-esq.ps1 --scale 1`. Use `Get-Help scripts\run-esq.ps1 -Detailed` to see the parameters of a script.
+
+- vasm has Windows programs on [its web site](http://sun.hasenbraten.de/vasm/). Put `vasmm68k_mot.exe` on the PATH,
+  or give its path with `-Vasm`.
+- Install ffmpeg with `winget install Gyan.FFmpeg`.
+- Windows has no `nc`. To connect to the serial port, use another TCP client, for example `ncat` from Nmap.
+- For `--stream`, Windows needs more steps. See [Stream the display as a TV channel](#stream-the-display-as-a-tv-channel).
+
 ## Files that the repository does not contain
 
 This repository does not contain Prevue Guide or its data. The ESQ steps in this document need two directories that
@@ -38,7 +71,7 @@ are not public:
 
 Without these directories, the ESQ scripts stop with an error, and the tests of the target program skip. The samples,
 the translator, the runtime and the other tests do not need them. If you have a copy of ESQ and its drive, give their
-paths to the launcher or to `run-prevue.sh`.
+paths to the launcher or to `run-prevue.sh` (`run-prevue.ps1` on Windows).
 
 This project is not related to the owners of Amiga, Prevue or Channels DVR, and they do not support it. These names
 are trademarks of their owners.
@@ -146,6 +179,12 @@ a maximum of 200 channels. Set `CHANNELS_DVR` to use it with the script:
 CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh
 ```
 
+On Windows, give the address as a parameter:
+
+```powershell
+scripts\run-esq.ps1 -ChannelsDvr http://channels-dvr.local:8089
+```
+
 The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run,
 and the Amiga uses the time of the host. While ESQ runs, the tool reads the guide again every 10 minutes
 (`CHANNELS_DVR_INTERVAL`). It sends the changes to the serial port as a Prevue data feed, so the grid stays current.
@@ -193,6 +232,14 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
   10 seconds. Without this option, the stream is silent.
 - `--headless` runs without a window until Ctrl-C. The stream also works with a window.
 - macOS can ask if the launcher can accept incoming network connections. Accept it, so that the server can connect.
+- On Windows, only an administrator can listen for HTTP on all the addresses of the computer, so `--stream` stops
+  with "Access is denied". Reserve the port for your account, and let the firewall accept connections to it. Do these
+  steps one time, in a PowerShell window that runs as administrator. The example is for port 8091:
+
+  ```powershell
+  netsh http add urlacl url=http://*:8091/ user=$env:USERDOMAIN\$env:USERNAME
+  netsh advfirewall firewall add rule name="AmigaSharp stream" dir=in action=allow protocol=TCP localport=8091
+  ```
 
 `--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
 
@@ -242,6 +289,16 @@ with the options of the Prevue machine. It can also start the listings of Channe
 
 Keep the files of the directory together. The launcher needs the SDL2 library next to it. Native AOT compiles only
 for the operating system of the host, so build the Linux programs on Linux and the Windows programs on Windows.
+
+On Windows, use `scripts\publish.ps1` (or `scripts\publish.ps1 -RuntimeIdentifier win-arm64`). Native AOT on Windows
+needs the C++ build tools of Visual Studio: install the workload "Desktop development with C++" of Visual Studio or
+of the Build Tools for Visual Studio. A Windows build has `run-prevue.ps1` and `run-prevue.cmd` in place of
+`run-prevue.sh`. They have the same options. `run-prevue.cmd` starts the PowerShell script, so the users do not have
+to change the execution policy:
+
+```bat
+run-prevue.cmd --drive C:\path\to\drive --channels-dvr http://channels-dvr.local:8089
+```
 
 A native launcher cannot compile a translation while it runs, so it uses the interpreter. The interpreter
 runs about 17 million instructions each second, and a 68000 runs less than 1 million, so the speed of a program does
@@ -372,6 +429,14 @@ The runtime emulates only the parts of the chipset that ESQ uses:
 ```sh
 scripts/fetch-cpu-tests.sh   # The 68000 test vectors. The CPU tests skip without them.
 scripts/build-target.sh      # The target program. The target tests skip without it.
+dotnet test
+```
+
+On Windows:
+
+```powershell
+scripts\fetch-cpu-tests.ps1
+scripts\build-target.ps1
 dotnet test
 ```
 

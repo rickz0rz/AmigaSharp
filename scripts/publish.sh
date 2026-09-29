@@ -44,7 +44,10 @@ rm -f "$OUT"/*.runtimeconfig.json "$OUT"/*.pdb
 rm -rf "$OUT"/*.dSYM
 
 # The script and the instructions for the people who use the programs.
-cp "$ROOT/scripts/dist/run-prevue.sh" "$ROOT/scripts/dist/README.txt" "$OUT"/
-chmod +x "$OUT/run-prevue.sh"
+case "$RID" in
+    win-*) cp "$ROOT/scripts/dist/run-prevue.ps1" "$ROOT/scripts/dist/run-prevue.cmd" "$OUT"/ ;;
+    *) cp "$ROOT/scripts/dist/run-prevue.sh" "$OUT"/ && chmod +x "$OUT/run-prevue.sh" ;;
+esac
+cp "$ROOT/scripts/dist/README.txt" "$OUT"/
 echo "The programs are in $OUT:"
 ls -la "$OUT"

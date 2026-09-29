@@ -40,3 +40,27 @@ In the window, the keys of the computer go to the Amiga. Escape opens the menu o
 macOS stops programs from the internet that Apple did not check. To run them, remove the mark:
 
     xattr -dr com.apple.quarantine /path/to/this/directory
+
+Windows
+-------
+
+On Windows, use run-prevue.cmd in place of ./run-prevue.sh. It has the same options. Run it in a Command Prompt or
+a PowerShell window, in this directory:
+
+    run-prevue.cmd --drive C:\path\to\drive
+    run-prevue.cmd --drive C:\path\to\drive --channels-dvr http://channels-dvr.local:8089
+
+The copy of the drive goes to %LOCALAPPDATA%\AmigaSharp Prevue. Set PREVUE_DATA to use another directory.
+
+Windows can stop programs from the internet with a SmartScreen message. To run them, select "More info" and then
+"Run anyway". Or, before the first run, remove the mark from the files in PowerShell:
+
+    Get-ChildItem C:\path\to\this\directory | Unblock-File
+
+Install ffmpeg for --stream with: winget install Gyan.FFmpeg
+
+With --stream, Windows lets only an administrator listen on all the addresses of the computer. Do these steps one
+time, in a PowerShell window that runs as administrator. The example is for port 8091:
+
+    netsh http add urlacl url=http://*:8091/ user=$env:USERDOMAIN\$env:USERNAME
+    netsh advfirewall firewall add rule name="AmigaSharp stream" dir=in action=allow protocol=TCP localport=8091
