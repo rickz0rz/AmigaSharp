@@ -243,17 +243,22 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
   ```
 
 The Prevue channel showed its grid over a video: a genlock put the video in each pixel of color 0. `--genlock <file
-or URL>` does the same in the stream. A file plays in a loop, and a URL plays live, for example a channel of your
-Channels DVR server:
+or URL>` does the same in the stream. A file plays in a loop, and a URL plays live, for example a channel of an
+HDHomeRun tuner (`http://<tuner>:5004/auto/v<channel>`):
 
 ```sh
 CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
-    --genlock http://channels-dvr.local:8089/devices/ANY/channels/2.1/stream.mpg
+    --genlock http://hdhomerun.local:5004/auto/v2
 ```
 
-- The video fills the 4:3 picture, and its sides are cut.
+- The video fills the 4:3 picture, and its sides are cut. An interlaced video is deinterlaced. The video has the
+  resolution of the display, about the resolution of NTSC.
 - The top half of the screen, and the border at the sides of the grid, show the video. The grid does not use color 0.
+- The stream shows each picture of the video once, with the picture of the display of the same moment. So the video
+  and the grid both move at an even rate.
 - Without `--stream-audio`, the stream has the sound of the video.
+- If a live source stops, the stream shows the display over black and continues. The launcher starts the source again
+  after 2 seconds.
 
 `--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
 

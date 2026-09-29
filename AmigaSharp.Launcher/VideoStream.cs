@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using AmigaSharp.Runtime.Hardware;
@@ -20,7 +22,9 @@ namespace AmigaSharp.Launcher;
 /// </para>
 /// <para>
 /// With a genlock source, the stream works as the genlock of the Prevue machine: the video of the source shows where
-/// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). The video fills the 4:3
+/// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). <see cref="GenlockSource"/>
+/// decodes the video, and the sender puts it under the display, one picture of the source for each picture of the
+/// stream (see <see cref="SendGenlockFrames"/>). The video fills the 4:3
 /// picture, and its sides are cut. A file plays in a loop at its real speed. A URL, for example a channel of Channels
 /// DVR, plays live. Without an audio playlist, the stream has the sound of the source.
 /// </para>
@@ -38,7 +42,14 @@ public sealed class VideoStream : IDisposable
     private readonly string _channelName;
     private readonly Thread _sender;
     private readonly AudioFeed? _audio;
+    private readonly GenlockSource? _genlock;
+
+    // With a genlock source and no audio playlist, the sound of the source goes to the encoder through this port. The
+    // sender adds the sound of each picture to the plan: the buffer of its session, or null for silence.
+    private readonly TcpListener? _genlockAudio;
+    private readonly BlockingCollection<PcmBuffer?> _audioPlan = new();
     private volatile bool _stopped;
+
 
     /// <param name="port">The TCP port of the HTTP server. It listens on all the addresses of the host.</param>
     /// <param name="wide">True to add black bars for a 16:9 picture.</param>
@@ -54,29 +65,24 @@ public sealed class VideoStream : IDisposable
         _log = log;
         _channelName = channelName;
         _audio = audioPlaylist == null ? null : new AudioFeed(audioPlaylist, log);
-        string[] audioInput = _audio == null
+        if (genlockSource != null)
+        {
+            _genlock = new GenlockSource(genlockSource, withAudio: _audio == null, log);
+            if (_audio == null)
+            {
+                _genlockAudio = new TcpListener(IPAddress.Loopback, 0);
+                _genlockAudio.Start();
+                new Thread(SendGenlockAudio) { IsBackground = true, Name = "Genlock audio relay" }.Start();
+            }
+        }
+
+        var audioPort = _audio?.Port ?? (_genlockAudio?.LocalEndpoint as IPEndPoint)?.Port;
+        string[] audioInput = audioPort == null
             ? ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000"]
             : ["-thread_queue_size", "1024", "-f", "s16le", "-ar", AudioFeed.SampleRate.ToString(), "-ac", "2",
-                "-i", $"tcp://127.0.0.1:{_audio.Port}"];
+                "-i", $"tcp://127.0.0.1:{audioPort}"];
 
         var pad = wide ? ",pad=1280:720:160:0" : "";
-        string[] genlockInput = genlockSource == null
-            ? []
-            : File.Exists(genlockSource)
-                ? ["-stream_loop", "-1", "-re", "-i", genlockSource]
-                : ["-thread_queue_size", "1024", "-i", genlockSource];
-        // The genlock source is input 2. The Amiga picture keeps its alpha when it is scaled, and the overlay uses it.
-        string[] video = genlockSource == null
-            ? ["-map", "0:v", "-vf", $"scale=960:720:flags=lanczos{pad},setsar=1"]
-            :
-            [
-                "-filter_complex",
-                "[2:v]fps=30000/1001,scale=960:720:force_original_aspect_ratio=increase,crop=960:720,setsar=1[video];" +
-                "[0:v]scale=960:720:flags=lanczos,setsar=1[amiga];" +
-                $"[video][amiga]overlay=eof_action=endall{pad}[out]",
-                "-map", "[out]",
-            ];
-        var audioMap = genlockSource != null && _audio == null ? "2:a:0?" : "1:a";
         string[] arguments =
         [
             "-hide_banner", "-loglevel", "error",
@@ -84,11 +90,10 @@ public sealed class VideoStream : IDisposable
             "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{Display.Width}x{Display.Height}", "-framerate", "30000/1001",
             "-i", "pipe:0",
             .. audioInput,
-            .. genlockInput,
-            .. video,
-            "-map", audioMap,
-            // The looping genlock file and the silent audio never end. The stream ends with the pictures of the
-            // display, so that ffmpeg stops when the launcher stops, also when the launcher is killed.
+            "-map", "0:v", "-map", "1:a",
+            "-vf", $"scale=960:720:flags=lanczos{pad},setsar=1",
+            // The silent audio never ends. The stream ends with the pictures of the display, so that ffmpeg stops when
+            // the launcher stops, also when the launcher is killed.
             "-shortest",
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
             "-g", "60", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "8M",
@@ -115,10 +120,28 @@ public sealed class VideoStream : IDisposable
     {
         _stopped = true;
         _http.Close();
-        // The sender must stop before the pipe closes. Otherwise it writes to a closed pipe.
-        _sender.Join(TimeSpan.FromSeconds(2));
+        // The sender must stop before the pipe closes. Otherwise it writes to a closed pipe. If ffmpeg does not read,
+        // the sender cannot stop, and a close of the pipe waits for its write. So stop ffmpeg first: the write then
+        // fails, and the sender stops.
+        if (!_sender.Join(TimeSpan.FromSeconds(2)))
+        {
+            _log.WriteLine("ffmpeg does not read the pictures. The launcher stops it.");
+            try
+            {
+                _ffmpeg.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            _sender.Join(TimeSpan.FromSeconds(2));
+        }
+
         // Close the two inputs of ffmpeg, so that it ends the stream and stops.
         _audio?.Dispose();
+        _genlock?.Dispose();
+        _audioPlan.CompleteAdding();
+        _genlockAudio?.Stop();
         try
         {
             _ffmpeg.StandardInput.Close();
@@ -136,6 +159,12 @@ public sealed class VideoStream : IDisposable
     /// <summary>Sends the last picture of the display to ffmpeg, at the frame rate of the stream.</summary>
     private void SendFrames()
     {
+        if (_genlock != null)
+        {
+            SendGenlockFrames(_genlock);
+            return;
+        }
+
         var pixels = new uint[Display.Width * Display.Height];
         var bytes = MemoryMarshal.AsBytes(pixels.AsSpan()).ToArray();
         var output = _ffmpeg.StandardInput.BaseStream;
@@ -163,6 +192,127 @@ public sealed class VideoStream : IDisposable
             {
                 return;
             }
+        }
+    }
+
+    // The sender starts to take the pictures of the source when the queue has this number, and keeps it near there.
+    private const int GenlockTarget = 6;
+
+    /// <summary>
+    /// Sends the pictures of the display over the pictures of the genlock source. The clock of the stream follows the
+    /// source: the time to the next picture is a little shorter when the queue has more pictures than the target, and
+    /// a little longer when it has fewer. So the stream takes each picture of the source once, and the picture of the
+    /// display at an even rate. If the source has no picture for a second, the stream shows the display over black
+    /// until the source has pictures again.
+    /// </summary>
+    private void SendGenlockFrames(GenlockSource source)
+    {
+        var amiga = new uint[Display.Width * Display.Height];
+        var output = new uint[Display.Width * Display.Height];
+        var bytes = new byte[output.Length * 4];
+        var stream = _ffmpeg.StandardInput.BaseStream;
+        var clock = Stopwatch.StartNew();
+        var next = 0.0;
+        var running = false;
+        while (!_stopped)
+        {
+            var wait = next - clock.Elapsed.TotalSeconds;
+            if (wait > 0)
+                Thread.Sleep(TimeSpan.FromSeconds(wait));
+
+            uint[]? video = null;
+            GenlockSource.Session? session = null;
+            if (!running && source.BufferedFrames >= GenlockTarget)
+            {
+                running = true;
+                _log.WriteLine("The genlock source is on.");
+            }
+
+            if (running && !source.TryTake(out video, out session, TimeSpan.FromSeconds(1)))
+            {
+                running = false;
+                _log.WriteLine("The genlock source has no pictures. The stream shows the display over black.");
+            }
+
+            _display.CopyFrame(amiga);
+            Composite(amiga, video, output);
+            if (video != null)
+                source.Return(video);
+            if (_genlockAudio != null)
+                _audioPlan.Add(session?.Audio);
+
+            Buffer.BlockCopy(output, 0, bytes, 0, bytes.Length);
+            try
+            {
+                stream.Write(bytes);
+                stream.Flush();
+            }
+            catch (Exception e) when (e is IOException or ObjectDisposedException)
+            {
+                if (e is IOException)
+                    _log.WriteLine("The video stream stopped: ffmpeg does not read the pictures.");
+                return;
+            }
+
+            var correction = running ? Math.Clamp(0.002 * (source.BufferedFrames - GenlockTarget), -0.02, 0.02) : 0;
+            next += 1 / FramesPerSecond * (1 - correction);
+            // After a pause, do not send the missed pictures in a burst.
+            if (clock.Elapsed.TotalSeconds - next > 1)
+                next = clock.Elapsed.TotalSeconds;
+        }
+    }
+
+    /// <summary>
+    /// Puts the video under the display: where a pixel of the display has alpha 0 (the genlock key), the video shows.
+    /// A pixel with an alpha between 0 and $FF, from the blend of two fields, mixes the two.
+    /// </summary>
+    private static void Composite(uint[] amiga, uint[]? video, uint[] output)
+    {
+        for (var i = 0; i < output.Length; i++)
+        {
+            var pixel = amiga[i];
+            var alpha = pixel >> 24;
+            var under = video?[i] ?? 0;
+            if (alpha == 0xFF)
+                output[i] = pixel;
+            else if (alpha == 0)
+                output[i] = 0xFF00_0000 | under;
+            else
+                output[i] = 0xFF00_0000 | Mix(pixel, under, alpha, 16) | Mix(pixel, under, alpha, 8) | Mix(pixel, under, alpha, 0);
+        }
+    }
+
+    private static uint Mix(uint top, uint under, uint alpha, int shift) =>
+        (((top >> shift & 0xFF) * alpha + (under >> shift & 0xFF) * (255 - alpha)) / 255) << shift;
+
+    /// <summary>
+    /// Sends the sound of the genlock source to the encoder: for each picture of the stream, the sound of 1/29.97
+    /// second from the session of the picture, or silence.
+    /// </summary>
+    private void SendGenlockAudio()
+    {
+        try
+        {
+            using var client = _genlockAudio!.AcceptTcpClient();
+            var output = client.GetStream();
+            var buffer = new byte[GenlockSource.SampleRate / 20 * GenlockSource.BytesPerSample];
+            long frame = 0;
+            foreach (var audio in _audioPlan.GetConsumingEnumerable())
+            {
+                var samples = (long)((frame + 1) * GenlockSource.SampleRate / FramesPerSecond)
+                              - (long)(frame * GenlockSource.SampleRate / FramesPerSecond);
+                frame++;
+                var span = buffer.AsSpan(0, (int)samples * GenlockSource.BytesPerSample);
+                if (audio == null)
+                    span.Clear();
+                else
+                    audio.Read(span, TimeSpan.FromSeconds(1));
+                output.Write(span);
+            }
+        }
+        catch (Exception e) when (e is IOException or SocketException or ObjectDisposedException or InvalidOperationException)
+        {
+            // The encoder stopped.
         }
     }
 
