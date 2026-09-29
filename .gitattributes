@@ -1,0 +1,3 @@
+# Keep LF line endings on every platform. The scripts need LF to run, and a test compares
+# AmigaSharp/Generated/HelloWorld.cs with the output of the translator byte for byte.
+* text=auto eol=lf

@@ -53,6 +53,7 @@ public sealed class DosLibraryTests : IDisposable
         var file = _harness.Call(Dos, Open, ("D1", _harness.String("sys:data/config.ini")), ("D2", DosMode.OldFile));
 
         Assert.NotEqual(0u, file);
+        _harness.Call(Dos, Close, ("D1", file));
     }
 
     [Fact]
@@ -64,6 +65,7 @@ public sealed class DosLibraryTests : IDisposable
         var file = _harness.Call(Dos, Open, ("D1", _harness.String("FONTS:a.font")), ("D2", DosMode.OldFile));
 
         Assert.NotEqual(0u, file);
+        _harness.Call(Dos, Close, ("D1", file));
     }
 
     [Fact]
@@ -72,7 +74,10 @@ public sealed class DosLibraryTests : IDisposable
         _harness.Core.FileSystem.AddAssign("DF0", "SYS:");
         File.WriteAllText(Path.Combine(_harness.Root, "config.dat"), "x");
 
-        Assert.NotEqual(0u, _harness.Call(Dos, Open, ("D1", _harness.String("df0:config.dat")), ("D2", DosMode.OldFile)));
+        var file = _harness.Call(Dos, Open, ("D1", _harness.String("df0:config.dat")), ("D2", DosMode.OldFile));
+
+        Assert.NotEqual(0u, file);
+        _harness.Call(Dos, Close, ("D1", file));
     }
 
     [Fact]
@@ -102,8 +107,12 @@ public sealed class DosLibraryTests : IDisposable
         var old = _harness.Call(Dos, CurrentDir, ("D1", directory));
 
         Assert.Equal(0u, old);
-        Assert.NotEqual(0u, _harness.Call(Dos, Open, ("D1", _harness.String("a.txt")), ("D2", DosMode.OldFile)));
-        Assert.NotEqual(0u, _harness.Call(Dos, Open, ("D1", _harness.String("/work/a.txt")), ("D2", DosMode.OldFile)));
+        var relative = _harness.Call(Dos, Open, ("D1", _harness.String("a.txt")), ("D2", DosMode.OldFile));
+        var fromParent = _harness.Call(Dos, Open, ("D1", _harness.String("/work/a.txt")), ("D2", DosMode.OldFile));
+        Assert.NotEqual(0u, relative);
+        Assert.NotEqual(0u, fromParent);
+        _harness.Call(Dos, Close, ("D1", relative));
+        _harness.Call(Dos, Close, ("D1", fromParent));
         _harness.Call(Dos, CurrentDir, ("D1", old));
         _harness.Call(Dos, UnLock, ("D1", directory));
     }

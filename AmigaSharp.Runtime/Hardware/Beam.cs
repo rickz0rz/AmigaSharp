@@ -43,7 +43,9 @@ public sealed class RealTimeClock : IClock
 
     /// <remarks>
     /// Thread.Sleep has a resolution of 1 ms, but the audio interrupts of a program can come each 0.9 ms. So on macOS
-    /// and Linux, the clock uses usleep, which can sleep for less than 1 ms.
+    /// and Linux, the clock uses usleep, which can sleep for less than 1 ms. On Windows, Thread.Sleep waits for the
+    /// next tick of the system timer, which is 15.6 ms by default. So the clock uses a high-resolution waitable timer
+    /// (Windows 10 1803 and later), which can also sleep for less than 1 ms.
     /// </remarks>
     public void WaitUntil(TimeSpan time)
     {
@@ -51,13 +53,52 @@ public sealed class RealTimeClock : IClock
         if (remaining <= TimeSpan.Zero)
             return;
         if (OperatingSystem.IsWindows())
-            Thread.Sleep(remaining);
+            WindowsTimer.Sleep(remaining);
         else
             usleep((uint)Math.Max(1, remaining.TotalMicroseconds));
     }
 
     [System.Runtime.InteropServices.DllImport("libc")]
     private static extern int usleep(uint microseconds);
+
+    /// <summary>A high-resolution waitable timer for each thread that waits.</summary>
+    private static class WindowsTimer
+    {
+        private const uint CreateWaitableTimerHighResolution = 0x00000002;
+        private const uint TimerAllAccess = 0x001F0003;
+        private const uint Infinite = 0xFFFFFFFF;
+
+        [ThreadStatic] private static IntPtr _timer;
+
+        public static void Sleep(TimeSpan time)
+        {
+            if (_timer == IntPtr.Zero)
+                _timer = CreateWaitableTimerExW(IntPtr.Zero, IntPtr.Zero, CreateWaitableTimerHighResolution, TimerAllAccess);
+            if (_timer == IntPtr.Zero)
+            {
+                // Older versions of Windows do not have high-resolution timers.
+                Thread.Sleep(time);
+                return;
+            }
+
+            // A negative due time is relative, in units of 100 ns.
+            var dueTime = -Math.Max(1, time.Ticks);
+            if (SetWaitableTimerEx(_timer, ref dueTime, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, 0))
+                WaitForSingleObject(_timer, Infinite);
+            else
+                Thread.Sleep(time);
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32", SetLastError = true)]
+        private static extern IntPtr CreateWaitableTimerExW(IntPtr attributes, IntPtr name, uint flags, uint access);
+
+        [System.Runtime.InteropServices.DllImport("kernel32", SetLastError = true)]
+        private static extern bool SetWaitableTimerEx(IntPtr timer, ref long dueTime, int period, IntPtr completion,
+            IntPtr argument, IntPtr wakeContext, uint tolerableDelay);
+
+        [System.Runtime.InteropServices.DllImport("kernel32", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    }
 }
 
 /// <summary>A clock that also measures the time that the program waits in <see cref="WaitUntil"/>.</summary>

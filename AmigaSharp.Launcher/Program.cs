@@ -134,7 +134,7 @@ try
             case "--feed-trace": feedTrace = Next(); break;
             case "--scale": scale = int.Parse(Next()); break;
             case "--screenshot": screenshot = Next(); break;
-            case "--seconds": seconds = double.Parse(Next()); break;
+            case "--seconds": seconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--screenshot-every": screenshotEvery = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--trace": trace = true; break;
             case "--stats": stats = true; break;
