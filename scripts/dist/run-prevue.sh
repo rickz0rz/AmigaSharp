@@ -19,8 +19,10 @@
 #                            for Channels DVR is http://<this computer>:<port>/channels.m3u.
 #   --audio <path>           The sound of the stream: an M3U playlist or a directory of audio files.
 #   --genlock <file or URL>  Show a video behind the grid of the stream, as the genlock of the Prevue channel did. A
-#                            file plays in a loop. A URL plays live, for example a channel of Channels DVR. Without
-#                            --audio, the stream has the sound of this video.
+#                            file plays in a loop. A URL plays live, for example a channel of an HDHomeRun tuner.
+#                            Without --audio, the stream has the sound of this video.
+#   --genlock-control        Start the genlock with no video, over black. The stream then takes a queue of videos
+#                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
@@ -35,7 +37,7 @@ LAUNCHER=$HERE/AmigaSharp.Launcher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -44,7 +46,7 @@ fail() {
 }
 
 DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" NAME="Prevue Guide"
-HEADLESS="" RESET=""
+HEADLESS="" RESET="" GENLOCK_CONTROL=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --drive) [ $# -ge 2 ] || fail "$1 needs a value."; DRIVE=$2; shift 2 ;;
@@ -59,6 +61,7 @@ while [ $# -gt 0 ]; do
         --genlock) [ $# -ge 2 ] || fail "$1 needs a value."; GENLOCK=$2; shift 2 ;;
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
+        --genlock-control) GENLOCK_CONTROL=1; shift ;;
         --reset) RESET=1; shift ;;
         -h|--help) usage; exit 0 ;;
         --) shift; break ;;
@@ -107,6 +110,7 @@ if [ -n "$STREAM" ]; then
     set -- "$@" --stream "$STREAM" --stream-name "$NAME"
     [ -n "$AUDIO" ] && set -- "$@" --stream-audio "$AUDIO"
     [ -n "$GENLOCK" ] && set -- "$@" --genlock "$GENLOCK"
+    [ -n "$GENLOCK_CONTROL" ] && set -- "$@" --genlock-control
 fi
 
 if [ -n "$CHANNELS_DVR" ]; then

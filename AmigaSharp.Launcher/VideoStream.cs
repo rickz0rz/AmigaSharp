@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Launcher;
@@ -22,9 +23,10 @@ namespace AmigaSharp.Launcher;
 /// </para>
 /// <para>
 /// With a genlock source, the stream works as the genlock of the Prevue machine: the video of the source shows where
-/// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). <see cref="GenlockSource"/>
-/// decodes the video, and the sender puts it under the display, one picture of the source for each picture of the
-/// stream (see <see cref="SendGenlockFrames"/>). The video fills the 4:3
+/// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). <see cref="GenlockPlaylist"/>
+/// gives the video: a queue of files and URLs that the HTTP server can change (see <see cref="AnswerGenlock"/>). The
+/// sender puts the video under the display, one picture of the video for each picture of the stream (see
+/// <see cref="SendGenlockFrames"/>). With no video in the queue, the display shows over black. The video fills the 4:3
 /// picture, and its sides are cut. A file plays in a loop at its real speed. A URL, for example a channel of Channels
 /// DVR, plays live. Without an audio playlist, the stream has the sound of the source.
 /// </para>
@@ -42,7 +44,7 @@ public sealed class VideoStream : IDisposable
     private readonly string _channelName;
     private readonly Thread _sender;
     private readonly AudioFeed? _audio;
-    private readonly GenlockSource? _genlock;
+    private readonly GenlockPlaylist? _genlock;
 
     // With a genlock source and no audio playlist, the sound of the source goes to the encoder through this port. The
     // sender adds the sound of each picture to the plan: the buffer of its session, or null for silence.
@@ -57,17 +59,22 @@ public sealed class VideoStream : IDisposable
     /// A playlist or a directory of audio files that plays in a loop, or null for a silent stream. See
     /// <see cref="AudioFeed"/>.
     /// </param>
-    /// <param name="genlockSource">A video file or a URL that shows behind the display, or null.</param>
+    /// <param name="genlockSource">
+    /// The first video of the genlock playlist: a file (in a loop) or a URL, without a time limit. Null for none.
+    /// </param>
+    /// <param name="genlock">True for the genlock playlist, also without a first video.</param>
     public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log,
-        string? audioPlaylist = null, string? genlockSource = null)
+        string? audioPlaylist = null, string? genlockSource = null, bool genlock = false)
     {
         _display = display;
         _log = log;
         _channelName = channelName;
         _audio = audioPlaylist == null ? null : new AudioFeed(audioPlaylist, log);
-        if (genlockSource != null)
+        if (genlock || genlockSource != null)
         {
-            _genlock = new GenlockSource(genlockSource, withAudio: _audio == null, log);
+            _genlock = new GenlockPlaylist(withAudio: _audio == null, log);
+            if (genlockSource != null)
+                _genlock.Add(genlockSource, seconds: null, loop: File.Exists(genlockSource), next: false);
             if (_audio == null)
             {
                 _genlockAudio = new TcpListener(IPAddress.Loopback, 0);
@@ -195,17 +202,13 @@ public sealed class VideoStream : IDisposable
         }
     }
 
-    // The sender starts to take the pictures of the source when the queue has this number, and keeps it near there.
-    private const int GenlockTarget = 6;
-
     /// <summary>
-    /// Sends the pictures of the display over the pictures of the genlock source. The clock of the stream follows the
-    /// source: the time to the next picture is a little shorter when the queue has more pictures than the target, and
-    /// a little longer when it has fewer. So the stream takes each picture of the source once, and the picture of the
-    /// display at an even rate. If the source has no picture for a second, the stream shows the display over black
-    /// until the source has pictures again.
+    /// Sends the pictures of the display over the pictures of the genlock playlist. While a video plays, the clock of
+    /// the stream follows it: the time to the next picture is a little shorter when its decoder has more pictures than
+    /// the target, and a little longer when it has fewer. So the stream takes each picture of the video once, and the
+    /// picture of the display at an even rate. With no picture of a video, the display shows over black.
     /// </summary>
-    private void SendGenlockFrames(GenlockSource source)
+    private void SendGenlockFrames(GenlockPlaylist playlist)
     {
         var amiga = new uint[Display.Width * Display.Height];
         var output = new uint[Display.Width * Display.Height];
@@ -213,33 +216,20 @@ public sealed class VideoStream : IDisposable
         var stream = _ffmpeg.StandardInput.BaseStream;
         var clock = Stopwatch.StartNew();
         var next = 0.0;
-        var running = false;
         while (!_stopped)
         {
             var wait = next - clock.Elapsed.TotalSeconds;
             if (wait > 0)
                 Thread.Sleep(TimeSpan.FromSeconds(wait));
 
-            uint[]? video = null;
-            GenlockSource.Session? session = null;
-            if (!running && source.BufferedFrames >= GenlockTarget)
-            {
-                running = true;
-                _log.WriteLine("The genlock source is on.");
-            }
-
-            if (running && !source.TryTake(out video, out session, TimeSpan.FromSeconds(1)))
-            {
-                running = false;
-                _log.WriteLine("The genlock source has no pictures. The stream shows the display over black.");
-            }
-
+            // A picture that is late by a little does not show black, but the stream does not wait long for it.
+            var frame = playlist.TakeFrame(TimeSpan.FromMilliseconds(200));
             _display.CopyFrame(amiga);
-            Composite(amiga, video, output);
-            if (video != null)
-                source.Return(video);
+            Composite(amiga, frame?.Pixels, output);
+            if (frame is { } taken)
+                GenlockDecoder.Return(taken.Pixels);
             if (_genlockAudio != null)
-                _audioPlan.Add(session?.Audio);
+                _audioPlan.Add(frame?.Audio);
 
             Buffer.BlockCopy(output, 0, bytes, 0, bytes.Length);
             try
@@ -254,7 +244,9 @@ public sealed class VideoStream : IDisposable
                 return;
             }
 
-            var correction = running ? Math.Clamp(0.002 * (source.BufferedFrames - GenlockTarget), -0.02, 0.02) : 0;
+            var correction = playlist.IsPlaying
+                ? Math.Clamp(0.002 * (playlist.BufferedFrames - GenlockPlaylist.TargetFrames), -0.02, 0.02)
+                : 0;
             next += 1 / FramesPerSecond * (1 - correction);
             // After a pause, do not send the missed pictures in a burst.
             if (clock.Elapsed.TotalSeconds - next > 1)
@@ -295,14 +287,14 @@ public sealed class VideoStream : IDisposable
         {
             using var client = _genlockAudio!.AcceptTcpClient();
             var output = client.GetStream();
-            var buffer = new byte[GenlockSource.SampleRate / 20 * GenlockSource.BytesPerSample];
+            var buffer = new byte[GenlockDecoder.SampleRate / 20 * GenlockDecoder.BytesPerSample];
             long frame = 0;
             foreach (var audio in _audioPlan.GetConsumingEnumerable())
             {
-                var samples = (long)((frame + 1) * GenlockSource.SampleRate / FramesPerSecond)
-                              - (long)(frame * GenlockSource.SampleRate / FramesPerSecond);
+                var samples = (long)((frame + 1) * GenlockDecoder.SampleRate / FramesPerSecond)
+                              - (long)(frame * GenlockDecoder.SampleRate / FramesPerSecond);
                 frame++;
-                var span = buffer.AsSpan(0, (int)samples * GenlockSource.BytesPerSample);
+                var span = buffer.AsSpan(0, (int)samples * GenlockDecoder.BytesPerSample);
                 if (audio == null)
                     span.Clear();
                 else
@@ -340,6 +332,12 @@ public sealed class VideoStream : IDisposable
         try
         {
             var name = context.Request.Url?.AbsolutePath.TrimStart('/') ?? "";
+            if (_genlock != null && (name == "genlock" || name.StartsWith("genlock/")))
+            {
+                AnswerGenlock(context, _genlock, name);
+                return;
+            }
+
             if (name == "channels.m3u")
             {
                 var host = context.Request.Headers["Host"] ?? $"localhost:{context.Request.LocalEndPoint.Port}";
@@ -374,6 +372,122 @@ public sealed class VideoStream : IDisposable
             {
             }
         }
+    }
+
+    /// <summary>
+    /// Answers a request that controls the genlock playlist. Each answer that succeeds has the playlist as JSON.
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>GET /genlock: the current video and the queue.</item>
+    /// <item>
+    /// POST /genlock/queue: adds a video, or an array of videos, as JSON: {"source": "file or URL", "seconds": 300,
+    /// "loop": false, "next": false}. Only "source" is necessary. "next" puts the video first in the queue.
+    /// </item>
+    /// <item>POST /genlock/next: ends the current video. The next video starts, or black shows.</item>
+    /// <item>DELETE /genlock/queue: removes all videos from the queue. The current video continues.</item>
+    /// <item>DELETE /genlock/queue/{id}: removes one video from the queue.</item>
+    /// <item>POST /genlock/stop: removes all videos from the queue and ends the current video.</item>
+    /// </list>
+    /// </remarks>
+    private static void AnswerGenlock(HttpListenerContext context, GenlockPlaylist playlist, string name)
+    {
+        var method = context.Request.HttpMethod;
+        var response = context.Response;
+        try
+        {
+            switch (method, name.TrimEnd('/'))
+            {
+                case ("GET", "genlock" or "genlock/queue"):
+                    break;
+                case ("POST", "genlock/queue"):
+                {
+                    using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                    using var document = JsonDocument.Parse(reader.ReadToEnd());
+                    var items = document.RootElement.ValueKind == JsonValueKind.Array
+                        ? document.RootElement.EnumerateArray().ToList()
+                        : [document.RootElement];
+                    // Check all the videos first, so that a request with an error adds none of them.
+                    var videos = items.Select(ReadVideo).ToList();
+                    // With "next", the first video of the request must play first.
+                    foreach (var video in Enumerable.Reverse(videos).Where(video => video.Next))
+                        playlist.Add(video.Source, video.Seconds, video.Loop, next: true);
+                    foreach (var video in videos.Where(video => !video.Next))
+                        playlist.Add(video.Source, video.Seconds, video.Loop, next: false);
+                    break;
+                }
+                case ("POST", "genlock/next"):
+                    playlist.Skip();
+                    break;
+                case ("POST", "genlock/stop"):
+                    playlist.Clear();
+                    playlist.Skip();
+                    break;
+                case ("DELETE", "genlock/queue"):
+                    playlist.Clear();
+                    break;
+                case ("DELETE", var path) when path.StartsWith("genlock/queue/"):
+                    if (!int.TryParse(path["genlock/queue/".Length..], out var id) || !playlist.Remove(id))
+                    {
+                        SendError(response, 404, "The queue does not have this video.");
+                        return;
+                    }
+
+                    break;
+                default:
+                    SendError(response, 404, "Use GET /genlock, POST /genlock/queue, POST /genlock/next, " +
+                                             "POST /genlock/stop or DELETE /genlock/queue[/id].");
+                    return;
+            }
+
+            Send(response, "application/json", Encoding.UTF8.GetBytes(playlist.ToJson()));
+        }
+        catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException or KeyNotFoundException)
+        {
+            SendError(response, 400, e.Message);
+        }
+    }
+
+    private readonly record struct Video(string Source, double? Seconds, bool Loop, bool Next);
+
+    /// <summary>Reads a video of a request. A source without "://" must be a file that exists.</summary>
+    /// <exception cref="FormatException">The video is not correct.</exception>
+    private static Video ReadVideo(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+            throw new FormatException("A video must be a JSON object, for example {\"source\": \"movie.mp4\"}.");
+        var source = element.TryGetProperty("source", out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()!
+            : throw new FormatException("A video needs \"source\": a file or a URL.");
+        if (!source.Contains("://"))
+        {
+            if (!File.Exists(source))
+                throw new FormatException($"The file {source} does not exist.");
+            source = Path.GetFullPath(source);
+        }
+
+        double? seconds = element.TryGetProperty("seconds", out value) && value.ValueKind != JsonValueKind.Null
+            ? value.GetDouble()
+            : null;
+        if (seconds is <= 0)
+            throw new FormatException("\"seconds\" must be more than 0.");
+        var loop = element.TryGetProperty("loop", out value) && value.GetBoolean();
+        var next = element.TryGetProperty("next", out value) && value.GetBoolean();
+        return new Video(source, seconds, loop, next);
+    }
+
+    private static void SendError(HttpListenerResponse response, int status, string message)
+    {
+        response.StatusCode = status;
+        using var buffer = new MemoryStream();
+        using (var json = new Utf8JsonWriter(buffer))
+        {
+            json.WriteStartObject();
+            json.WriteString("error", message);
+            json.WriteEndObject();
+        }
+
+        Send(response, "application/json", buffer.ToArray());
     }
 
     private static void Send(HttpListenerResponse response, string type, byte[] body)

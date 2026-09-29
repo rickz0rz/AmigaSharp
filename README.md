@@ -260,6 +260,52 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
 - If a live source stops, the stream shows the display over black and continues. The launcher starts the source again
   after 2 seconds.
 
+#### Queue videos
+
+The genlock has a queue of videos. The HTTP server of the stream changes the queue while the stream runs. With
+`--genlock-control` in place of `--genlock`, the stream starts with an empty queue. With no video in the queue, the
+display shows over black.
+
+Each video is a file or a URL, with these values in JSON:
+
+| Value | Meaning |
+|---|---|
+| `source` | A file or a URL. This value is necessary. |
+| `seconds` | The time that the video plays. Without it, a file plays to its end, and a URL plays until you skip it. |
+| `loop` | `true` to play a file in a loop. |
+| `next` | `true` to put the video first in the queue, not last. |
+
+For example, play a channel for 5 minutes, then a file to its end, then the channel for 10 minutes:
+
+```sh
+curl -X POST http://localhost:8091/genlock/queue -d '[
+  {"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 300},
+  {"source": "/videos/promo.mp4"},
+  {"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 600}
+]'
+```
+
+These requests control the queue:
+
+| Request | Result |
+|---|---|
+| `GET /genlock` | Gives the current video and the queue, as JSON. |
+| `POST /genlock/queue` | Adds a video, or an array of videos, at the end of the queue. |
+| `POST /genlock/next` | Ends the current video. The next video starts, or black shows. |
+| `DELETE /genlock/queue` | Removes all the videos from the queue. The current video continues. |
+| `DELETE /genlock/queue/<id>` | Removes one video from the queue. `GET /genlock` gives the ids. |
+| `POST /genlock/stop` | Removes all the videos from the queue, and ends the current video. |
+
+- A `POST` without data needs `-d ''` in curl, for example `curl -X POST -d '' http://localhost:8091/genlock/next`.
+  Without it, the server gives the error 411 (Length Required).
+- The time of a video is the time of the stream from its start, also while a live source starts.
+- The launcher starts the next video 5 seconds before the current video ends, so the next video starts without black.
+  A live source without `seconds` has no known end, so the next video starts with black for a few seconds.
+- A file in a request must be on the computer of the launcher.
+
+Anyone who can connect to the port of the stream can change the queue, and can play any video file that the launcher
+can read. Use the stream only on a network that you trust.
+
 `--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
 
 - `weave` shows the two fields on their rows, as a TV does. Moving content has comb lines. This is the default.
