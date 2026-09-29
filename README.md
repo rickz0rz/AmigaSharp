@@ -10,12 +10,13 @@ because the Prevue Channel showed a video in that area.
 
 ## Status
 
-AmigaSharp is a hobby project. Its main target is Prevue Guide (ESQ), the Amiga program of the Prevue Channel.
+AmigaSharp is a hobby project. Its main target is Prevue Guide (ESQ), the Amiga program of the Prevue Channel. It also
+runs the Amiga Test Kit, a program that takes over the machine and tests the hardware directly.
 
 - It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs.
 - It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
   of each library call.
-- It emulates only the parts of the chipset that ESQ and the samples use.
+- It emulates only the parts of the chipset that ESQ, the Amiga Test Kit and the samples use.
 
 Other programs can use library calls or hardware that the runtime does not emulate.
 
@@ -413,16 +414,31 @@ rules of the 68000 timing tables, so it is near the real time, but not equal to 
 
 ### The chipset
 
-The runtime emulates only the parts of the chipset that ESQ uses:
+The runtime emulates the parts of an Amiga 2000 (ECS, NTSC) that ESQ and the Amiga Test Kit use:
 
-- The display: the bitplanes, the copper, the display window, the scroll, dual playfield, extra half-brite and
-  interlace. It does not show sprites or HAM.
-- The interrupts of the vertical blank, the audio channels and the serial port. The audio channels make their
-  interrupts, but they do not make a sound.
+- The display: the bitplanes, the copper, sprites, the display window, the scroll, dual playfield, extra half-brite
+  and interlace. It makes each line when the beam passes it. It does not show HAM.
+- The blitter: area, fill and line blits. A blit ends at once.
+- The interrupts of the custom chips and the CIAs. A program can use the handlers of exec, or write its own handlers
+  to the exception vectors.
+- The audio channels make their interrupts, but they do not make a sound.
 - The serial port. A TCP port or a file on the host is the other end of the cable.
-- The ports and the time-of-day counters of the two CIAs. The CIA timers are not emulated.
+- The two CIAs: the ports, the timers, the time-of-day counters and the keyboard on the serial port of CIA-A.
+- The mouse in port 1 and the joystick in port 2. In the window, the host mouse is the mouse, and a game controller
+  of the host is the joystick.
+- The battery-backed clock at $DC0000.
 
-`graphics.library` draws into the bitmaps in C#, so the runtime does not emulate the blitter.
+The addresses where an A2000 has nothing are an open bus: a write does nothing, and a read gives 0.
+
+### Programs that take over the machine
+
+The Amiga Test Kit is on an ADF disk image. Run it from the disk:
+
+```sh
+dotnet run --project AmigaSharp.Launcher -c Release -- AmigaTestKit.adf:AmigaTestKit --interpret
+```
+
+The program unpacks itself into memory when it starts, so the translator cannot see its code. Use `--interpret`.
 
 ## Tests
 

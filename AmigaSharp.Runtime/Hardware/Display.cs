@@ -45,6 +45,13 @@ public sealed class Display
     private const int DmaEnable = 0x0200;
     private const int BitplaneDma = 0x0100;
     private const int CopperDma = 0x0080;
+    private const int SpriteDma = 0x0020;
+
+    // Sprite registers.
+    private const int Spr0pt = 0x120;
+
+    /// <summary>The first line where sprite DMA fetches: the end of the vertical blank.</summary>
+    private const int FirstSpriteLine = 20;
 
     private readonly Memory _memory;
     private readonly CustomChips _custom;
@@ -83,6 +90,20 @@ public sealed class Display
     private TextWriter? _dump;
     private bool _runningCopper;
     private readonly Beam? _beam;
+    private readonly Sprite[] _sprites = new Sprite[8];
+
+    /// <summary>The state of a sprite DMA channel in the current frame.</summary>
+    private struct Sprite
+    {
+        public bool Loaded;
+        public bool Armed;
+        public int VerticalStart;
+        public int VerticalStop;
+        public int HorizontalStart;
+        public bool Attached;
+        public ushort DataA;
+        public ushort DataB;
+    }
 
     /// <param name="beam">The beam position. Without it, the display makes each frame at its end.</param>
     public Display(Memory memory, CustomChips custom, Beam? beam = null)
@@ -259,6 +280,7 @@ public sealed class Display
         _lines = interlaced && longFrame ? 263 : 262;
         _longFrame = longFrame;
         _nextLine = 0;
+        Array.Clear(_sprites);
         _frameOfBeam = _beam?.Frame ?? 0;
         _frameActive = true;
     }
@@ -324,6 +346,7 @@ public sealed class Display
 
         // The writes before the data fetch starts change the fetch of this line.
         ApplyWrites(ref next, 0x18);
+        FetchSprites(line);
 
         var bplcon0 = State(CustomRegister.Bplcon0);
         var highResolution = (bplcon0 & HighResolution) != 0;
@@ -408,6 +431,11 @@ public sealed class Display
         var dualPlayfield = (bplcon0 & DualPlayfield) != 0;
         var extraHalfBrite = planes == 6 && (bplcon0 & (HoldAndModify | DualPlayfield)) == 0;
         var target = _canvas.AsSpan(row * Width, Width);
+        var spritesOnLine = false;
+        foreach (var sprite in _sprites)
+            spritesOnLine |= sprite.Armed && (sprite.DataA | sprite.DataB) != 0;
+        var insideVertically = line >= (State(CustomRegister.Diwstrt) >> 8)
+                               && line < ((State(CustomRegister.Diwstop) >> 8) | ((State(CustomRegister.Diwstop) & 0x8000) == 0 ? 0x100 : 0));
 
         for (var x = 0; x < Width; x++)
         {
@@ -431,7 +459,10 @@ public sealed class Display
                 }
             }
 
-            target[x] = Color(index, dualPlayfield, extraHalfBrite);
+            var sprite = spritesOnLine && insideVertically && lowResolution >= horizontalStart && lowResolution < horizontalStop
+                ? SpritePixel(lowResolution, index, dualPlayfield)
+                : 0;
+            target[x] = sprite != 0 ? Rgb(State(CustomRegister.Color00 + sprite * 2), false) : Color(index, dualPlayfield, extraHalfBrite);
         }
 
         if (!interlaced)
@@ -453,8 +484,11 @@ public sealed class Display
                 index = playfield1 != 0 ? playfield1 : playfield2 != 0 ? playfield2 + 8 : 0;
         }
 
-        var halfBrite = extraHalfBrite && index >= 32;
-        var rgb = State(CustomRegister.Color00 + (index & 31) * 2);
+        return Rgb(State(CustomRegister.Color00 + (index & 31) * 2), extraHalfBrite && index >= 32);
+    }
+
+    private static uint Rgb(ushort rgb, bool halfBrite)
+    {
         int red = (rgb >> 8) & 0xF, green = (rgb >> 4) & 0xF, blue = rgb & 0xF;
         if (halfBrite)
         {
@@ -464,6 +498,123 @@ public sealed class Display
         }
 
         return 0xFF00_0000u | (uint)(red * 17) << 16 | (uint)(green * 17) << 8 | (uint)(blue * 17);
+    }
+
+    /// <summary>
+    /// Does the sprite DMA of a line. At the first line, each channel fetches its control words (SPRxPOS, SPRxCTL).
+    /// From VSTART, it fetches the data words (SPRxDATA, SPRxDATB) of each line. At VSTOP, it fetches the control words
+    /// of the next sprite of the channel. Control words of 0 end the channel for the frame.
+    /// </summary>
+    private void FetchSprites(int line)
+    {
+        const int enabled = DmaEnable | SpriteDma;
+        if (line < FirstSpriteLine || (_custom.Dmacon & enabled) != enabled)
+            return;
+
+        for (var number = 0; number < _sprites.Length; number++)
+        {
+            ref var sprite = ref _sprites[number];
+            if (!sprite.Loaded || (sprite.Armed && line == sprite.VerticalStop))
+            {
+                LoadSpriteControl(number, ref sprite);
+                sprite.Armed = false;
+            }
+
+            if (!sprite.Armed && line == sprite.VerticalStart && sprite.VerticalStop > sprite.VerticalStart)
+                sprite.Armed = true;
+            if (!sprite.Armed)
+                continue;
+
+            var pointer = SpritePointer(number);
+            sprite.DataA = _memory.Read16(pointer);
+            sprite.DataB = _memory.Read16(pointer + 2);
+            SetSpritePointer(number, pointer + 4);
+        }
+    }
+
+    private void LoadSpriteControl(int number, ref Sprite sprite)
+    {
+        var pointer = SpritePointer(number);
+        var position = _memory.Read16(pointer);
+        var control = _memory.Read16(pointer + 2);
+        SetSpritePointer(number, pointer + 4);
+
+        // SPRxPOS: VSTART bits 7-0 and HSTART bits 8-1. SPRxCTL: VSTOP bits 7-0, ATTACH, VSTART bit 8, VSTOP bit 8 and
+        // HSTART bit 0.
+        sprite.Loaded = true;
+        sprite.VerticalStart = (position >> 8) | ((control & 4) << 6);
+        sprite.VerticalStop = (control >> 8) | ((control & 2) << 7);
+        sprite.HorizontalStart = ((position & 0xFF) << 1) | (control & 1);
+        sprite.Attached = (control & 0x80) != 0;
+    }
+
+    private uint SpritePointer(int number)
+    {
+        var offset = Spr0pt + number * 4;
+        return (uint)(State(offset) << 16 | State(offset + 2)) & 0x1F_FFFE;
+    }
+
+    private void SetSpritePointer(int number, uint value)
+    {
+        var offset = Spr0pt + number * 4;
+        _state[offset >> 1] = (ushort)(value >> 16);
+        _state[(offset + 2) >> 1] = (ushort)value;
+    }
+
+    /// <summary>
+    /// The color register (16 to 31) of the sprite pixel at the low-resolution position, or 0 if no sprite shows
+    /// there. A sprite with a lower number is in front. A sprite starts one pixel after its HSTART. Each pair of
+    /// sprites has colors 17 to 19, 21 to 23, 25 to 27 or 29 to 31. An odd sprite with ATTACH makes its pair one
+    /// sprite with 15 colors (17 to 31). BPLCON2 gives the pairs that are in front of the playfields. A playfield pixel
+    /// of color 0 never hides a sprite.
+    /// </summary>
+    private int SpritePixel(int lowResolution, int playfieldIndex, bool dualPlayfield)
+    {
+        for (var pair = 0; pair < 4; pair++)
+        {
+            ref var even = ref _sprites[pair * 2];
+            ref var odd = ref _sprites[pair * 2 + 1];
+            var evenBits = SpriteBits(ref even, lowResolution);
+            var oddBits = SpriteBits(ref odd, lowResolution);
+            int color;
+            if (odd.Attached)
+                color = (oddBits << 2 | evenBits) is var attached and not 0 ? 16 + attached : 0;
+            else if (evenBits != 0)
+                color = 16 + pair * 4 + evenBits;
+            else if (oddBits != 0)
+                color = 16 + pair * 4 + oddBits;
+            else
+                color = 0;
+            if (color == 0)
+                continue;
+
+            return playfieldIndex == 0 || pair < PlayfieldPriority(playfieldIndex, dualPlayfield) ? color : 0;
+        }
+
+        return 0;
+    }
+
+    /// <summary>The two bits of a sprite at the position: bit 0 from DATA and bit 1 from DATB.</summary>
+    private static int SpriteBits(ref Sprite sprite, int lowResolution)
+    {
+        if (!sprite.Armed)
+            return 0;
+        var bit = lowResolution - (sprite.HorizontalStart + 1);
+        if (bit is < 0 or > 15)
+            return 0;
+        var mask = 0x8000 >> bit;
+        return ((sprite.DataA & mask) != 0 ? 1 : 0) | ((sprite.DataB & mask) != 0 ? 2 : 0);
+    }
+
+    /// <summary>
+    /// The number of sprite pairs in front of the playfield of the pixel: PF2P (BPLCON2 bits 5-3) for a single
+    /// playfield and for playfield 2, and PF1P (bits 2-0) for playfield 1.
+    /// </summary>
+    private int PlayfieldPriority(int index, bool dualPlayfield)
+    {
+        var bplcon2 = State(CustomRegister.Bplcon2);
+        var playfield1 = dualPlayfield && ((index & 1) | ((index >> 1) & 2) | ((index >> 2) & 4)) != 0;
+        return playfield1 ? bplcon2 & 7 : (bplcon2 >> 3) & 7;
     }
 
     /// <summary>Applies the copper writes of this line up to the horizontal position.</summary>

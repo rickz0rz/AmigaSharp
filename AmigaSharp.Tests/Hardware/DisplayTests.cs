@@ -231,6 +231,67 @@ public class DisplayTests
         Assert.Equal(Blue, Pixel(NextFrame(), 100, 100));
     }
 
+    [Fact]
+    public void Sprite_ShowsItsLinesAtItsPosition_AndTheChannelShowsTheNextSprite()
+    {
+        const uint sprite = 0x3_0000;
+        // HSTART $80 puts the first pixel at the start of the window, $81.
+        Words(sprite,
+            0x3040, 0x3200, 0x8000, 0x0000, 0x0000, 0x8000, // Lines $30 and $31.
+            0x4040, 0x4100, 0x8000, 0x0000, // Line $40.
+            0x0000, 0x0000);
+        SetUpLowResolution(Move(0x120, sprite >> 16), Move(0x122, sprite & 0xFFFF), Move(0x1A2, 0x0F0), Move(0x1A4, 0x00F));
+        Write(0xDFF096, 0x8020); // DMACON: sprites
+
+        NextFrame();
+        var frame = NextFrame();
+
+        Assert.Equal(Green, Pixel(frame, FirstX, 0x30));
+        Assert.Equal(Black, Pixel(frame, FirstX + 2, 0x30));
+        Assert.Equal(Blue, Pixel(frame, FirstX, 0x31));
+        Assert.Equal(Black, Pixel(frame, FirstX, 0x32));
+        Assert.Equal(Green, Pixel(frame, FirstX, 0x40));
+    }
+
+    [Theory]
+    [InlineData(0x00, Red)] // The playfield is in front of all sprites.
+    [InlineData(0x24, Green)] // All sprites are in front of the playfields.
+    public void Sprite_UsesThePriorityOfBplcon2(ushort bplcon2, uint expected)
+    {
+        const uint sprite = 0x3_0000;
+        Words(sprite, 0x3040, 0x3100, 0x8000, 0x0000, 0x0000, 0x0000);
+        _memory.Write8(Plane + (0x30 - 0x2C) * 40, 0x80);
+        SetUpLowResolution(Move(0x120, sprite >> 16), Move(0x122, sprite & 0xFFFF), Move(0x1A2, 0x0F0),
+            Move(0x104, bplcon2));
+        Write(0xDFF096, 0x8020);
+
+        NextFrame();
+
+        Assert.Equal(expected, Pixel(NextFrame(), FirstX, 0x30));
+    }
+
+    [Fact]
+    public void AttachedSprites_MakeOneSpriteWith15Colors()
+    {
+        const uint even = 0x3_0000, odd = 0x3_1000;
+        Words(even, 0x3040, 0x3100, 0x8000, 0x0000, 0x0000, 0x0000);
+        Words(odd, 0x3040, 0x3180, 0x8000, 0x0000, 0x0000, 0x0000);
+        // Bit 0 from the even sprite and bit 2 from the odd sprite: color 16 + 5.
+        SetUpLowResolution(Move(0x120, even >> 16), Move(0x122, even & 0xFFFF), Move(0x124, odd >> 16),
+            Move(0x126, odd & 0xFFFF), Move(0x1AA, 0x00F));
+        Write(0xDFF096, 0x8020);
+
+        NextFrame();
+
+        Assert.Equal(Blue, Pixel(NextFrame(), FirstX, 0x30));
+    }
+
+    private void Words(uint address, params ushort[] words)
+    {
+        for (var i = 0; i < words.Length; i++)
+            _memory.Write16(address + (uint)i * 2, words[i]);
+    }
+
     /// <summary>A display of 320 by 200 low-resolution pixels with 1 plane at <see cref="Plane"/>, color 1 red.</summary>
     private void SetUpLowResolution(params uint[][] extra)
     {
