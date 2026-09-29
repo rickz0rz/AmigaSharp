@@ -24,6 +24,8 @@
 #                            The stream has the sound of this video.
 #   --genlock-control        Start the genlock with no video, over black. The stream then takes a queue of videos
 #                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
+#   --prevue-ctrl-port <port> A TCP port for the control line of Prevue. Its commands show promos of programs. With
+#                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
@@ -38,7 +40,7 @@
 $ErrorActionPreference = 'Stop'
 
 function Show-Usage {
-    Get-Content $PSCommandPath | Select-Object -First 34 | ForEach-Object { $_ -replace '^# ?', '' }
+    Get-Content $PSCommandPath | Select-Object -First 36 | ForEach-Object { $_ -replace '^# ?', '' }
 }
 
 function Fail([string]$Message) {
@@ -65,12 +67,12 @@ $Launcher = Join-Path $Here 'AmigaSharp.Launcher.exe'
 $Listings = Join-Path $Here 'AmigaSharp.PrevueListings.exe'
 
 $Drive = ''; $Esq = ''; $Code = 'GA24005'; $ChannelsDvr = ''; $Interval = '10'; $Premium = ''; $Date = ''
-$Stream = ''; $Audio = ''; $Genlock = ''; $Name = 'Prevue Guide'; $Headless = $false; $Reset = $false; $GenlockControl = $false
+$Stream = ''; $Audio = ''; $Genlock = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Reset = $false; $GenlockControl = $false
 $launcherOptions = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
     $option = [string]$args[$i]
     $valueOptions = '--drive', '--esq', '--code', '--channels-dvr', '--interval', '--premium', '--date', '--stream',
-        '--audio', '--genlock', '--name'
+        '--audio', '--genlock', '--prevue-ctrl-port', '--name'
     if ($valueOptions -contains $option) {
         if ($i + 1 -ge $args.Count) { Fail "$option needs a value." }
         $i++
@@ -87,6 +89,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--stream' { $Stream = $value }
         '--audio' { $Audio = $value }
         '--genlock' { $Genlock = $value }
+        '--prevue-ctrl-port' { $CtrlPort = $value }
         '--name' { $Name = $value }
         '--headless' { $Headless = $true }
         '--genlock-control' { $GenlockControl = $true }
@@ -138,6 +141,7 @@ $arguments = @($Esq, '--drive', $Work, '--volume', "DH1=$Work", '--assign', 'DF0
 $arguments += $launcherOptions
 if ($Date) { $arguments += '--date', $Date }
 if ($Headless) { $arguments += '--headless' }
+if ($CtrlPort) { $arguments += '--prevue-ctrl-port', $CtrlPort }
 if ($Stream) {
     $arguments += '--stream', $Stream, '--stream-name', $Name
     if ($Audio) { $arguments += '--stream-audio', $Audio }

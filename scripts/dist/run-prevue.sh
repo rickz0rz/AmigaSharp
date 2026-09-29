@@ -24,6 +24,8 @@
 #                            The stream has the sound of this video.
 #   --genlock-control        Start the genlock with no video, over black. The stream then takes a queue of videos
 #                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
+#   --prevue-ctrl-port <port> A TCP port for the control line of Prevue. Its commands show promos of programs. With
+#                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
@@ -38,7 +40,7 @@ LAUNCHER=$HERE/AmigaSharp.Launcher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -46,7 +48,7 @@ fail() {
     exit 2
 }
 
-DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" NAME="Prevue Guide"
+DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" CTRL_PORT="" NAME="Prevue Guide"
 HEADLESS="" RESET="" GENLOCK_CONTROL=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
         --stream) [ $# -ge 2 ] || fail "$1 needs a value."; STREAM=$2; shift 2 ;;
         --audio) [ $# -ge 2 ] || fail "$1 needs a value."; AUDIO=$2; shift 2 ;;
         --genlock) [ $# -ge 2 ] || fail "$1 needs a value."; GENLOCK=$2; shift 2 ;;
+        --prevue-ctrl-port) [ $# -ge 2 ] || fail "$1 needs a value."; CTRL_PORT=$2; shift 2 ;;
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
         --genlock-control) GENLOCK_CONTROL=1; shift ;;
@@ -107,6 +110,7 @@ set -- "$ESQ" --drive "$WORK" --volume "DH1=$WORK" --assign DF0=DH1: --assign EN
     --arguments "$CODE" --command-name esq --turbo 8 --deinterlace blend --scale 2 "$@"
 [ -n "$DATE" ] && set -- "$@" --date "$DATE"
 [ -n "$HEADLESS" ] && set -- "$@" --headless
+[ -n "$CTRL_PORT" ] && set -- "$@" --prevue-ctrl-port "$CTRL_PORT"
 if [ -n "$STREAM" ]; then
     set -- "$@" --stream "$STREAM" --stream-name "$NAME"
     [ -n "$AUDIO" ] && set -- "$@" --stream-audio "$AUDIO"

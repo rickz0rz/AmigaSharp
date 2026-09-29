@@ -28,10 +28,10 @@ other source.
 Prevue resets the line while it starts. So the launcher keeps the bytes until one second after Prevue starts to
 sample the line. A client can connect and send at once.
 
-With the scripts of a distribution, give the raw options to the launcher after `--`:
+The scripts of a distribution have the option `--prevue-ctrl-port` too:
 
 ```sh
-./run-prevue.sh --drive /path/to/drive -- --prevue-ctrl-port 8092
+./run-prevue.sh --drive /path/to/drive --prevue-ctrl-port 8092
 ```
 
 ## The HTTP server
