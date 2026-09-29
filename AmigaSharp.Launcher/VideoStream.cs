@@ -73,7 +73,7 @@ public sealed class VideoStream : IDisposable
                 "-filter_complex",
                 "[2:v]fps=30000/1001,scale=960:720:force_original_aspect_ratio=increase,crop=960:720,setsar=1[video];" +
                 "[0:v]scale=960:720:flags=lanczos,setsar=1[amiga];" +
-                $"[video][amiga]overlay=eof_action=repeat{pad}[out]",
+                $"[video][amiga]overlay=eof_action=endall{pad}[out]",
                 "-map", "[out]",
             ];
         var audioMap = genlockSource != null && _audio == null ? "2:a:0?" : "1:a";
@@ -87,6 +87,9 @@ public sealed class VideoStream : IDisposable
             .. genlockInput,
             .. video,
             "-map", audioMap,
+            // The looping genlock file and the silent audio never end. The stream ends with the pictures of the
+            // display, so that ffmpeg stops when the launcher stops, also when the launcher is killed.
+            "-shortest",
             "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency", "-pix_fmt", "yuv420p",
             "-g", "60", "-b:v", "4M", "-maxrate", "4M", "-bufsize", "8M",
             "-c:a", "aac", "-b:a", "128k",

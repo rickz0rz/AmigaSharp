@@ -381,6 +381,21 @@ if (feedTraceWriter != null)
 
 // The program runs on its own thread. The main thread shows the window, or waits for the screenshot.
 var finished = false;
+
+// SIGTERM and SIGHUP stop the launcher as Ctrl-C does, so that it closes the stream and ffmpeg.
+var terminated = false;
+using var terminate = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+    System.Runtime.InteropServices.PosixSignal.SIGTERM, context =>
+    {
+        context.Cancel = true;
+        terminated = true;
+    });
+using var hangUp = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+    System.Runtime.InteropServices.PosixSignal.SIGHUP, context =>
+    {
+        context.Cancel = true;
+        terminated = true;
+    });
 var exitCode = 0;
 var runner = new Thread(() =>
 {
@@ -469,7 +484,7 @@ if (measuringClock != null)
 
 void WaitForTime(double time)
 {
-    while (!finished && clock.Elapsed.TotalSeconds < time)
+    while (!finished && !terminated && clock.Elapsed.TotalSeconds < time)
         Thread.Sleep(5);
 }
 
@@ -507,7 +522,7 @@ try
             e.Cancel = true;
             stop = true;
         };
-        while (!finished && !stop)
+        while (!finished && !stop && !terminated)
             Thread.Sleep(100);
     }
     else
@@ -521,7 +536,7 @@ try
         var ports = core.Chipset.Custom.Ports;
         new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key, ports[0], ports[1],
                 wavWriter == null ? core.Chipset.Audio : null)
-            .Run(() => finished);
+            .Run(() => finished || terminated);
     }
 }
 finally
