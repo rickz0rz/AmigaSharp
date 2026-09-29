@@ -33,10 +33,11 @@ public abstract class TranslatedProgram(Core core)
         var file = HunkFile.Parse(executable);
         var bases = HunkLayout.Assign(file);
         foreach (var hunk in file.Hunks)
-            core.Allocator.Reserve(bases[hunk.Index], hunk.Size);
+            core.Allocator.Reserve(bases[hunk.Index] - HunkLayout.SegmentHeaderSize, hunk.Size + HunkLayout.SegmentHeaderSize);
         file.Load(memory, bases);
+        var segmentList = file.WriteSegmentList(memory, bases);
         RegisterFunctions();
-        SetUpCli(commandName);
+        SetUpCli(commandName, segmentList);
 
         // AmigaDOS starts a CLI command with A0 pointing to the arguments and D0 holding their length. The arguments
         // end with a newline. The stack size is at 4(SP), above the return address.
@@ -51,7 +52,7 @@ public abstract class TranslatedProgram(Core core)
         return cpu.D[0];
     }
 
-    private void SetUpCli(string commandName)
+    private void SetUpCli(string commandName, uint segmentList)
     {
         var process = core.MainProcess;
         var cli = core.AllocateSystem(CliOffsets.Size);
@@ -65,6 +66,7 @@ public abstract class TranslatedProgram(Core core)
         memory.Write32(cli + CliOffsets.StandardOutput, memory.Read32(process + ProcessOffsets.OutputStream));
         memory.Write32(cli + CliOffsets.CurrentOutput, memory.Read32(process + ProcessOffsets.OutputStream));
         memory.Write32(cli + CliOffsets.Interactive, 0xFFFF_FFFF);
+        memory.Write32(cli + CliOffsets.Module, segmentList);
         memory.Write32(process + ProcessOffsets.Cli, cli >> 2);
     }
 }

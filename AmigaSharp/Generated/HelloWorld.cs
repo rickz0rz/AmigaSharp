@@ -13,96 +13,96 @@ public sealed class HelloWorld(Core core) : TranslatedProgram(core)
 {
     protected override void RegisterFunctions()
     {
-        core.RegisterFunction(0x200000u, Start);
-        core.RegisterFunction(0x200028u, NoDos);
+        core.RegisterFunction(0x200008u, Start);
+        core.RegisterFunction(0x200030u, NoDos);
     }
 
-    // $200000 (hello.s:11)
+    // $200008 (hello.s:11)
     public void Start()
     {
         // hello.s:11: Start:			LEA	DosName,A1		;dos.library name string
-        // $200000  LEA $20002C(PC),A1
+        // $200008  LEA $200034(PC),A1
         {
             cpu.Cycles += 48;
-            cpu.A[1] = 0x20002Cu;
+            cpu.A[1] = 0x200034u;
         }
         // hello.s:12: MOVEQ	#36,D0			;minimum required version (36 = Kick 2.0)
-        // $200004  MOVEQ #$24,D0
+        // $20000C  MOVEQ #$24,D0
         {
             cpu.D[0] = Ops.Logic(cpu, Size.Long, 0x24u);
         }
         // hello.s:13: MOVEA.L	SysBase,A6
-        // $200006  MOVEA.L $0004.W,A6
+        // $20000E  MOVEA.L $0004.W,A6
         {
             cpu.A[6] = memory.Read32(0x4u);
         }
         // hello.s:14: JSR	OpenLibrary(A6)
-        // $20000A  JSR -552(A6)
+        // $200012  JSR -552(A6)
         {
             var target = cpu.A[6] - 552u;
-            core.CallAddress(0x20000Eu, target);
+            core.CallAddress(0x200016u, target);
         }
         // hello.s:15: TST.L	D0			;zero if OpenLibrary() failed
-        // $20000E  TST.L D0
+        // $200016  TST.L D0
         {
             cpu.Cycles += 18;
             Ops.Logic(cpu, Size.Long, cpu.D[0]);
         }
         // hello.s:16: BEQ.S	NoDos			;if failed, skip to exit
-        // $200010  BEQ $200028
+        // $200018  BEQ $200030
         {
             if (cpu.Z) { NoDos(); return; }
         }
         // hello.s:18: MOVE.L	#Hello,D1		;string to print
-        // $200012  MOVE.L #$200038,D1
+        // $20001A  MOVE.L #$200040,D1
         {
             cpu.Cycles += 36;
-            var v = 0x200038u;
+            var v = 0x200040u;
             cpu.D[1] = v;
             Ops.Logic(cpu, Size.Long, v);
         }
         // hello.s:19: MOVEA.L	D0,A6			;moving DOSBase to A6
-        // $200018  MOVEA.L D0,A6
+        // $200020  MOVEA.L D0,A6
         {
             cpu.A[6] = cpu.D[0];
         }
         // hello.s:20: JSR	PutStr(A6)
-        // $20001A  JSR -948(A6)
+        // $200022  JSR -948(A6)
         {
             var target = cpu.A[6] - 948u;
-            core.CallAddress(0x20001Eu, target);
+            core.CallAddress(0x200026u, target);
         }
         // hello.s:22: MOVEA.L	A6,A1			;DOSBase, library to close
-        // $20001E  MOVEA.L A6,A1
+        // $200026  MOVEA.L A6,A1
         {
             cpu.Cycles += 40;
             cpu.A[1] = cpu.A[6];
         }
         // hello.s:23: MOVEA.L	SysBase,A6
-        // $200020  MOVEA.L $0004.W,A6
+        // $200028  MOVEA.L $0004.W,A6
         {
             cpu.A[6] = memory.Read32(0x4u);
         }
         // hello.s:24: JSR	CloseLibrary(A6)
-        // $200024  JSR -414(A6)
+        // $20002C  JSR -414(A6)
         {
             var target = cpu.A[6] - 414u;
-            core.CallAddress(0x200028u, target);
+            core.CallAddress(0x200030u, target);
             { NoDos(); return; }
         }
     }
 
-    // $200028 (hello.s:26)
+    // $200030 (hello.s:26)
     public void NoDos()
     {
         // hello.s:26: NoDos:			CLR.L	D0			;return 0 to the system
-        // $200028  MOVEQ #$0,D0
+        // $200030  MOVEQ #$0,D0
         {
             cpu.Cycles += 20;
             cpu.D[0] = Ops.Logic(cpu, Size.Long, 0x0u);
         }
         // hello.s:27: RTS
-        // $20002A  RTS
+        // $200032  RTS
         {
             var pc = cpu.Pop32();
             { core.ReturnTo(pc); return; }

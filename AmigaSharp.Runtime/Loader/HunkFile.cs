@@ -93,6 +93,25 @@ public sealed class HunkFile
         return new HunkFile { Hunks = hunks };
     }
 
+    /// <summary>
+    /// Writes the segment list of the loaded hunks, as LoadSeg makes it. The 8 bytes before each hunk are the segment
+    /// header: the size of the segment (with the header), and a BPTR to the next segment (0 for the last). Some programs
+    /// follow this list, for example to find the code of an unpacker in the last hunk.
+    /// </summary>
+    /// <remarks>The caller must reserve <see cref="HunkLayout.SegmentHeaderSize"/> bytes before each base.</remarks>
+    /// <returns>The segment list: a BPTR to the first segment.</returns>
+    public uint WriteSegmentList(Memory memory, IReadOnlyList<uint> bases)
+    {
+        for (var i = 0; i < Hunks.Count; i++)
+        {
+            var segment = bases[i] - HunkLayout.SegmentHeaderSize;
+            memory.Write32(segment, Hunks[i].Size + HunkLayout.SegmentHeaderSize);
+            memory.Write32(segment + 4, i + 1 < Hunks.Count ? (bases[i + 1] - 4) >> 2 : 0);
+        }
+
+        return Hunks.Count == 0 ? 0 : (bases[0] - 4) >> 2;
+    }
+
     /// <summary>Copies the hunks to memory at the base addresses and applies the relocations.</summary>
     public void Load(Memory memory, IReadOnlyList<uint> bases)
     {
@@ -120,6 +139,11 @@ public sealed class HunkFile
         var relocations = new List<Relocation>();
         while (true)
         {
+            // LoadSeg does not need HUNK_END between two hunks: a CODE, DATA or BSS block after the contents of a
+            // hunk starts the next hunk. Some packed executables use this.
+            if (type != null && (reader.PeekLong() & 0x3FFF_FFFF) is HunkCode or HunkData or HunkBss)
+                return MakeHunk(index, type.Value, memory, size, data, relocations);
+
             var id = reader.Long() & 0x3FFF_FFFF;
             switch (id)
             {
@@ -160,20 +184,25 @@ public sealed class HunkFile
                 case HunkEnd:
                     if (type == null)
                         throw new InvalidDataException($"Hunk {index} has no CODE, DATA or BSS block.");
-                    return new Hunk
-                    {
-                        Index = index, Type = type.Value, Memory = memory, Size = Math.Max(size, (uint)data.Length),
-                        Data = data, Relocations = relocations,
-                    };
+                    return MakeHunk(index, type.Value, memory, size, data, relocations);
                 default:
                     throw new InvalidDataException($"Hunk {index} has an unknown block type ${id:X}.");
             }
         }
     }
 
+    private static Hunk MakeHunk(int index, HunkType type, HunkMemory memory, uint size, byte[] data,
+        List<Relocation> relocations) => new()
+    {
+        Index = index, Type = type, Memory = memory, Size = Math.Max(size, (uint)data.Length), Data = data,
+        Relocations = relocations,
+    };
+
     private ref struct Reader(byte[] bytes)
     {
         private int _position;
+
+        public uint PeekLong() => BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(_position, 4));
 
         public uint Long()
         {
@@ -214,6 +243,9 @@ public static class HunkLayout
     /// <summary>The other hunks load here, in the first fast RAM area of the Zorro II space.</summary>
     public const uint FastBase = 0x20_0000;
 
+    /// <summary>The size of the segment header before each hunk: the size of the segment and the BPTR to the next.</summary>
+    public const uint SegmentHeaderSize = 8;
+
     public static uint[] Assign(HunkFile file)
     {
         var bases = new uint[file.Hunks.Count];
@@ -222,8 +254,8 @@ public static class HunkLayout
         foreach (var hunk in file.Hunks)
         {
             ref var next = ref hunk.Memory == HunkMemory.Chip ? ref chip : ref fast;
-            bases[hunk.Index] = next;
-            next = (next + hunk.Size + 7) & ~7u;
+            bases[hunk.Index] = next + SegmentHeaderSize;
+            next = (next + SegmentHeaderSize + hunk.Size + 7) & ~7u;
         }
 
         return bases;

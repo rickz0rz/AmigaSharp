@@ -13,6 +13,14 @@ const string usage = """
 
     Unpacks PowerPacker files (files that start with PP20) to the directory.
 
+    Usage: AmigaSharp.Launcher extract <disk.adf> --output <directory>
+
+    Writes the files of an ADF disk image to the directory.
+
+    The executable can be a file on a disk image: <disk.adf>:<path>, for example AmigaTestKit.adf:AmigaTestKit. The
+    launcher copies the files of the disk to a new temporary directory. That directory is SYS:, DF0: and the volume
+    name of the disk. The program can change these files, but not the disk image.
+
     Options:
       --listing <file.lst>      The vasm listing of the executable. The translator uses its instructions and labels.
       --interpret               Run the program in the interpreter. Do not translate it. A native (AOT) build always
@@ -76,6 +84,8 @@ const string usage = """
 
 if (args.Length > 0 && args[0] == "unpack")
     return Unpack(args[1..]);
+if (args.Length > 0 && args[0] == "extract")
+    return Extract(args[1..]);
 
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
 string? serialFile = null, serialLog = null, feedTrace = null;
@@ -186,6 +196,34 @@ catch (Exception e) when (e is ArgumentException or FormatException)
 }
 
 var log = Console.Error;
+
+// A program on a disk image: extract the disk, and run the program from the copy.
+string? diskCopy = null;
+var adfSeparator = executablePath.IndexOf(".adf:", StringComparison.OrdinalIgnoreCase);
+if (adfSeparator > 0)
+{
+    var imagePath = executablePath[..(adfSeparator + 4)];
+    AmigaSharp.Runtime.Dos.AdfImage disk;
+    try
+    {
+        disk = AmigaSharp.Runtime.Dos.AdfImage.Read(File.ReadAllBytes(imagePath));
+    }
+    catch (Exception e) when (e is IOException or InvalidDataException)
+    {
+        Console.Error.WriteLine($"error: {imagePath}: {e.Message}");
+        return 1;
+    }
+
+    diskCopy = Directory.CreateTempSubdirectory("AmigaSharp-Disk-").FullName;
+    disk.ExtractTo(diskCopy);
+    log.WriteLine($"The disk {disk.VolumeName} is in {diskCopy}.");
+    executablePath = Path.Combine([diskCopy, .. executablePath[(adfSeparator + 5)..].Split('/')]);
+    drive ??= diskCopy;
+    volumes.Insert(0, ("DF0", diskCopy));
+    if (disk.VolumeName.IndexOfAny([':', '/']) < 0)
+        volumes.Insert(0, (disk.VolumeName, diskCopy));
+}
+
 var executable = File.ReadAllBytes(executablePath);
 drive ??= Path.GetDirectoryName(Path.GetFullPath(executablePath))!;
 commandName ??= Path.GetFileName(executablePath);
@@ -468,6 +506,8 @@ try
 finally
 {
     Directory.Delete(ram, recursive: true);
+    if (diskCopy != null)
+        Directory.Delete(diskCopy, recursive: true);
 }
 
 if (stats && core.InterpreterEntries.Count > 0)
@@ -483,6 +523,30 @@ return exitCode;
 [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Loads the translation of the program as an assembly.")]
 static TranslatedProgram CompileProgram(byte[] executable, string? listing, Core core, TextWriter log) =>
     (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+
+static int Extract(string[] arguments)
+{
+    if (arguments is not [var image, "--output", var output])
+    {
+        Console.Error.WriteLine("error: extract needs a disk image and --output <directory>.");
+        return 2;
+    }
+
+    try
+    {
+        var disk = AmigaSharp.Runtime.Dos.AdfImage.Read(File.ReadAllBytes(image));
+        disk.ExtractTo(output);
+        Console.WriteLine($"{image}: the disk {disk.VolumeName} ({(disk.FastFileSystem ? "FFS" : "OFS")}).");
+        foreach (var entry in disk.Entries)
+            Console.WriteLine(entry.IsDirectory ? $"  {entry.Path}/" : $"  {entry.Path} ({entry.Data.Length} bytes)");
+        return 0;
+    }
+    catch (Exception e) when (e is IOException or InvalidDataException)
+    {
+        Console.Error.WriteLine($"error: {image}: {e.Message}");
+        return 1;
+    }
+}
 
 static int Unpack(string[] arguments)
 {
