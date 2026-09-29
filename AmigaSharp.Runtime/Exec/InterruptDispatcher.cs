@@ -19,6 +19,9 @@ public sealed class InterruptDispatcher(Core core)
 
     private const uint InterruptVectorSize = 12;
 
+    /// <summary>The address of the level 1 autovector. The vector of level n is at 4 * (24 + n).</summary>
+    private const uint FirstAutovector = 0x64;
+
     /// <summary>The interrupts that the dispatcher delivered, by INTREQ bit. For tests and for debugging.</summary>
     public long[] Delivered { get; } = new long[16];
 
@@ -57,6 +60,8 @@ public sealed class InterruptDispatcher(Core core)
         {
             if ((custom.Intena & (1 << bit)) == 0)
                 continue;
+            if (Autovector(InterruptBit.Level(bit)) != 0)
+                return true;
             var vector = Vector(bit);
             var memory = core.Memory;
             if (ServerChains.Contains(bit) ? !ExecList.IsEmpty(memory, memory.Read32(vector)) : memory.Read32(vector + 4) != 0)
@@ -77,6 +82,17 @@ public sealed class InterruptDispatcher(Core core)
         cpu.Sr = (ushort)(0x2000 | (level << 8) | cpu.Ccr);
         try
         {
+            // A program that takes over the machine writes its own handler to the autovector. The CPU then runs that
+            // handler, as a 68000 does, and not the handlers of exec. The handler clears the requests itself.
+            var autovector = Autovector(level);
+            if (autovector != 0)
+            {
+                foreach (var bit in bits)
+                    Delivered[bit]++;
+                core.CallFromNative(autovector, supervisorFrame: true);
+                return;
+            }
+
             foreach (var bit in bits)
             {
                 var vector = Vector(bit);
@@ -126,6 +142,9 @@ public sealed class InterruptDispatcher(Core core)
         cpu.D[1] = (uint)requests;
         core.CallFromNative(code);
     }
+
+    /// <summary>The handler in the autovector of the level, or 0 if the program did not install one.</summary>
+    private uint Autovector(int level) => core.Memory.Read32(FirstAutovector + (uint)(level - 1) * 4);
 
     private uint Vector(int bit) => core.ExecBase + ExecBaseOffsets.InterruptVectors + (uint)bit * InterruptVectorSize;
 }

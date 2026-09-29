@@ -42,6 +42,34 @@ public class InterruptTests
     }
 
     [Fact]
+    public void AutovectorOfTheProgram_GetsTheInterrupt_AsOnA68000()
+    {
+        var counter = _core.AllocateSystem(4);
+        // ADDQ.L #1,counter; MOVE SR,flag; MOVE.W #$0020,$DFF09C; RTE.
+        var flag = _core.AllocateSystem(2);
+        byte[] code =
+        [
+            0x52, 0xB9, (byte)(counter >> 24), (byte)(counter >> 16), (byte)(counter >> 8), (byte)counter,
+            0x40, 0xF9, (byte)(flag >> 24), (byte)(flag >> 16), (byte)(flag >> 8), (byte)flag,
+            0x33, 0xFC, 0x00, 0x20, 0x00, 0xDF, 0xF0, 0x9C,
+            0x4E, 0x73,
+        ];
+        Memory.Write32(0x6C, _core.AllocateSystem(code));
+        EnableInterrupt(InterruptBit.VerticalBlank);
+        _core.Cpu.D[0] = 0x1234_5678;
+
+        _core.Chipset.Custom.RequestInterrupt(InterruptBit.VerticalBlank);
+        _core.PollNow();
+
+        Assert.Equal(1u, Memory.Read32(counter));
+        // The handler runs in supervisor mode with the interrupt mask at level 3.
+        Assert.Equal(0x2300, Memory.Read16(flag) & 0x2700);
+        Assert.Equal(0, _core.Chipset.Custom.Intreq & (1 << InterruptBit.VerticalBlank));
+        Assert.Equal(0x1234_5678u, _core.Cpu.D[0]);
+        Assert.False(_core.Cpu.S);
+    }
+
+    [Fact]
     public void HandlerThatDoesNotClearTheRequest_RunsOnceInAPoll()
     {
         var counter = InstallCountingHandler(InterruptBit.Rbf, clearsRequest: false);

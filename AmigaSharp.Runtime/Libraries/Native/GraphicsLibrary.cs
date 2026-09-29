@@ -274,6 +274,25 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
         SetFont(rastPort, _memory.Read32(Base + GfxBaseOffsets.DefaultFont));
     }
 
+    // LoadView(view)
+    //          A1
+    // The runtime has no system copper list. With a null View, the display shows the copper list of the program, or
+    // nothing. With a View, the copper starts at the long-frame list of the View from the next frame.
+    [LibraryFunctionOffset(-222)]
+    public void LoadView([A1] uint view)
+    {
+        _memory.Write32(Base + GfxBaseOffsets.ActiView, view);
+        if (view == 0)
+            return;
+        var copperList = _memory.Read32(view + ViewOffsets.LofCprList);
+        if (copperList == 0)
+            return;
+        var start = _memory.Read32(copperList + CprListOffsets.Start);
+        _memory.Write32(Base + GfxBaseOffsets.LofList, start);
+        _memory.Write16(Hardware.CustomRegister.Base + Hardware.CustomRegister.Cop1lc, (ushort)(start >> 16));
+        _memory.Write16(Hardware.CustomRegister.Base + Hardware.CustomRegister.Cop1lc + 2, (ushort)start);
+    }
+
     // WaitBlit()
     // The runtime blits at once, so the blitter is never busy.
     [LibraryFunctionOffset(-228)]

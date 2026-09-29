@@ -15,8 +15,9 @@ public sealed class Interpreter(CpuState cpu)
     public CpuState Cpu => cpu;
 
     /// <summary>
-    /// If true, <see cref="Step"/> throws <see cref="CpuTrapException"/> for a 68000 exception and does not jump to
-    /// the handler. The runtime uses this, because it does not install exception handlers.
+    /// If true, <see cref="Step"/> throws <see cref="CpuTrapException"/> for a 68000 exception when its vector is 0, and
+    /// does not jump to the handler. The runtime uses this, because it does not install exception handlers. A program
+    /// that writes a handler to the vector table, for example to get into supervisor mode, gets the exception.
     /// </summary>
     public bool ExceptionsAreFatal { get; init; }
 
@@ -37,7 +38,7 @@ public sealed class Interpreter(CpuState cpu)
         }
         catch (CpuTrapException trap)
         {
-            if (ExceptionsAreFatal)
+            if (ExceptionsAreFatal && _memory.Read32((uint)trap.Vector * 4) == 0)
             {
                 cpu.Pc = instruction.Address;
                 throw;

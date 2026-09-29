@@ -129,6 +129,21 @@ public static class ColorTextFontOffsets
     public const ushort MapColor = 1 << 0;
 }
 
+/// <summary><c>struct View</c> (graphics/view.h).</summary>
+public static class ViewOffsets
+{
+    public const uint ViewPort = 0;
+    public const uint LofCprList = 4;
+    public const uint ShfCprList = 8;
+}
+
+/// <summary><c>struct cprlist</c> (graphics/copper.h).</summary>
+public static class CprListOffsets
+{
+    public const uint Next = 0;
+    public const uint Start = 4;
+}
+
 /// <summary><c>struct GfxBase</c> (graphics/gfxbase.h).</summary>
 public static class GfxBaseOffsets
 {

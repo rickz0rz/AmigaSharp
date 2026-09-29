@@ -49,6 +49,32 @@ public class InterpreterTests
     }
 
     [Fact]
+    public void RuntimeInterpreter_TakesTheException_WhenTheProgramInstalledAHandler()
+    {
+        var interpreter = new Interpreter(_cpu) { ExceptionsAreFatal = true };
+        EnterUserMode();
+        Code(0x46FC, 0x2700); // MOVE #$2700,SR
+
+        interpreter.Step();
+
+        AssertException(ExceptionVector.PrivilegeViolation, stackedPc: CodeAddress, stackedSr: 0x0000);
+    }
+
+    [Fact]
+    public void RuntimeInterpreter_Throws_WhenTheVectorIsZero()
+    {
+        var interpreter = new Interpreter(_cpu) { ExceptionsAreFatal = true };
+        _memory.Write32(ExceptionVector.PrivilegeViolation * 4, 0);
+        EnterUserMode();
+        Code(0x46FC, 0x2700);
+
+        var trap = Assert.Throws<CpuTrapException>(interpreter.Step);
+
+        Assert.Equal(ExceptionVector.PrivilegeViolation, trap.Vector);
+        Assert.Equal(CodeAddress, _cpu.Pc);
+    }
+
+    [Fact]
     public void MoveFromSr_InUserMode_IsAllowed()
     {
         EnterUserMode();
