@@ -48,6 +48,15 @@ GET /genlock gives the queue, POST /genlock/next skips to the next video, and PO
 With curl, a POST without data needs -d '', for example: curl -X POST -d '' http://localhost:8091/genlock/next
 Anyone who can connect to the port of the stream can change the queue, so use it only on a network that you trust.
 
+The music of --audio is a queue too, at /music, with the same requests. /mixer controls the volume of the video, the
+music and the Amiga, and how the music becomes quieter under a video. For example, play the music at a third of its
+volume, and keep a fifth of that under the videos:
+
+    curl -X POST http://localhost:8091/mixer/music -d '{"volume": 0.3, "fade": 3}'
+    curl -X POST http://localhost:8091/mixer/duck -d '{"volume": 0.2}'
+
+GET /mixer gives the settings and the level of each part of the sound. The README of AmigaSharp has all the requests.
+
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.
 

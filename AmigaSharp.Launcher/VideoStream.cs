@@ -28,7 +28,7 @@ namespace AmigaSharp.Launcher;
 /// <para>
 /// With a genlock source, the stream works as the genlock of the Prevue machine: the video of the source shows where
 /// the display has the genlock key (the pixels with alpha 0, see <see cref="Display"/>). <see cref="GenlockPlaylist"/>
-/// gives the video: a queue of files and URLs that the HTTP server can change (see <see cref="AnswerGenlock"/>). The
+/// gives the video: a queue of files and URLs that the HTTP server can change (see <see cref="AnswerQueue"/>). The
 /// sender puts the video under the display, one picture of the video for each picture of the stream (see
 /// <see cref="SendFrames"/>). With no video in the queue, the display shows over black. Without the genlock, the
 /// pixels of the genlock key show their own color.
@@ -46,7 +46,7 @@ public sealed class VideoStream : IDisposable
     private readonly HttpListener _http = new();
     private readonly string _channelName;
     private readonly Thread _sender;
-    private readonly AudioFeed? _music;
+    private readonly GenlockPlaylist _music;
     private readonly GenlockPlaylist? _genlock;
     private readonly StreamMixer _mixer;
 
@@ -60,8 +60,8 @@ public sealed class VideoStream : IDisposable
     /// <param name="port">The TCP port of the HTTP server. It listens on all the addresses of the host.</param>
     /// <param name="wide">True to add black bars for a 16:9 picture.</param>
     /// <param name="audioPlaylist">
-    /// A playlist or a directory of audio files that plays in a loop while no video with sound plays, or null. See
-    /// <see cref="AudioFeed"/>.
+    /// A playlist or a directory of audio files (see <see cref="PlaylistFile"/>) for the music queue, which plays it in
+    /// a loop. Null for an empty music queue.
     /// </param>
     /// <param name="genlockSource">
     /// The first video of the genlock playlist: a file (in a loop) or a URL, without a time limit. Null for none.
@@ -74,8 +74,20 @@ public sealed class VideoStream : IDisposable
         _display = display;
         _log = log;
         _channelName = channelName;
-        _music = audioPlaylist == null ? null : new AudioFeed(audioPlaylist, log);
-        _mixer = new StreamMixer(_music == null ? null : _music.Read, amigaSound);
+        // The music is a playlist of sound only. It always exists, so that the HTTP server can fill it.
+        _music = new GenlockPlaylist(withAudio: true, log,
+            item => new GenlockDecoder(item.Source, item.Loop, withAudio: true, log, pictures: false), name: "Music");
+        if (audioPlaylist != null)
+        {
+            var files = PlaylistFile.Read(audioPlaylist);
+            if (files.Count == 0)
+                log.WriteLine($"The audio playlist {audioPlaylist} has no audio files.");
+            foreach (var file in files)
+                _music.Add(file, seconds: null, loop: false, next: false);
+            _music.LoopAll = true;
+        }
+
+        _mixer = new StreamMixer(_music, amigaSound);
         if (genlock || genlockSource != null)
         {
             _genlock = new GenlockPlaylist(withAudio: true, log);
@@ -150,7 +162,7 @@ public sealed class VideoStream : IDisposable
         _audioPlan.CompleteAdding();
         _audioPort.Stop();
         _genlock?.Dispose();
-        _music?.Dispose();
+        _music.Dispose();
         try
         {
             _ffmpeg.StandardInput.Close();
@@ -302,7 +314,19 @@ public sealed class VideoStream : IDisposable
             var name = context.Request.Url?.AbsolutePath.TrimStart('/') ?? "";
             if (_genlock != null && (name == "genlock" || name.StartsWith("genlock/")))
             {
-                AnswerGenlock(context, _genlock, name);
+                AnswerQueue(context, _genlock, "genlock", name);
+                return;
+            }
+
+            if (name == "music" || name.StartsWith("music/"))
+            {
+                AnswerQueue(context, _music, "music", name);
+                return;
+            }
+
+            if (name == "mixer" || name.StartsWith("mixer/"))
+            {
+                AnswerMixer(context, name);
                 return;
             }
 
@@ -343,7 +367,8 @@ public sealed class VideoStream : IDisposable
     }
 
     /// <summary>
-    /// Answers a request that controls the genlock playlist. Each answer that succeeds has the playlist as JSON.
+    /// Answers a request that controls a playlist: the genlock (/genlock) or the music (/music). Each answer that
+    /// succeeds has the playlist as JSON.
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
@@ -356,22 +381,40 @@ public sealed class VideoStream : IDisposable
     /// <item>DELETE /genlock/queue: removes all videos from the queue. The current video continues.</item>
     /// <item>DELETE /genlock/queue/{id}: removes one video from the queue.</item>
     /// <item>POST /genlock/stop: removes all videos from the queue and ends the current video.</item>
+    /// <item>POST /genlock with {"loop": "all"} or {"loop": "off"}: plays the queue in a loop, or once.</item>
     /// </list>
+    /// The requests of /music are the same.
     /// </remarks>
-    private static void AnswerGenlock(HttpListenerContext context, GenlockPlaylist playlist, string name)
+    private static void AnswerQueue(HttpListenerContext context, GenlockPlaylist playlist, string prefix, string name)
     {
         var method = context.Request.HttpMethod;
         var response = context.Response;
         try
         {
-            switch (method, name.TrimEnd('/'))
+            var path = name.TrimEnd('/');
+            var action = path == prefix ? "" : path[(prefix.Length + 1)..];
+            switch (method, action)
             {
-                case ("GET", "genlock" or "genlock/queue"):
+                case ("GET", "" or "queue"):
                     break;
-                case ("POST", "genlock/queue"):
+                case ("POST", ""):
                 {
-                    using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
-                    using var document = JsonDocument.Parse(reader.ReadToEnd());
+                    using var document = ReadJson(context);
+                    if (document.RootElement.TryGetProperty("loop", out var loop))
+                    {
+                        playlist.LoopAll = loop.GetString() switch
+                        {
+                            "all" => true,
+                            "off" => false,
+                            _ => throw new FormatException("\"loop\" must be \"all\" or \"off\"."),
+                        };
+                    }
+
+                    break;
+                }
+                case ("POST", "queue"):
+                {
+                    using var document = ReadJson(context);
                     var items = document.RootElement.ValueKind == JsonValueKind.Array
                         ? document.RootElement.EnumerateArray().ToList()
                         : [document.RootElement];
@@ -384,27 +427,26 @@ public sealed class VideoStream : IDisposable
                         playlist.Add(video.Source, video.Seconds, video.Loop, next: false);
                     break;
                 }
-                case ("POST", "genlock/next"):
+                case ("POST", "next"):
                     playlist.Skip();
                     break;
-                case ("POST", "genlock/stop"):
-                    playlist.Clear();
-                    playlist.Skip();
+                case ("POST", "stop"):
+                    playlist.Stop();
                     break;
-                case ("DELETE", "genlock/queue"):
+                case ("DELETE", "queue"):
                     playlist.Clear();
                     break;
-                case ("DELETE", var path) when path.StartsWith("genlock/queue/"):
-                    if (!int.TryParse(path["genlock/queue/".Length..], out var id) || !playlist.Remove(id))
+                case ("DELETE", var item) when item.StartsWith("queue/"):
+                    if (!int.TryParse(item["queue/".Length..], out var id) || !playlist.Remove(id))
                     {
-                        SendError(response, 404, "The queue does not have this video.");
+                        SendError(response, 404, "The queue does not have this item.");
                         return;
                     }
 
                     break;
                 default:
-                    SendError(response, 404, "Use GET /genlock, POST /genlock/queue, POST /genlock/next, " +
-                                             "POST /genlock/stop or DELETE /genlock/queue[/id].");
+                    SendError(response, 404, $"Use GET /{prefix}, POST /{prefix}, POST /{prefix}/queue, POST /{prefix}/next, " +
+                                             $"POST /{prefix}/stop or DELETE /{prefix}/queue[/id].");
                     return;
             }
 
@@ -414,6 +456,151 @@ public sealed class VideoStream : IDisposable
         {
             SendError(response, 400, e.Message);
         }
+    }
+
+    /// <summary>
+    /// Answers a request that controls the mixer of the sound. Each answer that succeeds has the mixer as JSON.
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>GET /mixer: the settings and the level of each layer (video, music, amiga), and the duck settings.</item>
+    /// <item>
+    /// POST /mixer/video, /mixer/music or /mixer/amiga: changes a layer, as JSON: {"volume": 0.5, "muted": false,
+    /// "fade": 2}. Each value is optional. "volume" is 0 or more (1 is the normal level). "fade" is in seconds.
+    /// </item>
+    /// <item>
+    /// POST /mixer/duck: changes the duck of the music, as JSON: {"when": "video-has-sound" or "never", "volume": 0.2,
+    /// "fade": 0.5}. Each value is optional. "volume" is the part of its volume that the music keeps: 0 stops it.
+    /// </item>
+    /// </list>
+    /// </remarks>
+    private void AnswerMixer(HttpListenerContext context, string name)
+    {
+        var method = context.Request.HttpMethod;
+        var response = context.Response;
+        try
+        {
+            var path = name.TrimEnd('/');
+            switch (method, path)
+            {
+                case ("GET", "mixer"):
+                    break;
+                case ("POST", "mixer/duck"):
+                {
+                    using var document = ReadJson(context);
+                    var root = document.RootElement;
+                    var duck = _mixer.Duck;
+                    if (root.TryGetProperty("when", out var when))
+                    {
+                        duck = duck with
+                        {
+                            When = when.GetString() switch
+                            {
+                                "video-has-sound" => DuckCondition.VideoHasSound,
+                                "never" => DuckCondition.Never,
+                                _ => throw new FormatException("\"when\" must be \"video-has-sound\" or \"never\"."),
+                            },
+                        };
+                    }
+
+                    duck = duck with
+                    {
+                        Volume = ReadNumber(root, "volume", duck.Volume, 0, 1),
+                        Fade = ReadNumber(root, "fade", duck.Fade, 0, 60),
+                    };
+                    _mixer.Duck = duck;
+                    break;
+                }
+                case ("POST", var layerPath) when layerPath.StartsWith("mixer/"):
+                {
+                    var layer = layerPath["mixer/".Length..] switch
+                    {
+                        "video" => MixerLayer.Video,
+                        "music" => MixerLayer.Music,
+                        "amiga" => MixerLayer.Amiga,
+                        _ => (MixerLayer?)null,
+                    };
+                    if (layer == null)
+                    {
+                        SendError(response, 404, "The layers are video, music and amiga.");
+                        return;
+                    }
+
+                    using var document = ReadJson(context);
+                    var root = document.RootElement;
+                    var settings = _mixer.Get(layer.Value);
+                    settings = settings with
+                    {
+                        Volume = ReadNumber(root, "volume", settings.Volume, 0, 4),
+                        Muted = root.TryGetProperty("muted", out var muted) ? muted.GetBoolean() : settings.Muted,
+                        Fade = ReadNumber(root, "fade", settings.Fade, 0, 60),
+                    };
+                    _mixer.Set(layer.Value, settings);
+                    break;
+                }
+                default:
+                    SendError(response, 404, "Use GET /mixer, POST /mixer/video, POST /mixer/music, POST /mixer/amiga " +
+                                             "or POST /mixer/duck.");
+                    return;
+            }
+
+            Send(response, "application/json", Encoding.UTF8.GetBytes(MixerJson()));
+        }
+        catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException or KeyNotFoundException)
+        {
+            SendError(response, 400, e.Message);
+        }
+    }
+
+    /// <summary>The settings and the levels of the mixer, as JSON.</summary>
+    private string MixerJson()
+    {
+        using var buffer = new MemoryStream();
+        using (var json = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
+        {
+            json.WriteStartObject();
+            json.WriteStartObject("layers");
+            foreach (var layer in Enum.GetValues<MixerLayer>())
+            {
+                var settings = _mixer.Get(layer);
+                json.WriteStartObject(layer.ToString().ToLowerInvariant());
+                json.WriteNumber("volume", settings.Volume);
+                json.WriteBoolean("muted", settings.Muted);
+                json.WriteNumber("fade", settings.Fade);
+                json.WriteNumber("level", Math.Round(_mixer.Level(layer), 3));
+                json.WriteEndObject();
+            }
+
+            json.WriteEndObject();
+            var duck = _mixer.Duck;
+            json.WriteStartObject("duck");
+            json.WriteString("when", duck.When == DuckCondition.VideoHasSound ? "video-has-sound" : "never");
+            json.WriteNumber("volume", duck.Volume);
+            json.WriteNumber("fade", duck.Fade);
+            json.WriteEndObject();
+            json.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    private static JsonDocument ReadJson(HttpListenerContext context)
+    {
+        using var reader = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+        var text = reader.ReadToEnd();
+        return JsonDocument.Parse(string.IsNullOrWhiteSpace(text) ? "{}" : text);
+    }
+
+    /// <summary>Reads an optional number of a request, in its range.</summary>
+    /// <exception cref="FormatException">The number is not a number or is out of its range.</exception>
+    private static double ReadNumber(JsonElement root, string name, double current, double minimum, double maximum)
+    {
+        if (!root.TryGetProperty(name, out var value))
+            return current;
+        var number = value.ValueKind == JsonValueKind.Number ? value.GetDouble() : double.NaN;
+        if (double.IsNaN(number) || number < minimum || number > maximum)
+            throw new FormatException($"\"{name}\" must be a number from {minimum} to {maximum}.");
+        return number;
     }
 
     private readonly record struct Video(string Source, double? Seconds, bool Loop, bool Next);

@@ -52,8 +52,10 @@ const string usage = """
       --stream-4x3              Make the stream 960 by 720 pixels. The default is 1280 by 720, with bars at the sides.
       --stream-name <name>      The name of the channel in /channels.m3u. The default is the name of the command.
       --stream-audio <path>     Music for the stream: an M3U playlist, a text file with one audio file on each line,
-                                or a directory of audio files. It plays in a loop while no video with sound plays in
-                                the genlock. The stream also has the sound of the genlock videos and of the Amiga.
+                                or a directory of audio files. It plays in a loop. By default, it stops while a
+                                genlock video with sound plays. The stream also has the sound of the genlock videos
+                                and of the Amiga. The HTTP server of the stream controls the sound: GET /mixer and
+                                GET /music. See the README.
       --genlock <file or URL>   Show a video behind the stream, as the genlock of Prevue: the video shows where the
                                 display has color 0 (the genlock key). A file plays in a loop. A URL plays live, for
                                 example a channel of an HDHomeRun tuner. This option needs --stream.

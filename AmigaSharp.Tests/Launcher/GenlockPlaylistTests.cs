@@ -134,6 +134,59 @@ public sealed class GenlockPlaylistTests : IDisposable
         Assert.Equal(Live, Json().GetProperty("current").GetProperty("source").GetString());
     }
 
+    [Fact]
+    public void LoopAll_PutsAnItemThatEnded_OrWasSkipped_AtTheEndOfTheQueue()
+    {
+        _playlist.LoopAll = true;
+        _playlist.Add(Live, seconds: 1, loop: false, next: false);
+        _playlist.Add(OtherLive, seconds: null, loop: false, next: false);
+        _playlist.TakeFrame(TimeSpan.Zero);
+        _started[0].Decoder.Add(100);
+        _started[1].Decoder.Add(100);
+        for (var tick = 1; tick < 31; tick++)
+            _playlist.TakeFrame(TimeSpan.Zero);
+
+        Assert.Equal(OtherLive, Json().GetProperty("current").GetProperty("source").GetString());
+        Assert.Equal([Live], Queue());
+        Assert.Equal("all", Json().GetProperty("loop").GetString());
+
+        _playlist.Skip();
+        Assert.Equal([Live, OtherLive], Queue());
+    }
+
+    [Fact]
+    public void LoopAll_DropsAnItemThatGaveNoPicture()
+    {
+        _playlist.LoopAll = true;
+        _playlist.Add(_file, seconds: null, loop: false, next: false);
+        _playlist.TakeFrame(TimeSpan.Zero);
+        _started[0].Decoder.Complete();
+
+        _playlist.TakeFrame(TimeSpan.Zero);
+
+        Assert.Equal(JsonValueKind.Null, Json().GetProperty("current").ValueKind);
+        Assert.Empty(Queue());
+    }
+
+    [Fact]
+    public void Stop_EndsTheCurrentItem_AlsoInALoop()
+    {
+        _playlist.LoopAll = true;
+        _playlist.Add(Live, seconds: null, loop: false, next: false);
+        _playlist.Add(OtherLive, seconds: null, loop: false, next: false);
+        _playlist.TakeFrame(TimeSpan.Zero);
+        _started[0].Decoder.Add(GenlockPlaylist.TargetFrames);
+        _playlist.TakeFrame(TimeSpan.Zero);
+
+        _playlist.Stop();
+
+        Assert.Equal(JsonValueKind.Null, Json().GetProperty("current").ValueKind);
+        Assert.Empty(Queue());
+    }
+
+    private List<string?> Queue() =>
+        Json().GetProperty("queue").EnumerateArray().Select(item => item.GetProperty("source").GetString()).ToList();
+
     private JsonElement Json() => JsonDocument.Parse(_playlist.ToJson()).RootElement;
 
     private sealed class FakeDecoder : IGenlockDecoder

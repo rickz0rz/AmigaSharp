@@ -17,8 +17,8 @@
 #                            listings of the drive on their date. The default is the time of this computer.
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
 #                            for Channels DVR is http://<this computer>:<port>/channels.m3u.
-#   --audio <path>           Music for the stream: an M3U playlist or a directory of audio files. It stops while a
-#                            --genlock video with sound plays.
+#   --audio <path>           Music for the stream: an M3U playlist or a directory of audio files, in a loop. By
+#                            default, it stops while a --genlock video with sound plays.
 #   --genlock <file or URL>  Show a video behind the grid of the stream, as the genlock of the Prevue channel did. A
 #                            file plays in a loop. A URL plays live, for example a channel of an HDHomeRun tuner.
 #                            The stream has the sound of this video.

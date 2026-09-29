@@ -32,20 +32,25 @@ public sealed class GenlockPlaylist : IDisposable
     private readonly TextWriter _log;
     private readonly Func<Item, IGenlockDecoder> _startDecoder;
     private readonly TimeSpan _restartDelay;
+    private readonly string _name;
     private int _nextId = 1;
     private Item? _current;
     private IGenlockDecoder? _decoder;
     private IGenlockDecoder? _preloaded;
     private long _currentFrames;
+    private long _currentPictures;
+    private bool _loopAll;
     private bool _playing;
     private DateTime? _restartAt;
 
     /// <param name="withAudio">True to decode the sound of the videos too.</param>
     /// <param name="startDecoder">Starts the decoder of an item. The default is a <see cref="GenlockDecoder"/>.</param>
     /// <param name="restartDelay">The time before a live source that stopped starts again. The default is 2 seconds.</param>
+    /// <param name="name">The name of the playlist in the log, for example "Genlock" or "Music".</param>
     public GenlockPlaylist(bool withAudio, TextWriter log, Func<Item, IGenlockDecoder>? startDecoder = null,
-        TimeSpan? restartDelay = null)
+        TimeSpan? restartDelay = null, string name = "Genlock")
     {
+        _name = name;
         _log = log;
         _restartDelay = restartDelay ?? TimeSpan.FromSeconds(2);
         _startDecoder = startDecoder ?? (item => new GenlockDecoder(item.Source, item.Loop, withAudio, log));
@@ -107,7 +112,7 @@ public sealed class GenlockPlaylist : IDisposable
             }
         }
 
-        _log.WriteLine($"Genlock: queued {Describe(item)}.");
+        _log.WriteLine($"{_name}: queued {Describe(item)}.");
         return item;
     }
 
@@ -132,11 +137,41 @@ public sealed class GenlockPlaylist : IDisposable
         }
     }
 
+    /// <summary>
+    /// True to play the queue in a loop: an item that ends, or that is skipped, goes to the end of the queue again. An
+    /// item that gave no picture (a file that does not play, for example) does not.
+    /// </summary>
+    public bool LoopAll
+    {
+        get
+        {
+            lock (_lock)
+                return _loopAll;
+        }
+        set
+        {
+            lock (_lock)
+                _loopAll = value;
+        }
+    }
+
     /// <summary>Ends the current item. The next item starts, or black shows.</summary>
     public void Skip()
     {
         lock (_lock)
             EndCurrent("skipped");
+    }
+
+    /// <summary>Removes all items from the queue and ends the current item, also in a loop.</summary>
+    public void Stop()
+    {
+        lock (_lock)
+        {
+            _queue.Clear();
+            _preloaded?.Dispose();
+            _preloaded = null;
+            EndCurrent("stopped", requeue: false);
+        }
     }
 
     /// <summary>Removes all items from the queue. The current item continues.</summary>
@@ -175,7 +210,15 @@ public sealed class GenlockPlaylist : IDisposable
         }
 
         if (decoder.TryTake(out var pixels, timeout))
+        {
+            lock (_lock)
+            {
+                if (_decoder == decoder)
+                    _currentPictures++;
+            }
+
             return new Frame(pixels, decoder.Audio, decoder.HasSound);
+        }
 
         // The decoder has no picture: black until it has pictures again.
         lock (_lock)
@@ -209,6 +252,7 @@ public sealed class GenlockPlaylist : IDisposable
                     json.WriteEndObject();
                 }
 
+                json.WriteString("loop", _loopAll ? "all" : "off");
                 json.WriteStartArray("queue");
                 foreach (var item in _queue)
                 {
@@ -252,7 +296,7 @@ public sealed class GenlockPlaylist : IDisposable
                 }
                 else
                 {
-                    _log.WriteLine($"Genlock: {_current.Source} stopped. It starts again in {_restartDelay.TotalSeconds:F0} seconds.");
+                    _log.WriteLine($"{_name}: {_current.Source} stopped. It starts again in {_restartDelay.TotalSeconds:F0} seconds.");
                     _decoder.Dispose();
                     _decoder = null;
                     _playing = false;
@@ -266,10 +310,11 @@ public sealed class GenlockPlaylist : IDisposable
             _queue.RemoveFirst();
             _current = first.Value;
             _currentFrames = 0;
+            _currentPictures = 0;
             _playing = false;
             _decoder = _preloaded ?? _startDecoder(_current);
             _preloaded = null;
-            _log.WriteLine($"Genlock: playing {Describe(_current)}.");
+            _log.WriteLine($"{_name}: playing {Describe(_current)}.");
         }
 
         if (_current != null && _decoder == null && DateTime.UtcNow >= _restartAt)
@@ -284,11 +329,13 @@ public sealed class GenlockPlaylist : IDisposable
             _preloaded = _startDecoder(next.Value);
     }
 
-    private void EndCurrent(string reason)
+    private void EndCurrent(string reason, bool requeue = true)
     {
         if (_current == null)
             return;
-        _log.WriteLine($"Genlock: {reason} {Describe(_current)}.");
+        _log.WriteLine($"{_name}: {reason} {Describe(_current)}.");
+        if (requeue && _loopAll && _currentPictures > 0)
+            _queue.AddLast(_current);
         _decoder?.Dispose();
         _decoder = null;
         _current = null;

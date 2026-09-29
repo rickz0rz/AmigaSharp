@@ -228,12 +228,13 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
   picture without bars.
 - The sound of the stream is the sound of the Amiga, with the sound of the genlock video and with music. For Prevue,
   the sound of the Amiga is silent.
-- `--stream-audio <path>` gives the stream music: an M3U playlist, a text file with one audio file on each line, or
-  a directory of audio files. The files play in a loop, in the order of the playlist (or of their names in a
-  directory). A path in a playlist can be relative to the directory of the playlist. Files that do not exist or do
-  not play are skipped. If no file plays, the launcher tries the playlist again each 10 seconds. The music plays
-  while no genlock video with sound plays. When a video with sound starts, the music fades out in half a second and
-  stops. When the video ends, the music fades in and continues from the same place.
+- `--stream-audio <path>` puts music in the music queue of the stream: an M3U playlist, a text file with one audio
+  file on each line, or a directory of audio files. The launcher reads the playlist when it starts. The files play
+  in a loop, in the order of the playlist (or of their names in a directory). A path in a playlist can be relative
+  to the directory of the playlist. A file that does not play leaves the loop. By default, the music plays while no
+  genlock video with sound plays. When a video with sound starts, the music fades out in half a second and stops.
+  When the video ends, the music fades in and continues from the same place. See
+  [Control the sound](#control-the-sound).
 - `--headless` runs without a window until Ctrl-C. The stream also works with a window.
 - macOS can ask if the launcher can accept incoming network connections. Accept it, so that the server can connect.
 - On Windows, only an administrator can listen for HTTP on all the addresses of the computer, so `--stream` stops
@@ -310,6 +311,45 @@ These requests control the queue:
 
 Anyone who can connect to the port of the stream can change the queue, and can play any video file that the launcher
 can read. Use the stream only on a network that you trust.
+
+#### Control the sound
+
+The sound of the stream has three layers:
+
+| Layer | Sound |
+|---|---|
+| `video` | The sound of the current genlock video. |
+| `music` | The music queue. `--stream-audio` fills it when the stream starts. |
+| `amiga` | The sound of the audio channels of the Amiga. |
+
+The music queue has the same requests as the genlock queue, at `/music` in place of `/genlock`: `GET /music`,
+`POST /music/queue`, `POST /music/next`, `POST /music/stop`, `DELETE /music/queue[/<id>]`. The music queue plays
+only the sound of its files. `POST /music -d '{"loop": "all"}'` plays the queue in a loop: a file that ends goes to
+the end of the queue again. `"off"` plays each file once. The same request at `/genlock` loops the genlock queue.
+
+These requests control the mixer:
+
+| Request | Result |
+|---|---|
+| `GET /mixer` | Gives the settings and the level of each layer, and the duck settings, as JSON. |
+| `POST /mixer/<layer>` | Changes a layer: `{"volume": 0.5, "muted": false, "fade": 2}`. |
+| `POST /mixer/duck` | Changes when and how the music becomes quieter: `{"when": "video-has-sound", "volume": 0.2, "fade": 0.5}`. |
+
+- Each value of a request is optional. The other values do not change.
+- `volume` is from 0 to 4 for a layer, and 1 is the normal level. A change goes to the new volume in `fade` seconds.
+  `muted` makes the layer silent, also in `fade` seconds.
+- The duck makes the music quieter while the genlock video has sound. `volume` is the part of its volume that the
+  music keeps: 0 stops it, and it continues from the same place later. `"when": "never"` turns the duck off, for
+  example when another program sets the volume of the music itself.
+- `level` in `GET /mixer` is the peak level of the layer in the last second, from 0 (silent) to 1 (full scale). A
+  program can use it to see that a layer is silent, for example a live channel that lost its sound.
+
+For example, make the music quieter in 3 seconds, and let it play at a fifth of its volume under the videos:
+
+```sh
+curl -X POST http://localhost:8091/mixer/music -d '{"volume": 0.3, "fade": 3}'
+curl -X POST http://localhost:8091/mixer/duck -d '{"volume": 0.2}'
+```
 
 `--deinterlace` sets how the window, the screenshots and the stream show the interlaced display of Prevue:
 

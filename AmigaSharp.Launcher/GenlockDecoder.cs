@@ -46,6 +46,9 @@ public sealed class GenlockDecoder : IGenlockDecoder
     public const int SampleRate = 48_000;
     public const int BytesPerSample = 4;
     private const int FrameBytes = Display.Width * Display.Height * 4;
+
+    // Without pictures, the decoder gives small black pictures of this size. They count the time of the sound.
+    private const int TimingSize = 2;
     private const int MaximumFrames = 60;
 
     // The pictures of all decoders use the same arrays again.
@@ -54,6 +57,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
     private readonly string _source;
     private readonly bool _loop;
     private readonly bool _withAudio;
+    private readonly bool _pictures;
     private readonly TextWriter _log;
     private readonly BlockingCollection<uint[]> _frames = new(MaximumFrames);
     private readonly Thread _thread;
@@ -62,11 +66,16 @@ public sealed class GenlockDecoder : IGenlockDecoder
 
     /// <param name="loop">True to play a file again from its start when it ends.</param>
     /// <param name="withAudio">True to decode the sound of the source too.</param>
-    public GenlockDecoder(string source, bool loop, bool withAudio, TextWriter log)
+    /// <param name="pictures">
+    /// False to decode only the sound, for example for the music. The decoder then gives pictures of 2 by 2 black
+    /// pixels, one for each 1/29.97 second of sound, so that a playlist counts the time of the sound as for a video.
+    /// </param>
+    public GenlockDecoder(string source, bool loop, bool withAudio, TextWriter log, bool pictures = true)
     {
         _source = source;
         _loop = loop;
         _withAudio = withAudio;
+        _pictures = pictures;
         _log = log;
         _thread = new Thread(Run) { IsBackground = true, Name = "Genlock decoder" };
         _thread.Start();
@@ -100,7 +109,11 @@ public sealed class GenlockDecoder : IGenlockDecoder
         }
     }
 
-    public static void Return(uint[] pixels) => Pool.Add(pixels);
+    public static void Return(uint[] pixels)
+    {
+        if (pixels.Length == Display.Width * Display.Height)
+            Pool.Add(pixels);
+    }
 
     /// <summary>The duration of a file in seconds, from ffprobe, or null for a live source or an unknown duration.</summary>
     public static double? Duration(string source)
@@ -140,7 +153,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
             var audio = _withAudio && streams.Contains("audio");
             _hasSound = audio;
             if (!_stopped)
-                Decode(audio, video: streams.Contains("video"));
+                Decode(audio, video: _pictures && streams.Contains("video"));
         }
         finally
         {
@@ -190,9 +203,10 @@ public sealed class GenlockDecoder : IGenlockDecoder
                 "-ac", "2", $"tcp://127.0.0.1:{port}"]
             : [];
         // A source with no video gets black pictures from ffmpeg, as long as its sound for a file.
+        var size = _pictures ? $"{Display.Width}x{Display.Height}" : $"{TimingSize}x{TimingSize}";
         string[] black = video
             ? []
-            : ["-f", "lavfi", "-i", $"color=c=black:s={Display.Width}x{Display.Height}:r=30000/1001" +
+            : ["-f", "lavfi", "-i", $"color=c=black:s={size}:r=30000/1001" +
                                    (Duration(_source) is { } seconds && !_loop
                                        ? $":d={seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
                                        : "")];
@@ -204,9 +218,11 @@ public sealed class GenlockDecoder : IGenlockDecoder
             "-map", video ? "0:v:0" : "1:v:0",
             // The pictures and the sound both start at the start of the input: the first picture repeats and the sound
             // starts with silence as necessary. The sound follows the times of the input, so the two stay together.
-            "-vf", "bwdif=mode=send_frame:deint=interlaced,fps=30000/1001:start_time=0," +
-                   "crop=w='min(iw,ih*4/3/sar)':h='min(ih,iw*sar*3/4)'," +
-                   $"scale={Display.Width}:{Display.Height},format=bgra",
+            "-vf", _pictures
+                ? "bwdif=mode=send_frame:deint=interlaced,fps=30000/1001:start_time=0," +
+                  "crop=w='min(iw,ih*4/3/sar)':h='min(ih,iw*sar*3/4)'," +
+                  $"scale={Display.Width}:{Display.Height},format=bgra"
+                : "format=bgra",
             "-f", "rawvideo", "pipe:1",
             .. audioOutput,
         ];
@@ -259,20 +275,21 @@ public sealed class GenlockDecoder : IGenlockDecoder
 
     private void ReadPictures(Stream input)
     {
-        var bytes = new byte[FrameBytes];
+        var frameBytes = _pictures ? FrameBytes : TimingSize * TimingSize * 4;
+        var bytes = new byte[frameBytes];
         while (!_stopped)
         {
             var count = 0;
-            while (count < FrameBytes)
+            while (count < frameBytes)
             {
-                var read = input.Read(bytes, count, FrameBytes - count);
+                var read = input.Read(bytes, count, frameBytes - count);
                 if (read == 0)
                     return;
                 count += read;
             }
 
-            var pixels = Pool.TryTake(out var reused) ? reused : new uint[Display.Width * Display.Height];
-            Buffer.BlockCopy(bytes, 0, pixels, 0, FrameBytes);
+            var pixels = _pictures && Pool.TryTake(out var reused) ? reused : new uint[frameBytes / 4];
+            Buffer.BlockCopy(bytes, 0, pixels, 0, frameBytes);
             // A full queue makes the decoder wait. A picture must not go, because its sound would stay.
             while (!_stopped && !_frames.TryAdd(pixels, TimeSpan.FromMilliseconds(100)))
             {
