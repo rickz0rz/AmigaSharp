@@ -69,7 +69,7 @@ public sealed class VideoStream : IDisposable
     /// </param>
     /// <param name="genlock">True for the genlock playlist, also without a first video.</param>
     /// <param name="amigaSound">The sound of the Amiga, or null for none.</param>
-    /// <param name="controlLine">The control line of Prevue for the requests of /ctrl, or null for none.</param>
+    /// <param name="controlLine">The control line of Prevue for the requests of /prevue/ctrl, or null for none.</param>
     public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log,
         string? audioPlaylist = null, string? genlockSource = null, bool genlock = false, AudioTap? amigaSound = null,
         ControlLineFeed? controlLine = null)
@@ -334,7 +334,7 @@ public sealed class VideoStream : IDisposable
                 return;
             }
 
-            if (_controlLine != null && (name == "ctrl" || name.StartsWith("ctrl/")))
+            if (_controlLine != null && (name == "prevue/ctrl" || name.StartsWith("prevue/ctrl/")))
             {
                 AnswerControl(context, _controlLine, name);
                 return;
@@ -565,16 +565,19 @@ public sealed class VideoStream : IDisposable
     /// <summary>Answers a request for the control line of Prevue (see docs/ctrl-line.md).</summary>
     /// <remarks>
     /// <list type="bullet">
-    /// <item>GET /ctrl: the bytes that wait for the line, and the seconds that the line needs to send them.</item>
     /// <item>
-    /// POST /ctrl/promo: shows a promo, as JSON: {"title": "Seinfeld", "channels": "*", "brush": "AT"}, or
+    /// GET /prevue/ctrl: the bytes that wait for the line, and the seconds that the line needs to send them.
+    /// </item>
+    /// <item>
+    /// POST /prevue/ctrl/promo: shows a promo, as JSON: {"title": "Seinfeld", "channels": "*", "brush": "AT"}, or
     /// {"right": {...}, "left": {...}, "first": "right"} (see <see cref="ControlLineFeed.Promo"/>).
     /// </item>
-    /// <item>POST /ctrl/clear: removes the promo, so that the genlock video shows in the top half.</item>
-    /// <item>POST /ctrl/default: shows the default brush in the top half.</item>
-    /// <item>POST /ctrl/packets: sends raw packets, as JSON: [{"type": 1, "body": "3"}].</item>
+    /// <item>POST /prevue/ctrl/clear: removes the promo, so that the genlock video shows in the top half.</item>
+    /// <item>POST /prevue/ctrl/default: shows the default brush in the top half.</item>
+    /// <item>POST /prevue/ctrl/packets: sends raw packets, as JSON: [{"type": 1, "body": "3"}].</item>
     /// </list>
-    /// The line sends 11 bytes each second, so a promo takes about 2 seconds. Each answer is the answer of GET /ctrl.
+    /// The line sends 11 bytes each second, so a promo takes about 2 seconds. Each answer is the answer of
+    /// GET /prevue/ctrl.
     /// </remarks>
     private static void AnswerControl(HttpListenerContext context, ControlLineFeed line, string name)
     {
@@ -583,29 +586,30 @@ public sealed class VideoStream : IDisposable
         {
             switch (context.Request.HttpMethod, name.TrimEnd('/'))
             {
-                case ("GET", "ctrl"):
+                case ("GET", "prevue/ctrl"):
                     break;
-                case ("POST", "ctrl/promo"):
+                case ("POST", "prevue/ctrl/promo"):
                 {
                     using var document = ReadJson(context);
                     line.Add(ControlLineFeed.Promo(document.RootElement));
                     break;
                 }
-                case ("POST", "ctrl/clear"):
+                case ("POST", "prevue/ctrl/clear"):
                     line.Add([ControlLineFeed.Packet(1, "3")]);
                     break;
-                case ("POST", "ctrl/default"):
+                case ("POST", "prevue/ctrl/default"):
                     line.Add([ControlLineFeed.Packet(1, "D")]);
                     break;
-                case ("POST", "ctrl/packets"):
+                case ("POST", "prevue/ctrl/packets"):
                 {
                     using var document = ReadJson(context);
                     line.Add(ControlLineFeed.Packets(document.RootElement));
                     break;
                 }
                 default:
-                    SendError(response, 404, "Use GET /ctrl, POST /ctrl/promo, POST /ctrl/clear, POST /ctrl/default " +
-                                             "or POST /ctrl/packets.");
+                    SendError(response, 404, "Use GET /prevue/ctrl, POST /prevue/ctrl/promo, " +
+                                             "POST /prevue/ctrl/clear, POST /prevue/ctrl/default or " +
+                                             "POST /prevue/ctrl/packets.");
                     return;
             }
 

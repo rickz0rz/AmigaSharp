@@ -386,17 +386,17 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 
 | Request | Result |
 |---------|--------|
-| `GET /ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
-| `POST /ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`. |
-| `POST /ctrl/clear` | Removes the promo. The genlock video shows in the top half. |
-| `POST /ctrl/default` | Shows the default brush in the top half. |
-| `POST /ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
+| `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
+| `POST /prevue/ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`. |
+| `POST /prevue/ctrl/clear` | Removes the promo. The genlock video shows in the top half. |
+| `POST /prevue/ctrl/default` | Shows the default brush in the top half. |
+| `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
 
 For example, show a promo for Seinfeld from the saved listings, and then remove it:
 
 ```sh
-curl -X POST http://localhost:8091/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
-curl -X POST -d '' http://localhost:8091/ctrl/clear
+curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
+curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 ```
 
 - Prevue finds the next time of the program in its listings. If it finds no program, it shows the default brush.

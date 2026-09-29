@@ -60,10 +60,10 @@ GET /mixer gives the settings and the level of each part of the sound. The READM
 Prevue can also show promos of programs in the top half of the screen, as the Prevue channel did. With --stream,
 send them to the stream port. For example, show a promo for Seinfeld, and then remove it:
 
-    curl -X POST http://localhost:8091/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
-    curl -X POST -d '' http://localhost:8091/ctrl/clear
+    curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
+    curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 
-The README of AmigaSharp has all the /ctrl requests.
+The README of AmigaSharp has all the /prevue/ctrl requests.
 
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.

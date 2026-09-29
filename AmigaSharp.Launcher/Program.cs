@@ -329,7 +329,7 @@ if (ctrlFile != null)
     log.WriteLine($"Sending {ctrlData.Length} bytes from {ctrlFile} on the control line.");
 }
 
-// The HTTP server of the stream adds packets to the control line too (see /ctrl).
+// The HTTP server of the stream adds packets to the control line too (see /prevue/ctrl).
 var controlLine = new ControlLineFeed(core.Chipset.ControlLine.Connection);
 core.Chipset.ControlLine.Connection = controlLine;
 

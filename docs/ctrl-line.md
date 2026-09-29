@@ -39,13 +39,13 @@ With `--stream <port>`, these requests go to the port of the stream:
 
 | Request | Result |
 |---------|--------|
-| `GET /ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent (`sent`). |
-| `POST /ctrl/promo` | Shows a promo. The body is JSON, see below. |
-| `POST /ctrl/clear` | Removes the promo (type 1 with `3`). The genlock video shows in the top half. |
-| `POST /ctrl/default` | Shows the default brush in the top half (type 1 with `D`). |
-| `POST /ctrl/packets` | Sends raw packets: `[{"type": 17, "body": "Seinfeld"}, {"type": 1, "body": "1*"}]`. In JSON, `\u0012` is the byte 0x12. |
+| `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent (`sent`). |
+| `POST /prevue/ctrl/promo` | Shows a promo. The body is JSON, see below. |
+| `POST /prevue/ctrl/clear` | Removes the promo (type 1 with `3`). The genlock video shows in the top half. |
+| `POST /prevue/ctrl/default` | Shows the default brush in the top half (type 1 with `D`). |
+| `POST /prevue/ctrl/packets` | Sends raw packets: `[{"type": 17, "body": "Seinfeld"}, {"type": 1, "body": "1*"}]`. In JSON, `\u0012` is the byte 0x12. |
 
-The body of `/ctrl/promo` has a box on the right, a box on the left, or the two boxes:
+The body of `/prevue/ctrl/promo` has a box on the right, a box on the left, or the two boxes:
 
 ```json
 {
@@ -62,14 +62,14 @@ The body of `/ctrl/promo` has a box on the right, a box on the left, or the two 
 - `title`, `channels` and `brush` at the top of the object are for the right box: `{"title": "Seinfeld"}`.
 
 The server makes the packets of [Show a promo](#show-a-promo) and adds them to a queue. The line sends 11 bytes each
-second, so a promo takes about 2 seconds. To send commands in sequence, wait until `queued` in `GET /ctrl` is 0. Then
-wait some seconds more, because Prevue reads the packets when its display is not busy.
+second, so a promo takes about 2 seconds. To send commands in sequence, wait until `queued` in `GET /prevue/ctrl` is
+0. Then wait some seconds more, because Prevue reads the packets when its display is not busy.
 
 For example:
 
 ```sh
-curl -X POST http://localhost:8091/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
-curl -X POST -d '' http://localhost:8091/ctrl/clear
+curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
+curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 ```
 
 ## Packets
