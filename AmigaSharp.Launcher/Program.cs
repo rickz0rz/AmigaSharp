@@ -329,6 +329,10 @@ if (ctrlFile != null)
     log.WriteLine($"Sending {ctrlData.Length} bytes from {ctrlFile} on the control line.");
 }
 
+// The HTTP server of the stream adds packets to the control line too (see /ctrl).
+var controlLine = new ControlLineFeed(core.Chipset.ControlLine.Connection);
+core.Chipset.ControlLine.Connection = controlLine;
+
 using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
 using var loggingConnection = serialLogWriter == null
     ? null
@@ -343,7 +347,7 @@ using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.C
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
     ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-        genlockControl, core.Chipset.Audio.OpenTap())
+        genlockControl, core.Chipset.Audio.OpenTap(), controlLine)
     : null;
 
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is

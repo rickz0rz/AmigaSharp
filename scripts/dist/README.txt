@@ -57,12 +57,13 @@ volume, and keep a fifth of that under the videos:
 
 GET /mixer gives the settings and the level of each part of the sound. The README of AmigaSharp has all the requests.
 
-Prevue can also show promos of programs in the top half of the screen. It gets the commands on its control line.
-Give the launcher a TCP port for the line after --, for example:
+Prevue can also show promos of programs in the top half of the screen, as the Prevue channel did. With --stream,
+send them to the stream port. For example, show a promo for Seinfeld, and then remove it:
 
-    ./run-prevue.sh --drive /path/to/drive -- --ctrl-port 8092
+    curl -X POST http://localhost:8091/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
+    curl -X POST -d '' http://localhost:8091/ctrl/clear
 
-The file docs/ctrl-line.md of AmigaSharp gives the commands.
+The README of AmigaSharp has all the /ctrl requests.
 
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.

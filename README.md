@@ -382,22 +382,31 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
 ## Send control commands
 
 Prevue has a second input, a 110 baud control line. The Prevue channel used it to show promos of programs over the
-genlock video. `--ctrl-port <port>` opens a TCP port for the line, and `--ctrl-file <file>` sends the bytes of a file.
-For example, these three commands show a promo for Seinfeld from the saved listings:
+genlock video. With `--stream`, the HTTP server sends commands on the line:
 
-```python
-import socket
+| Request | Result |
+|---------|--------|
+| `GET /ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
+| `POST /ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`. |
+| `POST /ctrl/clear` | Removes the promo. The genlock video shows in the top half. |
+| `POST /ctrl/default` | Shows the default brush in the top half. |
+| `POST /ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
 
-def packet(type, body):
-    data = bytes([type]) + body.encode("latin-1") + b"\r"
-    checksum = 0
-    for byte in data:
-        checksum ^= byte
-    return data + bytes([checksum])
+For example, show a promo for Seinfeld from the saved listings, and then remove it:
 
-line = socket.create_connection(("localhost", 8092))
-line.sendall(packet(2, "ATAT") + packet(17, "Seinfeld") + packet(1, "1*"))
+```sh
+curl -X POST http://localhost:8091/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
+curl -X POST -d '' http://localhost:8091/ctrl/clear
 ```
+
+- Prevue finds the next time of the program in its listings. If it finds no program, it shows the default brush.
+- A promo can have a box on the right and a box on the left:
+  `{"right": {"title": "Bob's Burgers"}, "left": {"title": "Seinfeld", "brush": "DT"}, "first": "left"}`. Prevue
+  shows one box. It tries the box of `first` before the other box.
+- The line sends 11 bytes each second, so a promo takes about 2 seconds. The requests wait in a queue. Prevue starts
+  to read the line some seconds after the stream starts.
+- `--ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--ctrl-file <file>` sends the bytes of a
+  file. Do not send raw bytes and HTTP requests at the same time.
 
 [docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
 

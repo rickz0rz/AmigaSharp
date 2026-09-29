@@ -49,6 +49,7 @@ public sealed class VideoStream : IDisposable
     private readonly GenlockPlaylist _music;
     private readonly GenlockPlaylist? _genlock;
     private readonly StreamMixer _mixer;
+    private readonly ControlLineFeed? _controlLine;
 
     // The sound goes to the encoder through this port. The sender adds the sound of each picture to the plan: the
     // sound of its video (or null), and if the video has sound.
@@ -68,10 +69,13 @@ public sealed class VideoStream : IDisposable
     /// </param>
     /// <param name="genlock">True for the genlock playlist, also without a first video.</param>
     /// <param name="amigaSound">The sound of the Amiga, or null for none.</param>
+    /// <param name="controlLine">The control line of Prevue for the requests of /ctrl, or null for none.</param>
     public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log,
-        string? audioPlaylist = null, string? genlockSource = null, bool genlock = false, AudioTap? amigaSound = null)
+        string? audioPlaylist = null, string? genlockSource = null, bool genlock = false, AudioTap? amigaSound = null,
+        ControlLineFeed? controlLine = null)
     {
         _display = display;
+        _controlLine = controlLine;
         _log = log;
         _channelName = channelName;
         // The music is a playlist of sound only. It always exists, so that the HTTP server can fill it.
@@ -330,6 +334,12 @@ public sealed class VideoStream : IDisposable
                 return;
             }
 
+            if (_controlLine != null && (name == "ctrl" || name.StartsWith("ctrl/")))
+            {
+                AnswerControl(context, _controlLine, name);
+                return;
+            }
+
             if (name == "channels.m3u")
             {
                 var host = context.Request.Headers["Host"] ?? $"localhost:{context.Request.LocalEndPoint.Port}";
@@ -547,6 +557,72 @@ public sealed class VideoStream : IDisposable
             Send(response, "application/json", Encoding.UTF8.GetBytes(MixerJson()));
         }
         catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException or KeyNotFoundException)
+        {
+            SendError(response, 400, e.Message);
+        }
+    }
+
+    /// <summary>Answers a request for the control line of Prevue (see docs/ctrl-line.md).</summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>GET /ctrl: the bytes that wait for the line, and the seconds that the line needs to send them.</item>
+    /// <item>
+    /// POST /ctrl/promo: shows a promo, as JSON: {"title": "Seinfeld", "channels": "*", "brush": "AT"}, or
+    /// {"right": {...}, "left": {...}, "first": "right"} (see <see cref="ControlLineFeed.Promo"/>).
+    /// </item>
+    /// <item>POST /ctrl/clear: removes the promo, so that the genlock video shows in the top half.</item>
+    /// <item>POST /ctrl/default: shows the default brush in the top half.</item>
+    /// <item>POST /ctrl/packets: sends raw packets, as JSON: [{"type": 1, "body": "3"}].</item>
+    /// </list>
+    /// The line sends 11 bytes each second, so a promo takes about 2 seconds. Each answer is the answer of GET /ctrl.
+    /// </remarks>
+    private static void AnswerControl(HttpListenerContext context, ControlLineFeed line, string name)
+    {
+        var response = context.Response;
+        try
+        {
+            switch (context.Request.HttpMethod, name.TrimEnd('/'))
+            {
+                case ("GET", "ctrl"):
+                    break;
+                case ("POST", "ctrl/promo"):
+                {
+                    using var document = ReadJson(context);
+                    line.Add(ControlLineFeed.Promo(document.RootElement));
+                    break;
+                }
+                case ("POST", "ctrl/clear"):
+                    line.Add([ControlLineFeed.Packet(1, "3")]);
+                    break;
+                case ("POST", "ctrl/default"):
+                    line.Add([ControlLineFeed.Packet(1, "D")]);
+                    break;
+                case ("POST", "ctrl/packets"):
+                {
+                    using var document = ReadJson(context);
+                    line.Add(ControlLineFeed.Packets(document.RootElement));
+                    break;
+                }
+                default:
+                    SendError(response, 404, "Use GET /ctrl, POST /ctrl/promo, POST /ctrl/clear, POST /ctrl/default " +
+                                             "or POST /ctrl/packets.");
+                    return;
+            }
+
+            using var buffer = new MemoryStream();
+            using (var json = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
+            {
+                var queued = line.Queued;
+                json.WriteStartObject();
+                json.WriteNumber("queued", queued);
+                json.WriteNumber("seconds", Math.Round(queued / ControlLineFeed.BytesPerSecond, 1));
+                json.WriteNumber("sent", line.Sent);
+                json.WriteEndObject();
+            }
+
+            Send(response, "application/json", buffer.ToArray());
+        }
+        catch (Exception e) when (e is JsonException or FormatException or InvalidOperationException)
         {
             SendError(response, 400, e.Message);
         }
