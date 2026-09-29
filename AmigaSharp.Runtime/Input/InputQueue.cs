@@ -47,6 +47,9 @@ public sealed class InputQueue
 
     public bool IsEmpty => _events.IsEmpty;
 
+    /// <summary>Gets each key event too, for the keyboard of the hardware model.</summary>
+    public Action<byte, bool>? RawKeyPosted { get; set; }
+
     public bool TryTake(out InputEventData value) => _events.TryDequeue(out value);
 
     /// <summary>Adds a key event with a raw key code of the Amiga keyboard.</summary>
@@ -73,6 +76,7 @@ public sealed class InputQueue
 
         var keypad = RawKey.IsNumericPad(code) ? Qualifier.NumericPad : Qualifier.None;
         _events.Enqueue(new InputEventData(InputClass.RawKey, (ushort)(code | (up ? KeyUp : 0)), _qualifier | keypad));
+        RawKeyPosted?.Invoke(code, up);
     }
 
     private static Qualifier QualifierOf(byte code) => code switch

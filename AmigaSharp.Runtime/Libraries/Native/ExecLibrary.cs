@@ -53,12 +53,30 @@ public class ExecLibrary(Core core) : AbstractLibrary
                  })
             ExecList.Initialize(_memory, Base + list.Item1, list.Item2);
 
+        // The memory regions, as exec lists them after the start. The allocator of the runtime does the allocations,
+        // so a MemHeader has no chunk list (mh_First is 0), and mh_Free is the free memory at the start.
+        AddMemoryRegion("chip memory", MemoryFlags.Chip | MemoryFlags.Public, Core.ChipStart, Core.ChipEnd, -10);
+        AddMemoryRegion("expansion memory", MemoryFlags.Fast | MemoryFlags.Public, Core.FastStart, Core.FastEnd, 0);
+
         foreach (var number in ServerChains)
         {
             var chain = core.AllocateSystem(ListOffsets.Size);
             ExecList.Initialize(_memory, chain, NodeType.Interrupt);
             _memory.Write32(InterruptVector(number), chain);
         }
+    }
+
+    private void AddMemoryRegion(string name, MemoryFlags attributes, uint lower, uint upper, sbyte priority)
+    {
+        var header = core.AllocateSystem(MemHeaderOffsets.Size);
+        _memory.Write8(header + NodeOffsets.Type, NodeType.Memory);
+        _memory.Write8(header + NodeOffsets.Priority, (byte)priority);
+        _memory.Write32(header + NodeOffsets.Name, core.AllocateSystem(System.Text.Encoding.Latin1.GetBytes(name + "\0")));
+        _memory.Write16(header + MemHeaderOffsets.Attributes, (ushort)attributes);
+        _memory.Write32(header + MemHeaderOffsets.Lower, lower);
+        _memory.Write32(header + MemHeaderOffsets.Upper, upper);
+        _memory.Write32(header + MemHeaderOffsets.Free, core.Allocator.Available(attributes & (MemoryFlags.Chip | MemoryFlags.Fast)));
+        ExecList.Enqueue(_memory, Base + ExecBaseOffsets.MemList, header);
     }
 
     // Supervisor(userFunction)

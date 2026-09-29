@@ -14,9 +14,10 @@ public enum DeinterlaceMode
 }
 
 /// <summary>
-/// Makes the picture of each frame from the custom chip registers, as Denise shows it. At the end of each frame the
-/// copper runs from COP1LC, line by line. The bitplanes of each line are fetched, and each pixel gets its color. A
-/// register write of the copper changes the pixels from its horizontal position.
+/// Makes the picture of each frame from the custom chip registers, as Denise shows it. The copper starts at COP1LC at
+/// the start of each frame. The display makes each line when the beam passes it (at the next safe point): the copper
+/// runs for the line, the bitplanes of the line are fetched, and each pixel gets its color. A register write of the
+/// copper changes the pixels from its horizontal position, and a write of the CPU changes the lines after the beam.
 /// </summary>
 /// <remarks>
 /// The picture is 768 by 480 pixels in high resolution: lines 21 to 260 of NTSC, two rows for each line. An interlaced
@@ -71,10 +72,24 @@ public sealed class Display
     // before the program handles the vertical blank. A change of COP1LC in the handler is for the frame after that.
     private uint? _frameStart;
 
-    public Display(Memory memory, CustomChips custom)
+    // The frame that the display makes now. The display makes each line when the beam passes it, so a line shows the
+    // memory and the registers at that time, as on the hardware. The frame starts when the first line is due.
+    private bool _frameActive;
+    private long _frameOfBeam;
+    private bool _longFrame;
+    private bool _copperOn;
+    private int _lines;
+    private int _nextLine;
+    private TextWriter? _dump;
+    private bool _runningCopper;
+    private readonly Beam? _beam;
+
+    /// <param name="beam">The beam position. Without it, the display makes each frame at its end.</param>
+    public Display(Memory memory, CustomChips custom, Beam? beam = null)
     {
         _memory = memory;
         _custom = custom;
+        _beam = beam;
         _copper = new Copper(memory, custom);
         for (var plane = 0; plane < _planeData.Length; plane++)
             _planeData[plane] = new byte[256];
@@ -134,8 +149,59 @@ public sealed class Display
     /// <summary>
     /// The program wrote to COPJMP1 or COPJMP2. The copper starts again at COP1LC or COP2LC in the current frame.
     /// </summary>
-    public void CopperJumped(int list) =>
-        _frameStart = Location(list == 1 ? CustomRegister.Cop1lc : CustomRegister.Cop2lc);
+    public void CopperJumped(int list)
+    {
+        // The copper does its own COPJMP writes.
+        if (_runningCopper)
+            return;
+        var location = Location(list == 1 ? CustomRegister.Cop1lc : CustomRegister.Cop2lc);
+        if (!_frameActive)
+        {
+            _frameStart = location;
+            return;
+        }
+
+        // The copper starts again at the current line.
+        CatchUp();
+        if (_copperOn)
+            _copper.Start(location);
+    }
+
+    /// <summary>
+    /// A register changed. A write of the CPU changes the lines after the beam: the display first makes the lines
+    /// before it. The copper writes go to the display in their lines.
+    /// </summary>
+    public void RegisterWritten(int offset, ushort value)
+    {
+        if (_runningCopper || !_frameActive)
+            return;
+        CatchUp();
+        _state[offset >> 1] = value;
+    }
+
+    /// <summary>Makes the lines of the current frame up to the line of the beam.</summary>
+    public void CatchUp()
+    {
+        if (_beam == null)
+            return;
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            if (!_frameActive)
+            {
+                // The first frame starts when its first line is due.
+                if (_beam.Line == 0)
+                    return;
+                BeginFrame(_custom.LongFrame);
+            }
+
+            RunLines(_beam.Frame > _frameOfBeam ? _lines : Math.Min(_beam.Line, _lines));
+        }
+        finally
+        {
+            RenderTime += System.Diagnostics.Stopwatch.GetElapsedTime(start);
+        }
+    }
 
     private uint Location(int offset) => (uint)(_custom[offset] << 16 | _custom[offset + 2]);
 
@@ -147,7 +213,10 @@ public sealed class Display
         var start = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
-            MakeFrame(longFrame, render);
+            if (!_frameActive)
+                BeginFrame(longFrame);
+            RunLines(_lines);
+            EndFrame(render);
         }
         finally
         {
@@ -155,7 +224,14 @@ public sealed class Display
         }
     }
 
-    private void MakeFrame(bool longFrame, bool render)
+    /// <summary>A new frame started. The display makes its lines when the beam passes them.</summary>
+    public void FrameStarted(bool longFrame)
+    {
+        if (_beam != null)
+            BeginFrame(longFrame);
+    }
+
+    private void BeginFrame(bool longFrame)
     {
         // The display keeps its own copy of the registers, because the copper writes change the pixels from their
         // position in the line.
@@ -163,39 +239,67 @@ public sealed class Display
             _state[i] = _custom[i * 2];
 
         var dmacon = _custom.Dmacon;
-        var copper = (dmacon & (DmaEnable | CopperDma)) == (DmaEnable | CopperDma);
-        if (copper)
+        _copperOn = (dmacon & (DmaEnable | CopperDma)) == (DmaEnable | CopperDma);
+        if (_copperOn)
             _copper.Start(_frameStart ?? Location(CustomRegister.Cop1lc));
         else
             _copper.Stop();
 
-        var dump = render ? CopperDump : null;
-        dump?.WriteLine($"frame {FrameNumber + 1}, {(longFrame ? "long" : "short")}, copper at ${(_frameStart ?? Location(CustomRegister.Cop1lc)):X6}");
-        if (dump != null)
+        // A frame that the host does not show is not in the dump. The display knows that only at the end, so the dump
+        // starts with the next frame after the request.
+        _dump = CopperDump;
+        _dump?.WriteLine($"frame {FrameNumber + 1}, {(longFrame ? "long" : "short")}, copper at ${(_frameStart ?? Location(CustomRegister.Cop1lc)):X6}");
+        if (_dump != null)
         {
             for (var offset = 0x080; offset < 0x1C0; offset += 2)
-                dump.WriteLine($"  start {offset:X3} = {_state[offset >> 1]:X4}");
+                _dump.WriteLine($"  start {offset:X3} = {_state[offset >> 1]:X4}");
         }
 
         var interlaced = (_state[CustomRegister.Bplcon0 >> 1] & Interlace) != 0;
-        var lines = interlaced && longFrame ? 263 : 262;
-        for (var line = 0; line < lines; line++)
+        _lines = interlaced && longFrame ? 263 : 262;
+        _longFrame = longFrame;
+        _nextLine = 0;
+        _frameOfBeam = _beam?.Frame ?? 0;
+        _frameActive = true;
+    }
+
+    private void RunLines(int end)
+    {
+        for (; _nextLine < end; _nextLine++)
         {
+            var line = _nextLine;
             _writes.Clear();
-            if (copper)
-                _copper.RunLine(line, _writes);
-            if (dump != null)
+            if (_copperOn)
             {
-                foreach (var write in _writes)
-                    dump.WriteLine($"  line {line,3} h {write.Horizontal:X2}: {write.Offset:X3} = {write.Value:X4}");
+                _runningCopper = true;
+                try
+                {
+                    _copper.RunLine(line, _writes);
+                }
+                finally
+                {
+                    _runningCopper = false;
+                }
             }
 
-            RenderLine(line, render, longFrame);
-        }
+            if (_dump != null)
+            {
+                foreach (var write in _writes)
+                    _dump.WriteLine($"  line {line,3} h {write.Horizontal:X2}: {write.Offset:X3} = {write.Value:X4}");
+            }
 
-        if (dump != null)
+            RenderLine(line, render: true, _longFrame);
+        }
+    }
+
+    private void EndFrame(bool render)
+    {
+        var longFrame = _longFrame;
+        _frameActive = false;
+        if (_dump != null)
         {
-            dump.Flush();
+            _dump.Flush();
+            _dump = null;
             CopperDump = null;
         }
 

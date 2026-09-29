@@ -94,7 +94,19 @@ public class ChipsetTests
     public void ReadOfAnUnknownRegister_Throws()
     {
         Assert.Throws<HardwareAccessException>(() => _memory.Read16(0xDFF0A0));
-        Assert.Throws<HardwareAccessException>(() => _memory.Read8(0xDC0001));
+    }
+
+    [Theory]
+    [InlineData(0xC00000u)] // Slow memory.
+    [InlineData(0xDE0000u)] // Gayle and Ramsey of the later models.
+    [InlineData(0xE80000u)] // The configuration space of the expansion boards.
+    public void AccessToAnAddressThatAnA2000DoesNotHave_IsAnOpenBus(uint address)
+    {
+        _memory.Write8(address, 0x55);
+        _memory.Write16(address & ~1u, 0x5555);
+
+        Assert.Equal(0, _memory.Read8(address));
+        Assert.Equal(0, _memory.Read16(address & ~1u));
     }
 
     [Fact]

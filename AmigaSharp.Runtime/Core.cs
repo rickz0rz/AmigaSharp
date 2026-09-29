@@ -116,6 +116,8 @@ public sealed class Core
     public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null)
     {
         Chipset = new Chipset(clock ?? new RealTimeClock(), Memory);
+        KeyboardInput.RawKeyPosted = Chipset.Keyboard.Post;
+        Chipset.Now = () => Now;
         Memory.Hardware = Chipset;
         Cpu = new CpuState(Memory);
         Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };
@@ -379,6 +381,9 @@ public sealed class Core
     {
         Chipset.Beam.Clock.Tick();
         Chipset.Custom.Update();
+        Chipset.CiaA.Update();
+        Chipset.CiaB.Update();
+        Chipset.Keyboard.Update();
         Devices.Update();
         Interrupts.Deliver();
         foreach (var handler in _pollHandlers)

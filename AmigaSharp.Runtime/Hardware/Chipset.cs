@@ -5,6 +5,13 @@ namespace AmigaSharp.Runtime.Hardware;
 /// to another hardware address throws <see cref="HardwareAccessException"/>.
 /// </summary>
 /// <remarks>
+/// The battery-backed clock is at $DC0000.
+/// An Amiga 2000 with 8 MB of Zorro II memory has nothing at $A00000 to $BEFFFF, $C00000 to $DBFFFF (no slow memory),
+/// $DD0000 to $DEFFFF (the system registers of the later models: Gary, Ramsey and Gayle) and $E00000 to $F7FFFF (no
+/// expansion boards to configure). A program that looks for memory or devices there gets an open bus: a write does
+/// nothing, and a read gives 0.
+/// </remarks>
+/// <remarks>
 /// CIA-A uses the odd addresses (the low byte of the data bus) and responds when address bit 12 is 0. CIA-B uses the
 /// even addresses (the high byte) and responds when address bit 13 is 0. Address bits 11 to 8 select the register.
 /// </remarks>
@@ -13,16 +20,24 @@ public sealed class Chipset : IHardware
     private const uint CustomStart = 0xDF_F000;
     private const uint CustomEnd = 0xDF_F200;
     private const uint CiaStart = 0xBF_0000;
+
     private const uint CiaEnd = 0xC0_0000;
 
     public Chipset(IClock clock, Memory memory)
     {
         Beam = new Beam(clock);
         Custom = new CustomChips(Beam);
-        CiaA = new Cia(() => Beam.Frame);
-        CiaB = new Cia(() => Beam.TotalLines);
-        Display = new Display(memory, Custom);
+        long EClock() => (long)(Beam.Clock.Elapsed.TotalSeconds * Cia.NtscEClockHz);
+        CiaA = new Cia(() => Beam.Frame, EClock, () => Custom.RequestInterrupt(InterruptBit.Ports));
+        CiaB = new Cia(() => Beam.TotalLines, EClock, () => Custom.RequestInterrupt(InterruptBit.External));
+        Keyboard = new Keyboard(CiaA, EClock);
+        Rtc = new RealTimeClockChip(() => Now());
+        Display = new Display(memory, Custom, Beam);
+        Custom.Blitter = new Blitter(memory, Custom);
         Custom.FrameEnded += Display.RunFrame;
+        Custom.FrameStarted += Display.FrameStarted;
+        Custom.RegisterWritten += Display.RegisterWritten;
+        Custom.BeamMoved += Display.CatchUp;
         Custom.CopperJump += Display.CopperJumped;
     }
 
@@ -30,6 +45,15 @@ public sealed class Chipset : IHardware
     public CustomChips Custom { get; }
     public Cia CiaA { get; }
     public Cia CiaB { get; }
+
+    /// <summary>The date and the time of the Amiga, for the battery-backed clock. The core sets it.</summary>
+    public Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+    /// <summary>The battery-backed clock at $DC0000.</summary>
+    public RealTimeClockChip Rtc { get; }
+
+    /// <summary>The keyboard on the serial port of CIA-A.</summary>
+    public Keyboard Keyboard { get; }
 
     /// <summary>The picture that the custom chips make.</summary>
     public Display Display { get; }
@@ -49,6 +73,10 @@ public sealed class Chipset : IHardware
             return (address & 0x2000) == 0 ? CiaB.Read(CiaRegisterOf(address)) : (byte)0xFF;
         }
 
+        if (IsRtc(address))
+            return (address & 1) != 0 ? Rtc.Read(RtcRegisterOf(address)) : (byte)0;
+        if (IsOpenBus(address))
+            return 0;
         throw new HardwareAccessException(address);
     }
 
@@ -63,6 +91,10 @@ public sealed class Chipset : IHardware
             return (ushort)(high << 8 | low);
         }
 
+        if (IsRtc(address))
+            return Rtc.Read(RtcRegisterOf(address));
+        if (IsOpenBus(address))
+            return 0;
         throw new HardwareAccessException(address);
     }
 
@@ -84,6 +116,14 @@ public sealed class Chipset : IHardware
             return;
         }
 
+        if (IsRtc(address))
+        {
+            Rtc.Write(RtcRegisterOf(address), (byte)value);
+            return;
+        }
+
+        if (IsOpenBus(address))
+            return;
         throw new HardwareAccessException(address);
     }
 
@@ -104,10 +144,26 @@ public sealed class Chipset : IHardware
             return;
         }
 
+        if (IsRtc(address))
+        {
+            Rtc.Write(RtcRegisterOf(address), (byte)value);
+            return;
+        }
+
+        if (IsOpenBus(address))
+            return;
         throw new HardwareAccessException(address);
     }
 
     private static bool IsCustom(uint address) => address is >= CustomStart and < CustomEnd;
+
+    // The clock uses the low 4 bits of the data bus. Its registers are at each fourth address from $DC0000.
+    private static bool IsRtc(uint address) => address is >= 0xDC_0000 and < 0xDD_0000;
+
+    private static int RtcRegisterOf(uint address) => (int)(address >> 2) & 0xF;
+
+    private static bool IsOpenBus(uint address) =>
+        address is >= 0xA0_0000 and < 0xBF_0000 or >= 0xC0_0000 and < 0xDF_0000 or >= 0xE0_0000 and < 0xF8_0000;
 
     private static bool IsCia(uint address) => address is >= CiaStart and < CiaEnd;
 

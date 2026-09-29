@@ -130,6 +130,15 @@ public sealed class CustomChips
     /// </summary>
     public event Action<bool, bool>? FrameEnded;
 
+    /// <summary>A frame started. The value is true for a long frame.</summary>
+    public event Action<bool>? FrameStarted;
+
+    /// <summary>A write to a register, before it takes effect. The display uses it to make the lines before the write.</summary>
+    public event Action<int, ushort>? RegisterWritten;
+
+    /// <summary>The time moved at a safe point. The display makes the lines up to the beam.</summary>
+    public event Action? BeamMoved;
+
     /// <summary>
     /// True for a long frame (VPOSR bit 15). With interlace (BPLCON0 bit 2), long and short frames alternate.
     /// </summary>
@@ -137,6 +146,12 @@ public sealed class CustomChips
 
     /// <summary>The number of frames that ended with no picture, because the program did not reach a safe point.</summary>
     public long FramesDropped { get; private set; }
+
+    /// <summary>The blitter. It starts when the program writes BLTSIZE or BLTSIZH.</summary>
+    public Blitter? Blitter { get; set; }
+
+    /// <summary>BZERO of DMACONR: the last blit made only zero words.</summary>
+    public bool BlitterZero { get; set; }
 
     public ushort Dmacon { get; private set; }
     public ushort Intena { get; private set; }
@@ -148,7 +163,8 @@ public sealed class CustomChips
         switch (offset)
         {
             case CustomRegister.Bltddat: return 0;
-            case CustomRegister.Dmaconr: return (ushort)(Dmacon & 0x07FF);
+            // BBUSY (bit 14) is never set, because a blit ends at once.
+            case CustomRegister.Dmaconr: return (ushort)((Dmacon & 0x07FF) | (BlitterZero ? 0x2000 : 0));
             case CustomRegister.Vposr:
                 // Bit 15 is the long frame flag, bits 14 to 8 are the Agnus ID, and bit 0 is bit 8 of the line.
                 return (ushort)((LongFrame ? 0x8000 : 0) | (AgnusId << 8) | (_beam.Line >> 8));
@@ -174,13 +190,17 @@ public sealed class CustomChips
 
     public void Write(int offset, ushort value)
     {
+        RegisterWritten?.Invoke(offset, value);
         _registers[offset >> 1] = value;
         switch (offset)
         {
             case CustomRegister.Dmacon:
                 Dmacon = SetClear(Dmacon, value);
                 UpdateAudioDma();
+                Blitter?.RunPending();
                 break;
+            case BlitterRegister.Bltsize: Blitter?.WriteSize(value); break;
+            case BlitterRegister.Bltsizh: Blitter?.WriteSizeHorizontal(value); break;
             case CustomRegister.Intena: Intena = SetClear(Intena, value); break;
             case CustomRegister.Intreq: Intreq = SetClear(Intreq, value); break;
             case CustomRegister.Adkcon: Adkcon = SetClear(Adkcon, value); break;
@@ -213,6 +233,8 @@ public sealed class CustomChips
                 if (ended != frame - 1)
                     FramesDropped++;
                 LongFrame = (this[CustomRegister.Bplcon0] & 0x0004) == 0 || !LongFrame;
+                if (ended >= frame - 2)
+                    FrameStarted?.Invoke(LongFrame);
             }
 
             _lastFrame = frame;
@@ -242,6 +264,7 @@ public sealed class CustomChips
 
         if (Serial.Update((Intreq & (1 << InterruptBit.Rbf)) != 0))
             RequestInterrupt(InterruptBit.Rbf);
+        BeamMoved?.Invoke();
     }
 
     /// <summary>

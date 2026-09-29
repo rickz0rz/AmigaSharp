@@ -32,6 +32,11 @@ public sealed class Memory
         MarkHardware(0xBF0000, 0xC00000);
         // The real-time clock and the custom chips use $DC0000 to $DFFFFF.
         MarkHardware(0xDC0000, 0xE00000);
+        // An Amiga 2000 with 8 MB of Zorro II memory has nothing at these addresses. The hardware model gives an open
+        // bus there, so a program that looks for memory or for a device does not find RAM.
+        MarkHardware(0xA00000, 0xBF0000);
+        MarkHardware(0xC00000, 0xDC0000);
+        MarkHardware(0xE00000, 0xF80000);
     }
 
     /// <summary>The custom chips and the CIAs. Null means that an access to them throws.</summary>

@@ -130,6 +130,17 @@ public static class MessageOffsets
 }
 
 /// <summary><c>struct ExecBase</c> (exec/execbase.h).</summary>
+/// <summary><c>struct MemHeader</c> (exec/memory.h): a region of memory in the MemList of ExecBase.</summary>
+public static class MemHeaderOffsets
+{
+    public const uint Attributes = 14;
+    public const uint First = 16;
+    public const uint Lower = 20;
+    public const uint Upper = 24;
+    public const uint Free = 28;
+    public const uint Size = 32;
+}
+
 public static class ExecBaseOffsets
 {
     public const uint SoftVersion = 34;
