@@ -51,10 +51,9 @@ const string usage = """
                                 Channels DVR.
       --stream-4x3              Make the stream 960 by 720 pixels. The default is 1280 by 720, with bars at the sides.
       --stream-name <name>      The name of the channel in /channels.m3u. The default is the name of the command.
-      --stream-audio <path>     The sound of the stream: an M3U playlist, a text file with one audio file on each
-                                line, or a directory of audio files. It plays in a loop. If it has no audio that
-                                plays, the stream is silent. Without this option, the stream has the sound of the
-                                --genlock source, or it is silent.
+      --stream-audio <path>     Music for the stream: an M3U playlist, a text file with one audio file on each line,
+                                or a directory of audio files. It plays in a loop while no video with sound plays in
+                                the genlock. The stream also has the sound of the genlock videos and of the Amiga.
       --genlock <file or URL>   Show a video behind the stream, as the genlock of Prevue: the video shows where the
                                 display has color 0 (the genlock key). A file plays in a loop. A URL plays live, for
                                 example a channel of an HDHomeRun tuner. This option needs --stream.
@@ -303,7 +302,7 @@ using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.C
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
     ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-        genlockControl)
+        genlockControl, core.Chipset.Audio.OpenTap())
     : null;
 
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is

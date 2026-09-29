@@ -31,41 +31,28 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
     private static readonly double FilterFactor = 1 - Math.Exp(-2 * Math.PI * 3300.0 / SampleRate);
 
     private readonly Channel[] _channels = [new(), new(), new(), new()];
-    private readonly short[] _buffer = new short[Capacity * 2];
-    private readonly object _lock = new();
-    private int _start;
-    private int _count;
+    private readonly AudioTap _defaultTap = new(Capacity);
+    private volatile AudioTap[] _taps = [];
     private double _nextSampleClock = -1;
     private double _filterLeft;
     private double _filterRight;
 
     /// <summary>The number of stereo samples that <see cref="Read"/> can take now.</summary>
-    public int Available
-    {
-        get
-        {
-            lock (_lock)
-                return _count;
-        }
-    }
+    public int Available => _defaultTap.Available;
 
-    /// <summary>Copies stereo samples (left, right, ...) to the target. Returns the number of stereo samples.</summary>
-    public int Read(Span<short> target)
-    {
-        lock (_lock)
-        {
-            var samples = Math.Min(_count, target.Length / 2);
-            for (var i = 0; i < samples; i++)
-            {
-                var index = (_start + i) % Capacity * 2;
-                target[i * 2] = _buffer[index];
-                target[i * 2 + 1] = _buffer[index + 1];
-            }
+    /// <summary>
+    /// Copies stereo samples (left, right, ...) to the target from the default tap. Returns the number of stereo
+    /// samples.
+    /// </summary>
+    public int Read(Span<short> target) => _defaultTap.Read(target);
 
-            _start = (_start + samples) % Capacity;
-            _count -= samples;
-            return samples;
-        }
+    /// <summary>Opens another reader of the sound, for example for the stream while the window plays the sound too.</summary>
+    public AudioTap OpenTap()
+    {
+        var tap = new AudioTap(Capacity);
+        lock (_defaultTap)
+            _taps = [.. _taps, tap];
+        return tap;
     }
 
     /// <summary>Makes the samples up to the color clock.</summary>
@@ -115,19 +102,9 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
 
     private void Add(short left, short right)
     {
-        lock (_lock)
-        {
-            if (_count == Capacity)
-            {
-                _start = (_start + 1) % Capacity;
-                _count--;
-            }
-
-            var index = (_start + _count) % Capacity * 2;
-            _buffer[index] = left;
-            _buffer[index + 1] = right;
-            _count++;
-        }
+        _defaultTap.Add(left, right);
+        foreach (var tap in _taps)
+            tap.Add(left, right);
     }
 
     /// <summary>Starts the channels that DMACON enabled, and stops the others.</summary>
@@ -197,5 +174,74 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
         public int Byte;
         public sbyte Sample;
         public double NextClock;
+    }
+}
+
+/// <summary>
+/// A reader of the sound of the audio channels: a buffer of stereo samples. When the buffer is full, the oldest samples
+/// go. The emulation adds the samples, and another thread reads them.
+/// </summary>
+public sealed class AudioTap(int capacity)
+{
+    private readonly short[] _buffer = new short[capacity * 2];
+    private readonly object _lock = new();
+    private int _start;
+    private int _count;
+
+    /// <summary>The number of stereo samples that <see cref="Read"/> can take now.</summary>
+    public int Available
+    {
+        get
+        {
+            lock (_lock)
+                return _count;
+        }
+    }
+
+    /// <summary>Copies stereo samples (left, right, ...) to the target. Returns the number of stereo samples.</summary>
+    public int Read(Span<short> target)
+    {
+        lock (_lock)
+        {
+            var samples = Math.Min(_count, target.Length / 2);
+            for (var i = 0; i < samples; i++)
+            {
+                var index = (_start + i) % capacity * 2;
+                target[i * 2] = _buffer[index];
+                target[i * 2 + 1] = _buffer[index + 1];
+            }
+
+            _start = (_start + samples) % capacity;
+            _count -= samples;
+            return samples;
+        }
+    }
+
+    /// <summary>Removes stereo samples without reading them.</summary>
+    public void Skip(int samples)
+    {
+        lock (_lock)
+        {
+            samples = Math.Min(samples, _count);
+            _start = (_start + samples) % capacity;
+            _count -= samples;
+        }
+    }
+
+    internal void Add(short left, short right)
+    {
+        lock (_lock)
+        {
+            if (_count == capacity)
+            {
+                _start = (_start + 1) % capacity;
+                _count--;
+            }
+
+            var index = (_start + _count) % capacity * 2;
+            _buffer[index] = left;
+            _buffer[index + 1] = right;
+            _count++;
+        }
     }
 }

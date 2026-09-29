@@ -1,14 +1,12 @@
 using System.Diagnostics;
-using System.Net;
-using System.Net.Sockets;
+using System.Runtime.InteropServices;
 
 namespace AmigaSharp.Launcher;
 
 /// <summary>
-/// Plays the audio files of a playlist in a loop, as the sound of the video stream. The feed decodes each file with
-/// ffmpeg to PCM (48 kHz, stereo, 16 bits) and sends the samples at the rate of real time over a local TCP connection
-/// to the encoder of the stream. If the playlist has no audio that plays, the feed sends silence, so the sound of the
-/// stream never stops.
+/// Plays the audio files of a playlist in a loop: the music of the stream. The feed decodes each file with ffmpeg to
+/// PCM (48 kHz, stereo, 16 bits). The stream reads the samples with <see cref="Read"/>, as it needs them. If the
+/// playlist has no audio that plays, the feed gives silence for 10 seconds, and then reads the playlist again.
 /// </summary>
 /// <remarks>
 /// The playlist is an M3U file or a text file with one audio file on each line, or a directory of audio files. Lines
@@ -18,10 +16,7 @@ namespace AmigaSharp.Launcher;
 public sealed class AudioFeed : IDisposable
 {
     public const int SampleRate = 48000;
-    private const int BytesPerSecond = SampleRate * 2 * 2;
 
-    // The feed sends the samples in blocks of 20 ms, and sends silence for 10 seconds when the playlist has no audio.
-    private const int BlockBytes = BytesPerSecond / 50;
     private static readonly TimeSpan SilenceBeforeRetry = TimeSpan.FromSeconds(10);
 
     private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -31,38 +26,23 @@ public sealed class AudioFeed : IDisposable
 
     private readonly string _playlist;
     private readonly TextWriter _log;
-    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
-    private volatile bool _stopped;
+    private List<string> _files = [];
+    private int _next;
+    private bool _playedInLoop;
     private Process? _decoder;
-    private long _sentBytes;
-    private readonly Stopwatch _clock = new();
+    private string? _file;
+    private bool _fileHasAudio;
+    private long _silenceLeft;
+    private byte[] _bytes = [];
 
     public AudioFeed(string playlist, TextWriter log)
     {
         _playlist = playlist;
         _log = log;
-        _listener.Start();
-        Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-        new Thread(Run) { IsBackground = true, Name = "Audio feed" }.Start();
     }
 
-    /// <summary>The local TCP port. The encoder connects to it and reads the samples.</summary>
-    public int Port { get; }
+    public void Dispose() => StopDecoder();
 
-    public void Dispose()
-    {
-        _stopped = true;
-        _listener.Stop();
-        try
-        {
-            _decoder?.Kill();
-        }
-        catch (InvalidOperationException)
-        {
-        }
-    }
-
-    /// <summary>The audio files of the playlist, in its order. Files that do not exist are not in the list.</summary>
     public static List<string> ReadPlaylist(string playlist)
     {
         if (Directory.Exists(playlist))
@@ -84,53 +64,66 @@ public sealed class AudioFeed : IDisposable
             .ToList();
     }
 
-    private void Run()
+    /// <summary>Fills the target with the next stereo samples (left, right, ...).</summary>
+    public void Read(Span<short> target)
     {
-        TcpClient client;
-        try
+        var filled = 0;
+        while (filled < target.Length)
         {
-            client = _listener.AcceptTcpClient();
-        }
-        catch (Exception e) when (e is SocketException or ObjectDisposedException)
-        {
-            return;
-        }
-
-        using (client)
-        {
-            var output = client.GetStream();
-            _clock.Start();
-            try
+            if (_silenceLeft > 0)
             {
-                while (!_stopped)
-                {
-                    var files = ReadPlaylist(_playlist);
-                    var played = false;
-                    foreach (var file in files)
-                    {
-                        if (_stopped)
-                            return;
-                        played |= Play(file, output);
-                    }
+                var count = (int)Math.Min(_silenceLeft, target.Length - filled);
+                target.Slice(filled, count).Clear();
+                _silenceLeft -= count;
+                filled += count;
+                continue;
+            }
 
-                    if (!played)
-                    {
-                        if (files.Count > 0)
-                            _log.WriteLine($"The audio playlist {_playlist} has no audio that plays. The stream is silent.");
-                        SendSilence(output, SilenceBeforeRetry);
-                    }
-                }
-            }
-            catch (Exception e) when (e is IOException or ObjectDisposedException)
+            if (_decoder == null && !StartNextFile())
             {
-                // The encoder stopped.
+                _silenceLeft = (long)(SilenceBeforeRetry.TotalSeconds * SampleRate * 2);
+                continue;
             }
+
+            // Read whole stereo samples: 4 bytes each.
+            var wanted = (target.Length - filled) * 2;
+            if (_bytes.Length < wanted)
+                _bytes = new byte[wanted];
+            var read = _decoder!.StandardOutput.BaseStream.ReadAtLeast(_bytes.AsSpan(0, wanted), wanted,
+                throwOnEndOfStream: false) & ~3;
+            if (read > 0)
+            {
+                _fileHasAudio = true;
+                MemoryMarshal.Cast<byte, short>(_bytes.AsSpan(0, read)).CopyTo(target[filled..]);
+                filled += read / 2;
+            }
+
+            if (read < wanted)
+                EndFile();
         }
     }
 
-    /// <summary>Decodes a file and sends its samples. Returns false if the file has no audio that ffmpeg can decode.</summary>
-    private bool Play(string file, Stream output)
+    /// <summary>Starts the decoder of the next file of the playlist. Returns false if a whole loop played nothing.</summary>
+    private bool StartNextFile()
     {
+        if (_next >= _files.Count)
+        {
+            // A new loop: the last loop must have played something, or the playlist has no audio that plays.
+            var nothingPlayed = _files.Count > 0 && !_playedInLoop;
+            _files = ReadPlaylist(_playlist);
+            _next = 0;
+            _playedInLoop = false;
+            if (_files.Count == 0 || nothingPlayed)
+            {
+                if (_files.Count > 0)
+                    _log.WriteLine($"The audio playlist {_playlist} has no audio that plays. The music is silent.");
+                _files = [];
+                return false;
+            }
+        }
+
+        _file = _files[_next++];
+        _fileHasAudio = false;
         var start = new ProcessStartInfo("ffmpeg")
         {
             RedirectStandardOutput = true,
@@ -139,70 +132,50 @@ public sealed class AudioFeed : IDisposable
         };
         foreach (var argument in new[]
                  {
-                     "-hide_banner", "-loglevel", "error", "-nostdin", "-i", file, "-vn",
+                     "-hide_banner", "-loglevel", "error", "-nostdin", "-i", _file, "-vn",
                      "-f", "s16le", "-ar", SampleRate.ToString(), "-ac", "2", "pipe:1",
                  })
             start.ArgumentList.Add(argument);
+        try
+        {
+            _decoder = Process.Start(start);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            _decoder = null;
+        }
 
-        using var decoder = Process.Start(start);
-        if (decoder == null)
+        if (_decoder == null)
             return false;
-        _decoder = decoder;
-        decoder.ErrorDataReceived += (_, _) => { };
-        decoder.BeginErrorReadLine();
+        _decoder.ErrorDataReceived += (_, _) => { };
+        _decoder.BeginErrorReadLine();
+        return true;
+    }
 
-        var input = decoder.StandardOutput.BaseStream;
-        var block = new byte[BlockBytes];
-        var any = false;
-        while (!_stopped)
+    private void EndFile()
+    {
+        if (_fileHasAudio)
+            _playedInLoop = true;
+        else
+            _log.WriteLine($"The audio file {_file} did not play.");
+        StopDecoder();
+    }
+
+    private void StopDecoder()
+    {
+        if (_decoder == null)
+            return;
+        try
         {
-            var count = ReadBlock(input, block);
-            if (count == 0)
-                break;
-            any = true;
-            Send(output, block.AsSpan(0, count));
+            if (!_decoder.HasExited)
+                _decoder.Kill();
+            _decoder.WaitForExit();
+        }
+        catch (InvalidOperationException)
+        {
         }
 
-        if (!decoder.HasExited)
-            decoder.Kill();
-        decoder.WaitForExit();
+        _decoder.Dispose();
         _decoder = null;
-        if (!any)
-            _log.WriteLine($"The audio file {file} did not play.");
-        return any;
-    }
-
-    private void SendSilence(Stream output, TimeSpan time)
-    {
-        var block = new byte[BlockBytes];
-        for (var sent = TimeSpan.Zero; sent < time && !_stopped; sent += TimeSpan.FromMilliseconds(20))
-            Send(output, block);
-    }
-
-    /// <summary>Sends samples at the rate of real time: the feed waits until the clock is at the time of the samples.</summary>
-    private void Send(Stream output, ReadOnlySpan<byte> samples)
-    {
-        var due = TimeSpan.FromSeconds((double)_sentBytes / BytesPerSecond);
-        // Keep 200 ms ahead of the clock, so that the encoder always has samples.
-        var wait = due - _clock.Elapsed - TimeSpan.FromMilliseconds(200);
-        if (wait > TimeSpan.Zero)
-            Thread.Sleep(wait);
-        output.Write(samples);
-        _sentBytes += samples.Length;
-    }
-
-    /// <summary>Fills the block, unless the stream ends. Returns the number of bytes, a multiple of 4.</summary>
-    private static int ReadBlock(Stream input, byte[] block)
-    {
-        var count = 0;
-        while (count < block.Length)
-        {
-            var read = input.Read(block, count, block.Length - count);
-            if (read == 0)
-                break;
-            count += read;
-        }
-
-        return count - count % 4;
     }
 }

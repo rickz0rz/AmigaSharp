@@ -226,11 +226,14 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
   channel source of the type M3U playlist, with the address of this host that the server can reach.
 - The picture is 4:3 in a 1280 by 720 picture with black bars at the sides. `--stream-4x3` makes a 960 by 720
   picture without bars.
-- `--stream-audio <path>` gives the stream a sound: an M3U playlist, a text file with one audio file on each line,
-  or a directory of audio files. The files play in a loop, in the order of the playlist (or of their names in a
+- The sound of the stream is the sound of the Amiga, with the sound of the genlock video and with music. For Prevue,
+  the sound of the Amiga is silent.
+- `--stream-audio <path>` gives the stream music: an M3U playlist, a text file with one audio file on each line, or
+  a directory of audio files. The files play in a loop, in the order of the playlist (or of their names in a
   directory). A path in a playlist can be relative to the directory of the playlist. Files that do not exist or do
-  not play are skipped. If no file plays, the stream is silent, and the launcher tries the playlist again each
-  10 seconds. Without this option, the stream is silent.
+  not play are skipped. If no file plays, the launcher tries the playlist again each 10 seconds. The music plays
+  while no genlock video with sound plays. When a video with sound starts, the music fades out in half a second and
+  stops. When the video ends, the music fades in and continues from the same place.
 - `--headless` runs without a window until Ctrl-C. The stream also works with a window.
 - macOS can ask if the launcher can accept incoming network connections. Accept it, so that the server can connect.
 - On Windows, only an administrator can listen for HTTP on all the addresses of the computer, so `--stream` stops
@@ -256,7 +259,7 @@ CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stre
 - The top half of the screen, and the border at the sides of the grid, show the video. The grid does not use color 0.
 - The stream shows each picture of the video once, with the picture of the display of the same moment. So the video
   and the grid both move at an even rate.
-- Without `--stream-audio`, the stream has the sound of the video.
+- The stream has the sound of the video. The music of `--stream-audio` stops while a video with sound plays.
 - If a live source stops, the stream shows the display over black and continues. The launcher starts the source again
   after 2 seconds.
 
@@ -270,18 +273,20 @@ Each video is a file or a URL, with these values in JSON:
 
 | Value | Meaning |
 |---|---|
-| `source` | A file or a URL. This value is necessary. |
+| `source` | A file or a URL. This value is necessary. A source with no video, for example a music file, plays over black. |
 | `seconds` | The time that the video plays. Without it, a file plays to its end, and a URL plays until you skip it. |
 | `loop` | `true` to play a file in a loop. |
 | `next` | `true` to put the video first in the queue, not last. |
 
-For example, play a channel for 5 minutes, then a file to its end, then the channel for 10 minutes:
+For example, play a channel for 5 minutes, then a file to its end, then the channel for 10 minutes, then a song over
+black:
 
 ```sh
 curl -X POST http://localhost:8091/genlock/queue -d '[
   {"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 300},
   {"source": "/videos/promo.mp4"},
-  {"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 600}
+  {"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 600},
+  {"source": "/music/theme.mp3"}
 ]'
 ```
 
@@ -486,8 +491,8 @@ The runtime emulates the parts of an Amiga 2000 (ECS, NTSC) that ESQ and the Ami
 - The blitter: area, fill and line blits. A blit ends at once.
 - The interrupts of the custom chips and the CIAs. A program can use the handlers of exec, or write its own handlers
   to the exception vectors.
-- The audio channels play their samples with DMA, with the low-pass filter of the power LED. The window plays the
-  sound, and `--audio-file <file.wav>` writes it to a file. Modulation and the play of AUDxDAT without DMA are not
+- The audio channels play their samples with DMA, with the low-pass filter of the power LED. The window and the
+  stream play the sound, and `--audio-file <file.wav>` writes it to a file. Modulation and the play of AUDxDAT without DMA are not
   emulated.
 - The serial port. A TCP port or a file on the host is the other end of the cable.
 - The two CIAs: the ports, the timers, the time-of-day counters and the keyboard on the serial port of CIA-A.

@@ -142,6 +142,7 @@ public sealed class GenlockPlaylistTests : IDisposable
         private bool _complete;
 
         public PcmBuffer Audio { get; } = new();
+        public bool HasSound => true;
         public int BufferedFrames => _frames;
         public bool IsCompleted => _complete && _frames == 0;
         public bool Disposed { get; private set; }

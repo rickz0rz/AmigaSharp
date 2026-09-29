@@ -12,6 +12,9 @@ public interface IGenlockDecoder : IDisposable
     /// <summary>The sound of the pictures. It has silence if the source has no sound.</summary>
     PcmBuffer Audio { get; }
 
+    /// <summary>True if the source has sound. The music of the stream then stops while the source plays.</summary>
+    bool HasSound { get; }
+
     /// <summary>The number of pictures in the queue.</summary>
     int BufferedFrames { get; }
 
@@ -29,7 +32,8 @@ public interface IGenlockDecoder : IDisposable
 /// <remarks>
 /// <para>
 /// The decoder deinterlaces an interlaced video, cuts it to 4:3 (with its pixel aspect ratio), and scales it to the
-/// picture of the display, which shows as 4:3. It reads the source at its real rate. A file can play in a loop.
+/// picture of the display, which shows as 4:3. It reads the source at its real rate. A file can play in a loop. A
+/// source with no video, for example a music file, gives black pictures while its sound plays.
 /// </para>
 /// <para>
 /// The pictures go to a queue, and the sound goes to <see cref="Audio"/>. The stream takes the sound of 1/29.97 second
@@ -70,6 +74,11 @@ public sealed class GenlockDecoder : IGenlockDecoder
 
     /// <summary>The sound of the pictures. It has silence if the source has no sound.</summary>
     public PcmBuffer Audio { get; } = new();
+
+    /// <summary>True if the source has sound. It is false until ffprobe found the streams of the source.</summary>
+    public bool HasSound => _hasSound;
+
+    private volatile bool _hasSound;
 
     /// <summary>The number of pictures in the queue.</summary>
     public int BufferedFrames => _frames.Count;
@@ -124,12 +133,14 @@ public sealed class GenlockDecoder : IGenlockDecoder
     {
         try
         {
-            // A short analysis finds the streams of a live source in about 1.5 seconds. The default takes 6.
-            var audio = _withAudio && (Probe(["-v", "error", "-analyzeduration", "500000", "-probesize", "500000",
-                "-select_streams", "a:0", "-show_entries", "stream=codec_type", "-of", "csv=p=0", _source])
-                ?.Contains("audio") ?? true);
+            // A short analysis finds the streams of a live source in about 1.5 seconds. The default takes 6. If ffprobe
+            // cannot run, assume a video with sound.
+            var streams = Probe(["-v", "error", "-analyzeduration", "500000", "-probesize", "500000",
+                "-show_entries", "stream=codec_type", "-of", "csv=p=0", _source]) ?? "video\naudio";
+            var audio = _withAudio && streams.Contains("audio");
+            _hasSound = audio;
             if (!_stopped)
-                Decode(audio);
+                Decode(audio, video: streams.Contains("video"));
         }
         finally
         {
@@ -162,7 +173,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
         }
     }
 
-    private void Decode(bool audio)
+    private void Decode(bool audio, bool video)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -178,11 +189,19 @@ public sealed class GenlockDecoder : IGenlockDecoder
             ? ["-map", "0:a:0", "-af", "aresample=async=1:first_pts=0", "-f", "s16le", "-ar", SampleRate.ToString(),
                 "-ac", "2", $"tcp://127.0.0.1:{port}"]
             : [];
+        // A source with no video gets black pictures from ffmpeg, as long as its sound for a file.
+        string[] black = video
+            ? []
+            : ["-f", "lavfi", "-i", $"color=c=black:s={Display.Width}x{Display.Height}:r=30000/1001" +
+                                   (Duration(_source) is { } seconds && !_loop
+                                       ? $":d={seconds.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                                       : "")];
         string[] arguments =
         [
             "-hide_banner", "-loglevel", "error", "-nostdin",
             .. input,
-            "-map", "0:v:0",
+            .. black,
+            "-map", video ? "0:v:0" : "1:v:0",
             // The pictures and the sound both start at the start of the input: the first picture repeats and the sound
             // starts with silence as necessary. The sound follows the times of the input, so the two stay together.
             "-vf", "bwdif=mode=send_frame:deint=interlaced,fps=30000/1001:start_time=0," +

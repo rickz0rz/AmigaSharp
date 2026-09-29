@@ -17,10 +17,11 @@
 #                            listings of the drive on their date. The default is the time of this computer.
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
 #                            for Channels DVR is http://<this computer>:<port>/channels.m3u.
-#   --audio <path>           The sound of the stream: an M3U playlist or a directory of audio files.
+#   --audio <path>           Music for the stream: an M3U playlist or a directory of audio files. It stops while a
+#                            --genlock video with sound plays.
 #   --genlock <file or URL>  Show a video behind the grid of the stream, as the genlock of the Prevue channel did. A
 #                            file plays in a loop. A URL plays live, for example a channel of an HDHomeRun tuner.
-#                            Without --audio, the stream has the sound of this video.
+#                            The stream has the sound of this video.
 #   --genlock-control        Start the genlock with no video, over black. The stream then takes a queue of videos
 #                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
@@ -37,7 +38,7 @@ LAUNCHER=$HERE/AmigaSharp.Launcher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {

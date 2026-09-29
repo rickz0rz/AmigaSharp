@@ -61,8 +61,8 @@ public sealed class GenlockPlaylist : IDisposable
             : Duration is { } duration && !Loop ? (long)Math.Round(duration * FramesPerSecond) : null;
     }
 
-    /// <summary>A picture of the current item and the sound of its item.</summary>
-    public readonly record struct Frame(uint[] Pixels, PcmBuffer Audio);
+    /// <summary>A picture of the current item, the sound of its item, and if the item has sound.</summary>
+    public readonly record struct Frame(uint[] Pixels, PcmBuffer Audio, bool HasSound);
 
     /// <summary>The number of pictures that the current decoder has ready. The stream keeps it near the target.</summary>
     public int BufferedFrames
@@ -175,7 +175,7 @@ public sealed class GenlockPlaylist : IDisposable
         }
 
         if (decoder.TryTake(out var pixels, timeout))
-            return new Frame(pixels, decoder.Audio);
+            return new Frame(pixels, decoder.Audio, decoder.HasSound);
 
         // The decoder has no picture: black until it has pictures again.
         lock (_lock)
