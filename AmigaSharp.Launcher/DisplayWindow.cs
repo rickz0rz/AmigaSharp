@@ -9,14 +9,25 @@ namespace AmigaSharp.Launcher;
 /// that for windows.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The host mouse is the mouse in port 1: a move of one low-resolution pixel of the picture is one count, whatever the
 /// size of the window. A game controller of the host is the joystick in port 2: the D-pad or the left stick, and A, B
 /// and X for fire buttons 1, 2 and 3.
+/// </para>
+/// <para>
+/// The sound of the audio channels plays on the default audio device of the host, about 100 ms late. When the program
+/// makes the sound faster than real time, the window drops the samples that the device cannot play in time.
+/// </para>
 /// </remarks>
 public sealed unsafe class DisplayWindow(
-    Display display, string title, int scale, Action<Scancode, bool> key, ControllerPort mouse, ControllerPort joystick)
+    Display display, string title, int scale, Action<Scancode, bool> key, ControllerPort mouse, ControllerPort joystick,
+    AudioOutput? audio = null)
 {
     private const int StickThreshold = 16_000;
+    private const int BytesPerSample = 4;
+    private const uint AudioS16Lsb = 0x8010;
+    private static readonly uint TargetQueueBytes = AudioOutput.SampleRate / 10 * BytesPerSample;
+    private readonly short[] _samples = new short[AudioOutput.SampleRate];
     private double _mouseX;
     private double _mouseY;
 
@@ -28,8 +39,9 @@ public sealed unsafe class DisplayWindow(
         // window at scale 2 is then larger than a 1920 by 1080 screen. With the hint, the size of the window is in
         // pixels on Windows. On macOS, the size stays in points.
         sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
-        if (sdl.Init(Sdl.InitVideo | Sdl.InitGamecontroller) != 0)
+        if (sdl.Init(Sdl.InitVideo | Sdl.InitGamecontroller | Sdl.InitAudio) != 0)
             throw new InvalidOperationException($"SDL cannot start: {sdl.GetErrorS()}");
+        var audioDevice = audio == null ? 0 : OpenAudio(sdl);
 
         var window = sdl.CreateWindow(title, Sdl.WindowposCentered, Sdl.WindowposCentered,
             Display.Width * scale, Display.Height * scale,
@@ -60,6 +72,9 @@ public sealed unsafe class DisplayWindow(
                         Controllers(sdl, e);
                 }
 
+                if (audioDevice != 0)
+                    QueueAudio(sdl, audioDevice);
+
                 if (display.FrameNumber != shown)
                 {
                     shown = display.FrameNumber;
@@ -76,6 +91,8 @@ public sealed unsafe class DisplayWindow(
         }
         finally
         {
+            if (audioDevice != 0)
+                sdl.CloseAudioDevice(audioDevice);
             sdl.DestroyTexture(texture);
             sdl.DestroyRenderer(renderer);
             sdl.DestroyWindow(window);
@@ -108,6 +125,36 @@ public sealed unsafe class DisplayWindow(
         sdl.SetWindowSize(window, width, height);
         sdl.SetWindowPosition(window, usable.Origin.X + left + (availableWidth - width) / 2,
             usable.Origin.Y + top + (availableHeight - height) / 2);
+    }
+
+    private static uint OpenAudio(Sdl sdl)
+    {
+        var desired = new AudioSpec { Freq = AudioOutput.SampleRate, Format = (ushort)AudioS16Lsb, Channels = 2, Samples = 1024 };
+        AudioSpec obtained;
+        var device = sdl.OpenAudioDevice((byte*)null, 0, &desired, &obtained, 0);
+        if (device == 0)
+        {
+            Console.Error.WriteLine($"The sound is off: SDL cannot open the audio device: {sdl.GetErrorS()}");
+            return 0;
+        }
+
+        sdl.PauseAudioDevice(device, 0);
+        return device;
+    }
+
+    /// <summary>Keeps about 100 ms of sound in the queue of the device, and drops the samples that would be late.</summary>
+    private void QueueAudio(Sdl sdl, uint device)
+    {
+        var queued = sdl.GetQueuedAudioSize(device);
+        var wanted = queued < TargetQueueBytes ? (int)((TargetQueueBytes - queued) / BytesPerSample) : 0;
+        var late = audio!.Available - wanted;
+        while (late > 0)
+            late -= audio.Read(_samples.AsSpan(0, Math.Min(late, _samples.Length / 2) * 2));
+        if (wanted == 0)
+            return;
+        var count = audio.Read(_samples.AsSpan(0, Math.Min(wanted, _samples.Length / 2) * 2));
+        fixed (short* data = _samples)
+            sdl.QueueAudio(device, data, (uint)(count * BytesPerSample));
     }
 
     private void Controllers(Sdl sdl, Event e)

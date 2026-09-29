@@ -53,6 +53,8 @@ const string usage = """
       --stream-audio <path>     The sound of the stream: an M3U playlist, a text file with one audio file on each
                                 line, or a directory of audio files. It plays in a loop. If it has no audio that
                                 plays, the stream is silent. Without this option, the stream is silent.
+      --audio-file <file.wav>   Write the sound of the audio channels to a WAV file. Without this option, the window
+                                plays the sound.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
       --seconds <n>             The time before the screenshot. The default is 10.
       --screenshot-every <n>    With --screenshot, also save a picture each n seconds until --seconds, with the time in
@@ -88,7 +90,7 @@ if (args.Length > 0 && args[0] == "extract")
     return Extract(args[1..]);
 
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
-string? serialFile = null, serialLog = null, feedTrace = null;
+string? serialFile = null, serialLog = null, feedTrace = null, audioFile = null;
 var serialStart = 0.0;
 var serialSpeed = 1.0;
 var volumes = new List<(string Name, string Path)>();
@@ -130,6 +132,7 @@ try
         switch (args[i])
         {
             case "--listing": listing = Next(); break;
+            case "--audio-file": audioFile = Next(); break;
             case "--interpret": interpret = true; break;
             case "--drive": drive = Next(); break;
             case "--volume": volumes.Add(Pair()); break;
@@ -275,6 +278,7 @@ if (loggingConnection != null)
     core.Chipset.Custom.Serial.Connection = loggingConnection;
 
 using var feedTraceWriter = feedTrace == null ? null : new StreamWriter(feedTrace);
+using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.Chipset.Audio);
 
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
@@ -501,7 +505,8 @@ try
         }
 
         var ports = core.Chipset.Custom.Ports;
-        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key, ports[0], ports[1])
+        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key, ports[0], ports[1],
+                wavWriter == null ? core.Chipset.Audio : null)
             .Run(() => finished);
     }
 }

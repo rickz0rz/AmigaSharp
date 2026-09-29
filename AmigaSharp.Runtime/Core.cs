@@ -381,6 +381,7 @@ public sealed class Core
     {
         Chipset.Beam.Clock.Tick();
         Chipset.Custom.Update();
+        Chipset.Audio.Update(Chipset.Beam.ColorClocks);
         Chipset.CiaA.Update();
         Chipset.CiaB.Update();
         Chipset.Keyboard.Update();

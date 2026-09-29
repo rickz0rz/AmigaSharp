@@ -421,7 +421,9 @@ The runtime emulates the parts of an Amiga 2000 (ECS, NTSC) that ESQ and the Ami
 - The blitter: area, fill and line blits. A blit ends at once.
 - The interrupts of the custom chips and the CIAs. A program can use the handlers of exec, or write its own handlers
   to the exception vectors.
-- The audio channels make their interrupts, but they do not make a sound.
+- The audio channels play their samples with DMA, with the low-pass filter of the power LED. The window plays the
+  sound, and `--audio-file <file.wav>` writes it to a file. Modulation and the play of AUDxDAT without DMA are not
+  emulated.
 - The serial port. A TCP port or a file on the host is the other end of the cable.
 - The two CIAs: the ports, the timers, the time-of-day counters and the keyboard on the serial port of CIA-A.
 - The mouse in port 1 and the joystick in port 2. In the window, the host mouse is the mouse, and a game controller
