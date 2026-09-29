@@ -405,8 +405,8 @@ curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
   shows one box. It tries the box of `first` before the other box.
 - The line sends 11 bytes each second, so a promo takes about 2 seconds. The requests wait in a queue. Prevue starts
   to read the line some seconds after the stream starts.
-- `--ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--ctrl-file <file>` sends the bytes of a
-  file. Do not send raw bytes and HTTP requests at the same time.
+- `--prevue-ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--prevue-ctrl-file <file>` sends
+  the bytes of a file. Do not send raw bytes and HTTP requests at the same time.
 
 [docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
 

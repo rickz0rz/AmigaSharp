@@ -39,12 +39,12 @@ const string usage = """
       --serial-speed <n>        Receive the serial bytes n times faster than the baud rate of SERPER. The default is 1.
                                 ESQ has no flow control: a factor that is too large fills its receive buffer.
       --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
-      --ctrl-port <port>        A TCP port for the 110 baud control line on the CTS pin of the serial port. Prevue
-                                reads its control commands there. Each byte that a client sends goes on the line.
-                                The line keeps the bytes until one second after the program starts to sample it.
-      --ctrl-file <file>        Send the bytes of the file on the control line, in place of --ctrl-port. The bytes go
-                                one second after the program starts to sample the line (after it enables the AUD1
-                                interrupt).
+      --prevue-ctrl-port <port> A TCP port for the 110 baud control line of Prevue, on the CTS pin of the serial
+                                port. Prevue reads its control commands there. Each byte that a client sends goes on
+                                the line. The line keeps the bytes until one second after Prevue starts to sample it.
+      --prevue-ctrl-file <file> Send the bytes of the file on the control line of Prevue, in place of
+                                --prevue-ctrl-port. The bytes go one second after Prevue starts to sample the line
+                                (after it enables the AUD1 interrupt).
       --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
                                 to the file. This option needs --listing.
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
@@ -160,8 +160,8 @@ try
             case "--command-name": commandName = Next(); break;
             case "--serial-port": serialPort = int.Parse(Next()); break;
             case "--serial-file": serialFile = Next(); break;
-            case "--ctrl-port": ctrlPort = int.Parse(Next()); break;
-            case "--ctrl-file": ctrlFile = Next(); break;
+            case "--prevue-ctrl-port": ctrlPort = int.Parse(Next()); break;
+            case "--prevue-ctrl-file": ctrlFile = Next(); break;
             case "--serial-start": serialStart = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--serial-log": serialLog = Next(); break;
             case "--serial-speed": serialSpeed = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;

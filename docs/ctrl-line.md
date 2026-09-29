@@ -12,14 +12,15 @@ drive. The [UVSG Satellite Data](https://prevueguide.com/wiki/UVSG_Satellite_Dat
 ## The line
 
 The control line is a 110 baud serial line on the CTS pin of the serial port. This pin is CIA-B port A bit 4.
-Prevue samples the pin 1100 times each second in its AUD1 interrupt, and it decodes the bits itself. Each byte has a start bit, 8 data
-bits (the lowest bit first), and a stop bit. One byte takes 91 ms, so the line sends 11 bytes each second.
+Prevue samples the pin 1100 times each second in its AUD1 interrupt, and it decodes the bits itself. Each byte has a
+start bit, 8 data bits (the lowest bit first), and a stop bit. One byte takes 91 ms, so the line sends 11 bytes each
+second.
 
 The launcher has three sources for the line:
 
 - With `--stream`, the HTTP server of the stream makes the packets. See [The HTTP server](#the-http-server).
-- `--ctrl-port <port>` opens a TCP port on localhost. Each byte that a client sends goes on the line.
-- `--ctrl-file <file>` sends the bytes of a file on the line.
+- `--prevue-ctrl-port <port>` opens a TCP port on localhost. Each byte that a client sends goes on the line.
+- `--prevue-ctrl-file <file>` sends the bytes of a file on the line.
 
 Do not send HTTP requests and raw bytes at the same time. A packet of one source can then come in a packet of the
 other source.
@@ -30,7 +31,7 @@ sample the line. A client can connect and send at once.
 With the scripts of a distribution, give the raw options to the launcher after `--`:
 
 ```sh
-./run-prevue.sh --drive /path/to/drive -- --ctrl-port 8092
+./run-prevue.sh --drive /path/to/drive -- --prevue-ctrl-port 8092
 ```
 
 ## The HTTP server
@@ -111,7 +112,7 @@ Send these commands:
 3. Type 1 with `1` shows the promo.
 
 For example, a promo for Seinfeld on the right, on the "around town" background. The launcher runs with
-`--ctrl-port 8092`:
+`--prevue-ctrl-port 8092`:
 
 ```python
 import socket
