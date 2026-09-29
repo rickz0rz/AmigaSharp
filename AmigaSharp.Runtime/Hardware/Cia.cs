@@ -85,6 +85,28 @@ public sealed class Cia(Func<long> timeOfDay, Func<long> eClock, Action interrup
     /// <summary>The levels of the input pins of port B.</summary>
     public byte InputB { get; set; } = 0xFF;
 
+    private readonly object _pinLock = new();
+
+    /// <summary>
+    /// Sets the levels of some input pins of port A. More than one device drives the pins of port A, from more than
+    /// one thread, so each device changes only its own pins.
+    /// </summary>
+    public void SetInputPinsA(byte mask, byte levels)
+    {
+        lock (_pinLock)
+            InputA = (byte)((InputA & ~mask) | (levels & mask));
+    }
+
+    /// <summary>The program changed port B or its directions. The value is the level of each pin.</summary>
+    public event Action<byte>? PortBChanged;
+
+    /// <summary>The FLAG input went low, for example at the index pulse of a disk. It sets the FLG flag of the ICR.</summary>
+    public void SignalFlag()
+    {
+        _interruptFlags |= CiaInterrupt.Flag;
+        RequestIfEnabled();
+    }
+
     /// <summary>The value of the output bits of port A and port B, which the program wrote.</summary>
     public byte OutputA => _registers[CiaRegister.Pra];
     public byte OutputB => _registers[CiaRegister.Prb];
@@ -151,6 +173,8 @@ public sealed class Cia(Func<long> timeOfDay, Func<long> eClock, Action interrup
         }
 
         _registers[register] = value;
+        if (register is CiaRegister.Prb or CiaRegister.Ddrb)
+            PortBChanged?.Invoke(Port(_registers[CiaRegister.Prb], _registers[CiaRegister.Ddrb], InputB));
     }
 
     /// <summary>The value of the time-of-day counter: 24 bits.</summary>

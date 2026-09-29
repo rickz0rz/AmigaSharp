@@ -118,6 +118,11 @@ public sealed class Core
         Chipset = new Chipset(clock ?? new RealTimeClock(), Memory);
         KeyboardInput.RawKeyPosted = Chipset.Keyboard.Post;
         Chipset.Now = () => Now;
+        // Kickstart makes the drive lines of CIA-B port B outputs, with all motors off and no drive selected, and it
+        // makes OVL and the power LED of CIA-A port A outputs.
+        Chipset.CiaB.Write(Hardware.CiaRegister.Prb, 0xFF);
+        Chipset.CiaB.Write(Hardware.CiaRegister.Ddrb, 0xFF);
+        Chipset.CiaA.Write(Hardware.CiaRegister.Ddra, 0x03);
         Memory.Hardware = Chipset;
         Cpu = new CpuState(Memory);
         Interpreter = new Interpreter(Cpu) { ExceptionsAreFatal = true };
@@ -385,6 +390,7 @@ public sealed class Core
         Chipset.CiaA.Update();
         Chipset.CiaB.Update();
         Chipset.Keyboard.Update();
+        Chipset.Disks.Update();
         Devices.Update();
         Interrupts.Deliver();
         foreach (var handler in _pollHandlers)

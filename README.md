@@ -429,6 +429,8 @@ The runtime emulates the parts of an Amiga 2000 (ECS, NTSC) that ESQ and the Ami
 - The mouse in port 1 and the joystick in port 2. In the window, the host mouse is the mouse, and a game controller
   of the host is the joystick.
 - The battery-backed clock at $DC0000.
+- The internal floppy drive DF0: the drive signals on the CIAs, the index pulse and the disk DMA. When the program
+  runs from an ADF, the disk is in DF0 as AmigaDOS MFM tracks. A write changes only a copy in memory.
 
 The addresses where an A2000 has nothing are an open bus: a write does nothing, and a read gives 0.
 

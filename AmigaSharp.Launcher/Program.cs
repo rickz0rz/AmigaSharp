@@ -19,7 +19,8 @@ const string usage = """
 
     The executable can be a file on a disk image: <disk.adf>:<path>, for example AmigaTestKit.adf:AmigaTestKit. The
     launcher copies the files of the disk to a new temporary directory. That directory is SYS:, DF0: and the volume
-    name of the disk. The program can change these files, but not the disk image.
+    name of the disk. The program can change these files, but not the disk image. The disk is also in the drive DF0
+    for disk DMA. A write there changes only a copy in memory.
 
     Options:
       --listing <file.lst>      The vasm listing of the executable. The translator uses its instructions and labels.
@@ -202,6 +203,7 @@ var log = Console.Error;
 
 // A program on a disk image: extract the disk, and run the program from the copy.
 string? diskCopy = null;
+byte[]? diskImage = null;
 var adfSeparator = executablePath.IndexOf(".adf:", StringComparison.OrdinalIgnoreCase);
 if (adfSeparator > 0)
 {
@@ -222,6 +224,7 @@ if (adfSeparator > 0)
     log.WriteLine($"The disk {disk.VolumeName} is in {diskCopy}.");
     executablePath = Path.Combine([diskCopy, .. executablePath[(adfSeparator + 5)..].Split('/')]);
     drive ??= diskCopy;
+    diskImage = File.ReadAllBytes(imagePath);
     volumes.Insert(0, ("DF0", diskCopy));
     if (disk.VolumeName.IndexOfAny([':', '/']) < 0)
         volumes.Insert(0, (disk.VolumeName, diskCopy));
@@ -237,6 +240,9 @@ var measuringClock = stats ? new MeasuringClock(clock) : null;
 clock = measuringClock ?? clock;
 var turbo = turboSeconds != null || turboLabel != null;
 var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
+// A program from a disk image also finds the disk in DF0, for a program that reads the disk with the hardware.
+if (diskImage != null)
+    core.Chipset.Disks.Drives[0].Insert(diskImage);
 if (date != null)
     core.SetDate(date.Value);
 foreach (var (name, path) in volumes)

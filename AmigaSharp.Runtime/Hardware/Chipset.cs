@@ -38,11 +38,12 @@ public sealed class Chipset : IHardware
             var controller = Custom.Ports[port];
             var bit = 1 << (6 + port);
             controller.ButtonChanged += () =>
-                CiaA.InputA = (byte)(controller.IsPressed(ControllerButton.Left) ? CiaA.InputA & ~bit : CiaA.InputA | bit);
+                CiaA.SetInputPinsA((byte)bit, controller.IsPressed(ControllerButton.Left) ? (byte)0 : (byte)bit);
         }
         Rtc = new RealTimeClockChip(() => Now());
         // The low-pass filter is on when the power LED is bright: CIA-A PRA bit 1 is 0.
         Audio = new AudioOutput(memory, Custom, () => (CiaA.OutputA & 0x02) == 0);
+        Disks = new DiskController(memory, Custom, CiaA, CiaB, Beam);
         Display = new Display(memory, Custom, Beam);
         Custom.Blitter = new Blitter(memory, Custom);
         Custom.FrameEnded += Display.RunFrame;
@@ -59,6 +60,9 @@ public sealed class Chipset : IHardware
 
     /// <summary>The date and the time of the Amiga, for the battery-backed clock. The core sets it.</summary>
     public Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+    /// <summary>The floppy drives and the disk DMA.</summary>
+    public DiskController Disks { get; }
 
     /// <summary>The sound of the audio channels.</summary>
     public AudioOutput Audio { get; }

@@ -142,6 +142,12 @@ public sealed class CustomChips
     /// <summary>A write to a register, before it takes effect. The display uses it to make the lines before the write.</summary>
     public event Action<int, ushort>? RegisterWritten;
 
+    /// <summary>The program wrote DSKLEN.</summary>
+    public event Action<ushort>? DiskLengthWritten;
+
+    /// <summary>DMACON changed. A transfer that waits for its DMA can start.</summary>
+    public event Action? DmaChanged;
+
     /// <summary>The time moved at a safe point. The display makes the lines up to the beam.</summary>
     public event Action? BeamMoved;
 
@@ -204,7 +210,9 @@ public sealed class CustomChips
                 Dmacon = SetClear(Dmacon, value);
                 UpdateAudioDma();
                 Blitter?.RunPending();
+                DmaChanged?.Invoke();
                 break;
+            case DiskRegister.Dsklen: DiskLengthWritten?.Invoke(value); break;
             case BlitterRegister.Bltsize: Blitter?.WriteSize(value); break;
             case BlitterRegister.Bltsizh: Blitter?.WriteSizeHorizontal(value); break;
             case CustomRegister.Intena: Intena = SetClear(Intena, value); break;
