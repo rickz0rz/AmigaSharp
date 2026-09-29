@@ -379,6 +379,28 @@ dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listin
     --serial-file feed.bin --serial-start 8 --serial-log serial.log --feed-trace feed.log
 ```
 
+## Send control commands
+
+Prevue has a second input, a 110 baud control line. The Prevue channel used it to show promos of programs over the
+genlock video. `--ctrl-port <port>` opens a TCP port for the line, and `--ctrl-file <file>` sends the bytes of a file.
+For example, these three commands show a promo for Seinfeld from the saved listings:
+
+```python
+import socket
+
+def packet(type, body):
+    data = bytes([type]) + body.encode("latin-1") + b"\r"
+    checksum = 0
+    for byte in data:
+        checksum ^= byte
+    return data + bytes([checksum])
+
+line = socket.create_connection(("localhost", 8092))
+line.sendall(packet(2, "ATAT") + packet(17, "Seinfeld") + packet(1, "1*"))
+```
+
+[docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
+
 ## Build programs for other people
 
 `scripts/publish.sh` builds the launcher and the listings tool as native programs with Native AOT. The people who use

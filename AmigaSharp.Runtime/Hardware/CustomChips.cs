@@ -119,6 +119,12 @@ public sealed class CustomChips
         public bool Running;
         public long StartClock;
         public long Interrupts;
+
+        /// <summary>
+        /// The time of the channel in color clocks, as the program sees it: each request moves it by one interval. It
+        /// does not move for the interrupts that the backlog drops.
+        /// </summary>
+        public long SampleClock;
     }
 
     /// <summary>The value that the program last wrote to the register.</summary>
@@ -303,6 +309,8 @@ public sealed class CustomChips
             var bit = InterruptBit.Audio0 + channel;
             if (due > timer.Interrupts && (Intreq & (1 << bit)) == 0)
             {
+                if (timer.Interrupts > 0)
+                    timer.SampleClock += interval;
                 timer.Interrupts++;
                 RequestInterrupt(bit);
             }
@@ -312,6 +320,14 @@ public sealed class CustomChips
             RequestInterrupt(InterruptBit.Rbf);
         BeamMoved?.Invoke();
     }
+
+    /// <summary>
+    /// The time of the last interrupt request of an audio channel, as the program sees it. A program that samples a
+    /// line in the interrupt of the channel sees the line at this time. When the runtime is late, the time does not
+    /// go forward for the interrupts that the program does not get.
+    /// </summary>
+    public TimeSpan AudioSampleTime(int channel) =>
+        TimeSpan.FromTicks((long)(_audio[channel].SampleClock * TimeSpan.TicksPerSecond / Beam.ColorClockHz));
 
     /// <summary>
     /// The color clocks between two interrupts of an audio channel. The channel plays AUDxLEN words, two samples in
@@ -333,7 +349,12 @@ public sealed class CustomChips
             ref var timer = ref _audio[channel];
             var on = (Dmacon & DmaEnable) != 0 && (Dmacon & (1 << channel)) != 0;
             if (on && !timer.Running)
-                timer = new AudioTimer { Running = true, StartClock = _beam.ColorClocks, Interrupts = 0 };
+                timer = new AudioTimer
+                {
+                    Running = true,
+                    StartClock = _beam.ColorClocks,
+                    SampleClock = Math.Max(_beam.ColorClocks, timer.SampleClock),
+                };
             else if (!on)
                 timer.Running = false;
         }

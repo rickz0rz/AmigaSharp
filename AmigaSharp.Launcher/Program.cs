@@ -41,6 +41,7 @@ const string usage = """
       --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
       --ctrl-port <port>        A TCP port for the 110 baud control line on the CTS pin of the serial port. Prevue
                                 reads its control commands there. Each byte that a client sends goes on the line.
+                                The line keeps the bytes until one second after the program starts to sample it.
       --ctrl-file <file>        Send the bytes of the file on the control line, in place of --ctrl-port. The bytes go
                                 one second after the program starts to sample the line (after it enables the AUD1
                                 interrupt).
@@ -298,7 +299,22 @@ if (serialFile != null)
 
 core.Chipset.Custom.Serial.SpeedFactor = serialSpeed;
 
-// The control line on the CTS pin: a TCP bridge or a replay of a file.
+// The control line on the CTS pin: a TCP bridge or a replay of a file. The program samples the line in the AUD1
+// interrupt, so the line uses the time of that interrupt. The program resets its state while it starts. So the line
+// keeps its bytes until one second after the program enables the interrupt.
+{
+    var custom = core.Chipset.Custom;
+    TimeSpan? sampling = null;
+    core.Chipset.ControlLine.Time = () => custom.AudioSampleTime(1);
+    core.Chipset.ControlLine.Ready = () =>
+    {
+        if ((custom.Intena & (1 << (InterruptBit.Audio0 + 1))) == 0)
+            return false;
+        sampling ??= clock.Elapsed;
+        return clock.Elapsed - sampling.Value >= TimeSpan.FromSeconds(1);
+    };
+}
+
 using var ctrlBridge = ctrlPort > 0 && ctrlFile == null ? new TcpSerialBridge(ctrlPort, log: log) : null;
 if (ctrlBridge != null)
 {
@@ -309,17 +325,7 @@ if (ctrlBridge != null)
 if (ctrlFile != null)
 {
     var ctrlData = File.ReadAllBytes(ctrlFile);
-    var custom = core.Chipset.Custom;
-    // The program starts to sample the line with the AUD1 interrupt, and it resets its state while it starts. So the
-    // replay starts one second after the program enables the interrupt.
-    TimeSpan? sampling = null;
-    core.Chipset.ControlLine.Connection = new ReplaySerialConnection(ctrlData, () =>
-    {
-        if ((custom.Intena & (1 << (InterruptBit.Audio0 + 1))) == 0)
-            return false;
-        sampling ??= clock.Elapsed;
-        return clock.Elapsed - sampling.Value >= TimeSpan.FromSeconds(1);
-    });
+    core.Chipset.ControlLine.Connection = new ReplaySerialConnection(ctrlData);
     log.WriteLine($"Sending {ctrlData.Length} bytes from {ctrlFile} on the control line.");
 }
 
