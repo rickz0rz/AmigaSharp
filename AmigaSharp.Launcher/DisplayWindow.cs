@@ -8,8 +8,18 @@ namespace AmigaSharp.Launcher;
 /// Shows the picture of the display in an SDL window. The window must run on the main thread, because macOS requires
 /// that for windows.
 /// </summary>
-public sealed unsafe class DisplayWindow(Display display, string title, int scale, Action<Scancode, bool> key)
+/// <remarks>
+/// The host mouse is the mouse in port 1: a move of one low-resolution pixel of the picture is one count, whatever the
+/// size of the window. A game controller of the host is the joystick in port 2: the D-pad or the left stick, and A, B
+/// and X for fire buttons 1, 2 and 3.
+/// </remarks>
+public sealed unsafe class DisplayWindow(
+    Display display, string title, int scale, Action<Scancode, bool> key, ControllerPort mouse, ControllerPort joystick)
 {
+    private const int StickThreshold = 16_000;
+    private double _mouseX;
+    private double _mouseY;
+
     /// <summary>Shows the window until the user closes it or <paramref name="stop"/> becomes true.</summary>
     public void Run(Func<bool> stop)
     {
@@ -18,7 +28,7 @@ public sealed unsafe class DisplayWindow(Display display, string title, int scal
         // window at scale 2 is then larger than a 1920 by 1080 screen. With the hint, the size of the window is in
         // pixels on Windows. On macOS, the size stays in points.
         sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
-        if (sdl.Init(Sdl.InitVideo) != 0)
+        if (sdl.Init(Sdl.InitVideo | Sdl.InitGamecontroller) != 0)
             throw new InvalidOperationException($"SDL cannot start: {sdl.GetErrorS()}");
 
         var window = sdl.CreateWindow(title, Sdl.WindowposCentered, Sdl.WindowposCentered,
@@ -46,6 +56,8 @@ public sealed unsafe class DisplayWindow(Display display, string title, int scal
                     // A key that the host repeats sends a new key down. The Amiga repeats a key in its own way.
                     if (e.Type is (uint)EventType.Keydown or (uint)EventType.Keyup && e.Key.Repeat == 0)
                         key(e.Key.Keysym.Scancode, e.Type == (uint)EventType.Keyup);
+                    else
+                        Controllers(sdl, e);
                 }
 
                 if (display.FrameNumber != shown)
@@ -97,4 +109,70 @@ public sealed unsafe class DisplayWindow(Display display, string title, int scal
         sdl.SetWindowPosition(window, usable.Origin.X + left + (availableWidth - width) / 2,
             usable.Origin.Y + top + (availableHeight - height) / 2);
     }
+
+    private void Controllers(Sdl sdl, Event e)
+    {
+        switch ((EventType)e.Type)
+        {
+            case EventType.Mousemotion:
+            {
+                // The renderer has the logical size of the picture, so SDL gives the move in high-resolution pixels of
+                // the picture, whatever the size of the window. Two of them are one count. Keep the fractions, so that
+                // a slow move also moves the Amiga mouse.
+                _mouseX += e.Motion.Xrel / 2.0;
+                _mouseY += e.Motion.Yrel / 2.0;
+                var dx = (int)_mouseX;
+                var dy = (int)_mouseY;
+                _mouseX -= dx;
+                _mouseY -= dy;
+                mouse.MoveMouse(dx, dy);
+                break;
+            }
+            case EventType.Mousebuttondown or EventType.Mousebuttonup:
+                if (MouseButton(e.Button.Button) is { } button)
+                    mouse.SetButton(button, e.Type == (uint)EventType.Mousebuttondown);
+                break;
+            case EventType.Controllerdeviceadded:
+                sdl.GameControllerOpen(e.Cdevice.Which);
+                break;
+            case EventType.Controllerbuttondown or EventType.Controllerbuttonup:
+            {
+                var pressed = e.Type == (uint)EventType.Controllerbuttondown;
+                switch ((GameControllerButton)e.Cbutton.Button)
+                {
+                    case GameControllerButton.A: joystick.SetButton(ControllerButton.Left, pressed); break;
+                    case GameControllerButton.B: joystick.SetButton(ControllerButton.Right, pressed); break;
+                    case GameControllerButton.X: joystick.SetButton(ControllerButton.Middle, pressed); break;
+                    case GameControllerButton.DpadUp: joystick.SetDirection(JoystickDirection.Up, pressed); break;
+                    case GameControllerButton.DpadDown: joystick.SetDirection(JoystickDirection.Down, pressed); break;
+                    case GameControllerButton.DpadLeft: joystick.SetDirection(JoystickDirection.Left, pressed); break;
+                    case GameControllerButton.DpadRight: joystick.SetDirection(JoystickDirection.Right, pressed); break;
+                }
+
+                break;
+            }
+            case EventType.Controlleraxismotion:
+                switch ((GameControllerAxis)e.Caxis.Axis)
+                {
+                    case GameControllerAxis.Leftx:
+                        joystick.SetDirection(JoystickDirection.Left, e.Caxis.Value < -StickThreshold);
+                        joystick.SetDirection(JoystickDirection.Right, e.Caxis.Value > StickThreshold);
+                        break;
+                    case GameControllerAxis.Lefty:
+                        joystick.SetDirection(JoystickDirection.Up, e.Caxis.Value < -StickThreshold);
+                        joystick.SetDirection(JoystickDirection.Down, e.Caxis.Value > StickThreshold);
+                        break;
+                }
+
+                break;
+        }
+    }
+
+    private static ControllerButton? MouseButton(byte button) => button switch
+    {
+        1 => ControllerButton.Left,
+        2 => ControllerButton.Middle,
+        3 => ControllerButton.Right,
+        _ => null,
+    };
 }

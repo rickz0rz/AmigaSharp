@@ -500,7 +500,9 @@ try
                 core.KeyboardInput.PostRawKey(rawKey, up);
         }
 
-        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key).Run(() => finished);
+        var ports = core.Chipset.Custom.Ports;
+        new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key, ports[0], ports[1])
+            .Run(() => finished);
     }
 }
 finally

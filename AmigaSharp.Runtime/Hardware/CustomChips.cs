@@ -20,6 +20,8 @@ public static class CustomRegister
     public const int Intenar = 0x01C;
     public const int Intreqr = 0x01E;
     public const int Serdat = 0x030;
+    public const int Potgo = 0x034;
+    public const int Joytest = 0x036;
     public const int Serper = 0x032;
     public const int Cop1lc = 0x080;
     public const int Cop2lc = 0x084;
@@ -107,6 +109,10 @@ public sealed class CustomChips
 
     public SerialPort Serial { get; }
 
+    /// <summary>The controller ports: a mouse in port 1 and a joystick in port 2, as usual.</summary>
+    public ControllerPort[] Ports { get; } =
+        [new ControllerPort { Type = ControllerType.Mouse }, new ControllerPort { Type = ControllerType.Joystick }];
+
     /// <summary>The state of an audio channel for its interrupt: the start of the DMA and the interrupts already made.</summary>
     private struct AudioTimer
     {
@@ -169,11 +175,11 @@ public sealed class CustomChips
                 // Bit 15 is the long frame flag, bits 14 to 8 are the Agnus ID, and bit 0 is bit 8 of the line.
                 return (ushort)((LongFrame ? 0x8000 : 0) | (AgnusId << 8) | (_beam.Line >> 8));
             case CustomRegister.Vhposr: return (ushort)(((_beam.Line & 0xFF) << 8) | _beam.Horizontal);
-            case CustomRegister.Joy0dat or CustomRegister.Joy1dat: return 0;
+            case CustomRegister.Joy0dat: return Ports[0].Data;
+            case CustomRegister.Joy1dat: return Ports[1].Data;
             case CustomRegister.Adkconr: return Adkcon;
             case CustomRegister.Pot0dat or CustomRegister.Pot1dat: return 0;
-            // The pins are inputs and the right mouse buttons are not pressed.
-            case CustomRegister.Potgor: return 0xFF00;
+            case CustomRegister.Potgor: return PotInputs();
             case CustomRegister.Serdatr: return Serial.ReadData(Intreq);
             case CustomRegister.Dskbytr: return 0;
             case CustomRegister.Intenar: return Intena;
@@ -205,6 +211,10 @@ public sealed class CustomChips
             case CustomRegister.Intreq: Intreq = SetClear(Intreq, value); break;
             case CustomRegister.Adkcon: Adkcon = SetClear(Adkcon, value); break;
             case CustomRegister.Serper: Serial.Period = value; break;
+            case CustomRegister.Joytest:
+                Ports[0].Test(value);
+                Ports[1].Test(value);
+                break;
             case CustomRegister.Serdat:
                 Serial.WriteData(value);
                 SerialTransmit?.Invoke(value);
@@ -212,6 +222,34 @@ public sealed class CustomChips
                 break;
             case CustomRegister.Copjmp1: CopperJump?.Invoke(1); break;
             case CustomRegister.Copjmp2: CopperJump?.Invoke(2); break;
+        }
+    }
+
+    /// <summary>
+    /// POTINP: the levels of pins 5 and 9 of the two ports, in bits 8 (DATLX), 10 (DATLY), 12 (DATRX) and 14 (DATRY). A
+    /// pin that POTGO makes an output has the value that the program wrote, and an input pin has a pull-up. A pressed
+    /// button connects the pin to ground in both cases. The other bits read as 1.
+    /// </summary>
+    private ushort PotInputs()
+    {
+        var potgo = this[CustomRegister.Potgo];
+        var value = 0xFF00;
+        for (var port = 0; port < 2; port++)
+        {
+            Pin(8 + port * 4, Ports[port].IsPressed(ControllerButton.Middle));
+            Pin(10 + port * 4, Ports[port].IsPressed(ControllerButton.Right));
+        }
+
+        return (ushort)value;
+
+        void Pin(int dataBit, bool pressed)
+        {
+            // An output drives the pin weakly, so a pressed button pulls it low. This is how a program reads the right
+            // mouse button with POTGO $FF00.
+            var output = (potgo & (1 << (dataBit + 1))) != 0;
+            var high = (!output || (potgo & (1 << dataBit)) != 0) && !pressed;
+            if (!high)
+                value &= ~(1 << dataBit);
         }
     }
 

@@ -31,6 +31,15 @@ public sealed class Chipset : IHardware
         CiaA = new Cia(() => Beam.Frame, EClock, () => Custom.RequestInterrupt(InterruptBit.Ports));
         CiaB = new Cia(() => Beam.TotalLines, EClock, () => Custom.RequestInterrupt(InterruptBit.External));
         Keyboard = new Keyboard(CiaA, EClock);
+        // The left mouse button or fire button of each port is an input of CIA-A port A: bit 6 for port 1 and bit 7
+        // for port 2. A pressed button connects the pin to ground.
+        for (var port = 0; port < 2; port++)
+        {
+            var controller = Custom.Ports[port];
+            var bit = 1 << (6 + port);
+            controller.ButtonChanged += () =>
+                CiaA.InputA = (byte)(controller.IsPressed(ControllerButton.Left) ? CiaA.InputA & ~bit : CiaA.InputA | bit);
+        }
         Rtc = new RealTimeClockChip(() => Now());
         Display = new Display(memory, Custom, Beam);
         Custom.Blitter = new Blitter(memory, Custom);
