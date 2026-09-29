@@ -39,6 +39,11 @@ const string usage = """
       --serial-speed <n>        Receive the serial bytes n times faster than the baud rate of SERPER. The default is 1.
                                 ESQ has no flow control: a factor that is too large fills its receive buffer.
       --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
+      --ctrl-port <port>        A TCP port for the 110 baud control line on the CTS pin of the serial port. Prevue
+                                reads its control commands there. Each byte that a client sends goes on the line.
+      --ctrl-file <file>        Send the bytes of the file on the control line, in place of --ctrl-port. The bytes go
+                                one second after the program starts to sample the line (after it enables the AUD1
+                                interrupt).
       --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
                                 to the file. This option needs --listing.
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
@@ -100,7 +105,8 @@ if (args.Length > 0 && args[0] == "extract")
     return Extract(args[1..]);
 
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
-string? serialFile = null, serialLog = null, feedTrace = null, audioFile = null;
+string? serialFile = null, serialLog = null, feedTrace = null, audioFile = null, ctrlFile = null;
+var ctrlPort = 0;
 var serialStart = 0.0;
 var serialSpeed = 1.0;
 var volumes = new List<(string Name, string Path)>();
@@ -153,6 +159,8 @@ try
             case "--command-name": commandName = Next(); break;
             case "--serial-port": serialPort = int.Parse(Next()); break;
             case "--serial-file": serialFile = Next(); break;
+            case "--ctrl-port": ctrlPort = int.Parse(Next()); break;
+            case "--ctrl-file": ctrlFile = Next(); break;
             case "--serial-start": serialStart = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--serial-log": serialLog = Next(); break;
             case "--serial-speed": serialSpeed = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
@@ -289,6 +297,31 @@ if (serialFile != null)
 }
 
 core.Chipset.Custom.Serial.SpeedFactor = serialSpeed;
+
+// The control line on the CTS pin: a TCP bridge or a replay of a file.
+using var ctrlBridge = ctrlPort > 0 && ctrlFile == null ? new TcpSerialBridge(ctrlPort, log: log) : null;
+if (ctrlBridge != null)
+{
+    core.Chipset.ControlLine.Connection = ctrlBridge;
+    log.WriteLine($"Control line bridge on localhost:{ctrlBridge.Port}.");
+}
+
+if (ctrlFile != null)
+{
+    var ctrlData = File.ReadAllBytes(ctrlFile);
+    var custom = core.Chipset.Custom;
+    // The program starts to sample the line with the AUD1 interrupt, and it resets its state while it starts. So the
+    // replay starts one second after the program enables the interrupt.
+    TimeSpan? sampling = null;
+    core.Chipset.ControlLine.Connection = new ReplaySerialConnection(ctrlData, () =>
+    {
+        if ((custom.Intena & (1 << (InterruptBit.Audio0 + 1))) == 0)
+            return false;
+        sampling ??= clock.Elapsed;
+        return clock.Elapsed - sampling.Value >= TimeSpan.FromSeconds(1);
+    });
+    log.WriteLine($"Sending {ctrlData.Length} bytes from {ctrlFile} on the control line.");
+}
 
 using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
 using var loggingConnection = serialLogWriter == null

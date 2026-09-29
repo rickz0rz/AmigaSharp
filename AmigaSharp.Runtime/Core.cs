@@ -391,6 +391,8 @@ public sealed class Core
         Chipset.CiaB.Update();
         Chipset.Keyboard.Update();
         Chipset.Disks.Update();
+        Chipset.ControlLine.Update();
+        Chipset.ConsoleLine.Update();
         Devices.Update();
         Interrupts.Deliver();
         foreach (var handler in _pollHandlers)

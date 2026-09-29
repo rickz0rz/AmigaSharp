@@ -44,6 +44,9 @@ public sealed class Chipset : IHardware
         // The low-pass filter is on when the power LED is bright: CIA-A PRA bit 1 is 0.
         Audio = new AudioOutput(memory, Custom, () => (CiaA.OutputA & 0x02) == 0);
         Disks = new DiskController(memory, Custom, CiaA, CiaB, Beam);
+        // The handshake inputs of the serial port: CTS is CIA-B port A bit 4, and DSR is bit 3.
+        ControlLine = new BitBangedLine(CiaB, 0x10, () => Beam.Clock.Elapsed);
+        ConsoleLine = new BitBangedLine(CiaB, 0x08, () => Beam.Clock.Elapsed);
         Display = new Display(memory, Custom, Beam);
         Custom.Blitter = new Blitter(memory, Custom);
         Custom.FrameEnded += Display.RunFrame;
@@ -60,6 +63,15 @@ public sealed class Chipset : IHardware
 
     /// <summary>The date and the time of the Amiga, for the battery-backed clock. The core sets it.</summary>
     public Func<DateTime> Now { get; set; } = () => DateTime.Now;
+
+    /// <summary>
+    /// A 110 baud line on the CTS pin of the serial port. Prevue reads its control commands there, for example the
+    /// promotions of programs.
+    /// </summary>
+    public BitBangedLine ControlLine { get; }
+
+    /// <summary>A 110 baud line on the DSR pin of the serial port. Prevue reads its operator console there.</summary>
+    public BitBangedLine ConsoleLine { get; }
 
     /// <summary>The floppy drives and the disk DMA.</summary>
     public DiskController Disks { get; }
