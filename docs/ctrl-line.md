@@ -42,8 +42,8 @@ With `--stream <port>`, these requests go to the port of the stream:
 |---------|--------|
 | `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent (`sent`). |
 | `POST /prevue/ctrl/promo` | Shows a promo. The body is JSON, see below. |
-| `POST /prevue/ctrl/clear` | Removes the promo (type 1 with `3`). The genlock video shows in the top half. |
-| `POST /prevue/ctrl/default` | Shows the default brush in the top half (type 1 with `D`). |
+| `POST /prevue/ctrl/clear` | Removes the promo or the logo (type 1 with `3`). The genlock video shows in the top half. |
+| `POST /prevue/ctrl/logo` | Shows the current logo in the top half (type 1 with `D`). |
 | `POST /prevue/ctrl/packets` | Sends raw packets: `[{"type": 17, "body": "Seinfeld"}, {"type": 1, "body": "1*"}]`. In JSON, `\u0012` is the byte 0x12. |
 
 The body of `/prevue/ctrl/promo` has a box on the right, a box on the left, or the two boxes:
@@ -146,11 +146,11 @@ The first character of the body is the sub-command.
 |------|--------|
 | `1<channels>` | Show a promo on the right. `<channels>` is a pattern for the call letters, for example `*` or `KTIV*`. |
 | `1<channels>\x12<channels>` | Show a promo on the right or on the left. Put one or more characters before 0x12. |
-| `3` | Remove the promo. The top half shows the genlock video. |
-| `D` | Show the default brush in the top half, for example the TV Guide sportsview advertisement. |
+| `3` | Remove the promo or the logo. The top half shows the genlock video. |
+| `D` | Show the current logo in the top half. See [Logos](#logos). |
 
-Prevue shows only one promo at a time. It tries the right box first. If it finds no program, it shows the default
-brush. The time line is "Tonight at 8:00 PM" or "Today at 4:00 PM". A program that plays now has no time line.
+Prevue shows only one promo at a time. It tries the right box first. If it finds no program, it shows the current
+logo. The time line is "Tonight at 8:00 PM" or "Today at 4:00 PM". A program that plays now has no time line.
 
 These sub-commands exist in the code. Their effect on the screen is not known yet:
 
@@ -173,6 +173,37 @@ current brush, and `11` selects no brush.
 
 `L` makes Prevue try the right box first. This is the default. `R` makes Prevue try the left box first. Other
 characters change the order.
+
+## Logos
+
+The top half of the screen has two kinds of graphics:
+
+- A **promo** is the box of a program that the control line asks for. It has the call letters, the title, the time
+  and the channel. It covers one half of the top of the screen.
+- A **logo** is a picture that covers all the top of the screen. ESQ shows the logos without a command. For example,
+  the drive has "TV Guide sportsview", "Entertainment News", "Insider", "Movie Profile" and "Weather". They advertise
+  the shows of the TV Guide Channel. They hide the genlock video.
+
+ESQ reads the list of the logos from `LOGO.LST` on its drive. Each line is a file in `Logos/`. A line that ends with
+a comma always shows. A line without a comma shows only if its name matches the call letters of a channel.
+
+In tests with the saved listings, the first logo shows about 3 minutes after the start. Then ESQ changes the logo
+about each 3 minutes. The logo stays until the next logo. Type 1 with `3` removes the logo at once, but the next logo
+shows about 3 minutes after the command.
+
+To keep the genlock video in the top half:
+
+- Remove the lines of `LOGO.LST` in the copy of the drive. An empty `LOGO.LST` stops the logos. The promos still
+  work.
+- Or send `POST /prevue/ctrl/clear` more often than each 3 minutes. In a test with a clear each 30 seconds, no logo
+  showed in 8 minutes.
+
+Other graphics that are not logos:
+
+- A **brush** is any IFF picture of ESQ: a logo, the background of a promo (`BRUSH.INI`), or the banner.
+- The **banner** is the small "TV Guide Channel" picture between the rows of the grid (`Banner/TVGBANNR.UV`).
+- **Graphic ads** come from the file `GFX:G_ADS`. The diagnostic "graph" mode of the operator menu controls them.
+  The drive does not have this file, so no graphic ads show.
 
 ## Other types
 

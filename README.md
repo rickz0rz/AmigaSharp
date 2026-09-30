@@ -406,8 +406,8 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 |---------|--------|
 | `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
 | `POST /prevue/ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`. |
-| `POST /prevue/ctrl/clear` | Removes the promo. The genlock video shows in the top half. |
-| `POST /prevue/ctrl/default` | Shows the default brush in the top half. |
+| `POST /prevue/ctrl/clear` | Removes the promo or the logo. The genlock video shows in the top half. |
+| `POST /prevue/ctrl/logo` | Shows the current logo in the top half. |
 | `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
 
 For example, show a promo for Seinfeld from the saved listings, and then remove it:
@@ -417,7 +417,9 @@ curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "
 curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 ```
 
-- Prevue finds the next time of the program in its listings. If it finds no program, it shows the default brush.
+- Prevue finds the next time of the program in its listings. If it finds no program, it shows the current logo.
+- The logos (for example "TV Guide sportsview") come from `LOGO.LST` on the drive. They cover all the top half, and
+  ESQ changes them about each 3 minutes. An empty `LOGO.LST` stops them. See [Logos](docs/ctrl-line.md#logos).
 - A promo can have a box on the right and a box on the left:
   `{"right": {"title": "Bob's Burgers"}, "left": {"title": "Seinfeld", "brush": "DT"}, "first": "left"}`. Prevue
   shows one box. It tries the box of `first` before the other box.

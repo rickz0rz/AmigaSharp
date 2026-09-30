@@ -572,8 +572,10 @@ public sealed class VideoStream : IDisposable
     /// POST /prevue/ctrl/promo: shows a promo, as JSON: {"title": "Seinfeld", "channels": "*", "brush": "AT"}, or
     /// {"right": {...}, "left": {...}, "first": "right"} (see <see cref="ControlLineFeed.Promo"/>).
     /// </item>
-    /// <item>POST /prevue/ctrl/clear: removes the promo, so that the genlock video shows in the top half.</item>
-    /// <item>POST /prevue/ctrl/default: shows the default brush in the top half.</item>
+    /// <item>
+    /// POST /prevue/ctrl/clear: removes the promo or the logo, so that the genlock video shows in the top half.
+    /// </item>
+    /// <item>POST /prevue/ctrl/logo: shows the current logo in the top half.</item>
     /// <item>POST /prevue/ctrl/packets: sends raw packets, as JSON: [{"type": 1, "body": "3"}].</item>
     /// </list>
     /// The line sends 11 bytes each second, so a promo takes about 2 seconds. Each answer is the answer of
@@ -597,7 +599,7 @@ public sealed class VideoStream : IDisposable
                 case ("POST", "prevue/ctrl/clear"):
                     line.Add([ControlLineFeed.Packet(1, "3")]);
                     break;
-                case ("POST", "prevue/ctrl/default"):
+                case ("POST", "prevue/ctrl/logo"):
                     line.Add([ControlLineFeed.Packet(1, "D")]);
                     break;
                 case ("POST", "prevue/ctrl/packets"):
@@ -608,7 +610,7 @@ public sealed class VideoStream : IDisposable
                 }
                 default:
                     SendError(response, 404, "Use GET /prevue/ctrl, POST /prevue/ctrl/promo, " +
-                                             "POST /prevue/ctrl/clear, POST /prevue/ctrl/default or " +
+                                             "POST /prevue/ctrl/clear, POST /prevue/ctrl/logo or " +
                                              "POST /prevue/ctrl/packets.");
                     return;
             }
