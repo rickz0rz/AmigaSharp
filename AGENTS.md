@@ -60,8 +60,8 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 - Schedules (`--schedule`, `AmigaSharp.Host/Schedule.cs`) drive the genlock queue; extensions add segment keys
   through `IScheduleExtension` (Prevue adds "top" in `PrevueSchedule`). A segment starts when its genlock item
   becomes current; the runner queues the next segment's item at that moment so the 5 s preload works.
-- Channel logos: `AmigaSharp.PrevueListings/Logos/` (PNG reader, ILBM writer, 640x240 16-color high-res composer that
-  never uses color 0, `LOGO.LST` writer). High-res matters: ESQ draws a logo and its channel text in the picture's
+- Channel logos: `AmigaSharp.PrevueListings/Logos/` (PNG reader, ILBM writer, 640x240 16-color high-res composer, navy
+  background as color 0 (the key, like the drive's logos) and never color 0 on the card, `LOGO.LST` writer). High-res matters: ESQ draws a logo and its channel text in the picture's
   display mode, and in low-res the text comes out twice as wide as on real hardware. The logo file name must equal ESQ's source name of the channel
   (`PrevueFeed.SourceNames`), not the displayed call letters.
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code

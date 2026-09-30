@@ -8,9 +8,16 @@ namespace AmigaSharp.PrevueListings.Logos;
 /// <remarks>
 /// <list type="bullet">
 /// <item>
-/// Color 0 is the genlock key: the video of the genlock shows where the picture has color 0. So no pixel has color 0.
+/// Color 0 is the navy background, as the background of the logos of the drive is their color 0. Color 0 is the
+/// genlock key, and ESQ shows the logo in a display window of 320 low-resolution pixels. So the navy of the logo and
+/// the border around it are the same: the video of the genlock shows there, or the navy without a genlock video. A
+/// Prevue machine without a genlock video showed the navy across the full width in the same way. The card and the
+/// station image do not use color 0, so that the video does not show through them.
 /// </item>
-/// <item>ESQ writes its text in the brightest color, so color 1 is white.</item>
+/// <item>
+/// ESQ writes its text in the brightest color, so color 1 is white. ESQ writes a shadow under the text in color 2, so
+/// color 2 is also navy: the text then has no shadow, as on a Prevue machine.
+/// </item>
 /// <item>
 /// ESQ shows a logo, and writes its text, in the display mode of the picture. A low-resolution channel logo with 32
 /// colors also works, but its text is two times as wide, in a font that is not pleasant to read. The channel logos of
@@ -28,7 +35,6 @@ public static class ChannelLogo
     public const int Width = 640, Height = 240, Planes = 4, Colors = 1 << Planes;
 
     private const double PixelAspect = 22.0 / 26.0;
-    private static readonly AmigaColor Black = new(0, 0, 0);
     private static readonly AmigaColor White = new(15, 15, 15);
     private static readonly AmigaColor Navy = new(0, 0, 4);
     private static readonly AmigaColor Card = new(14, 14, 14);
@@ -75,7 +81,7 @@ public static class ChannelLogo
             }
         }
 
-        var palette = new List<AmigaColor> { Black, White, Navy, Card };
+        var palette = new List<AmigaColor> { Navy, White, Navy, Card };
         foreach (var color in MedianCut(card, Colors - palette.Count))
         {
             if (!palette.Contains(color))
@@ -83,10 +89,10 @@ public static class ChannelLogo
         }
 
         while (palette.Count < Colors)
-            palette.Add(Black);
+            palette.Add(Navy);
 
+        // The navy background is color 0.
         var pixels = new byte[Width * Height];
-        Array.Fill(pixels, (byte)palette.IndexOf(Navy));
         Dither(card, cardWidth, cardHeight, palette);
         for (var y = 0; y < cardHeight; y++)
         {
@@ -172,8 +178,8 @@ public static class ChannelLogo
     }
 
     /// <summary>
-    /// Changes each pixel to the nearest color of the palette (not color 0), with Floyd-Steinberg dithering. The first
-    /// part of each pixel gets the palette index.
+    /// Changes each pixel to the nearest color of the palette (not color 0, the genlock key), with Floyd-Steinberg
+    /// dithering. The first part of each pixel gets the palette index.
     /// </summary>
     private static void Dither(int[] rgb, int width, int height, List<AmigaColor> palette)
     {

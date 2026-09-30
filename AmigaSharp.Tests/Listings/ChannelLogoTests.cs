@@ -33,22 +33,30 @@ public sealed class ChannelLogoTests : IDisposable
     }
 
     [Fact]
-    public void Logo_DoesNotUseTheGenlockColor_AndLeavesTheRightSideForTheText()
+    public void Logo_HasANavyBackgroundInColor0_AndLeavesTheRightSideForTheText()
     {
         var station = new RgbaImage(4, 3, Enumerable.Repeat<byte[]>([200, 30, 30, 255], 12).SelectMany(p => p).ToArray());
 
         var (palette, pixels) = ChannelLogo.Render(station);
 
         Assert.Equal(ChannelLogo.Colors, palette.Count);
-        Assert.DoesNotContain((byte)0, pixels);
-        // Color 1 is white, the brightest color, for the text of ESQ.
+        // Color 0 (the genlock key) is navy, as the border around the logo, and color 1 is white for the text of ESQ.
+        Assert.Equal(new AmigaColor(0, 0, 4), palette[0]);
         Assert.Equal(new AmigaColor(15, 15, 15), palette[1]);
-        // The right side is only navy (color 2), and the red of the station is on the card.
-        var navy = (byte)2;
+        // ESQ writes the shadow of its text in color 2, so it is navy too.
+        Assert.Equal(palette[0], palette[2]);
+        // The right side is only the background.
         for (var y = 0; y < ChannelLogo.Height; y++)
         {
             for (var x = 300; x < ChannelLogo.Width; x++)
-                Assert.Equal(navy, pixels[y * ChannelLogo.Width + x]);
+                Assert.Equal(0, pixels[y * ChannelLogo.Width + x]);
+        }
+
+        // The card does not use color 0, so the genlock video does not show through it. The red of the station is on it.
+        for (var y = 30; y < 210; y++)
+        {
+            for (var x = 24; x < 260; x++)
+                Assert.NotEqual(0, pixels[y * ChannelLogo.Width + x]);
         }
 
         Assert.Contains(pixels, index => palette[index] is { R: >= 10, G: <= 4 });

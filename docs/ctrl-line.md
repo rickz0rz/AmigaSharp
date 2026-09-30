@@ -215,7 +215,7 @@ The listings tool makes channel logos from PNG images:
   Channels DVR with the same names. Without Channels DVR, the command `AmigaSharp.PrevueListings logos --input <dir>
   --output <drive>` makes them.
 
-![Channel logos with the call letters and the channel number of ESQ](prevue-channel-logos.png)
+![A channel logo with the call letters and the channel number of ESQ](prevue-channel-logos.png)
 
 Each logo is an IFF picture of 640 by 240 high-resolution pixels with 16 colors. The station image is on a light card
 at the left, on the navy of Prevue. The right part is empty for the text of ESQ. ESQ shows a logo, and writes its
@@ -224,8 +224,16 @@ text, in the display mode of the picture:
 - A low-resolution channel logo (320 by 240 pixels, 32 colors, as the logos of the drive) also works. But ESQ writes
   its text two times as wide, in a font that is not pleasant to read.
 - The channel logos that Prevue machines showed in the field had high resolution and fewer colors. Their text has the
-  width of the text of the grid. So the tool makes high-resolution channel logos. The picture does not use color 0, because the genlock video shows through color 0. The tool writes the logos
-to `Logos/Channels` in the drive, and their lines to `LOGO.LST` after the other lines. Each run replaces them.
+  width of the text of the grid. So the tool makes high-resolution channel logos.
+
+The navy background is color 0, as the background of the logos of the drive is their color 0. Color 0 is the genlock
+key. ESQ shows a logo in a display window of 320 low-resolution pixels, and the border around it is also the genlock
+key. Thus the video of the genlock shows in the background and in the border. Without a genlock video, the navy shows
+across the full width, as on a Prevue machine without a genlock video. The card and the station image do not use
+color 0, so the video does not show through them.
+
+The tool writes the logos to `Logos/Channels` in the drive, and their lines to `LOGO.LST` after the other lines. Each
+run replaces them.
 
 The name of each logo is the source name of its channel. A source name has a maximum of 6 letters and digits, in
 upper case. For Channels DVR, the tool uses the source names of its listings. Thus two channels with the same call
