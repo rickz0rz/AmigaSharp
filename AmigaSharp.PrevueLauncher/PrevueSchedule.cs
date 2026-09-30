@@ -22,8 +22,8 @@ namespace AmigaSharp.PrevueLauncher;
 /// logo is ready. When the schedule starts, and when a named logo is not ready, the launcher changes the loaded logo of
 /// ESQ (see <see cref="PrevueState.LoadLogo"/>). No other logo shows.
 /// </remarks>
-public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? state, TextWriter log)
-    : IScheduleExtension
+public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? state, TextWriter log,
+    AutoPromo? auto = null) : IScheduleExtension
 {
     private static readonly TimeSpan HoldTime = TimeSpan.FromSeconds(60);
 
@@ -62,7 +62,10 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
 
     private enum CueKind { Promo, Logo, Clear }
 
-    private sealed record Cue(CueKind Kind, double? Seconds, List<byte[]>? Promo = null, string? Logo = null);
+    /// <param name="Promo">The packets of a promo with a title.</param>
+    /// <param name="Auto">The request of a promo with "auto": the launcher chooses the program when the cue starts.</param>
+    private sealed record Cue(
+        CueKind Kind, double? Seconds, List<byte[]>? Promo = null, string? Logo = null, JsonElement? Auto = null);
 
     /// <summary>The top half of a segment: the rotation of ESQ, or cues (a clear top half is one clear cue).</summary>
     private sealed record Top(bool Rotation, List<Cue> Cues);
@@ -102,10 +105,19 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
 
             if (element.TryGetProperty("promo", out var promo))
             {
-                // A title is the short form of {"title": "..."}.
-                var packets = ControlLineFeed.Promo(
-                    promo.ValueKind == JsonValueKind.String ? TitleRequest(promo.GetString()!) : promo);
-                cues.Add(new Cue(CueKind.Promo, seconds, Promo: packets));
+                if (promo.ValueKind == JsonValueKind.Object && promo.TryGetProperty("auto", out var criteria))
+                {
+                    AutoCriteria.Read(criteria);
+                    AutoPromo.Options(promo);
+                    cues.Add(new Cue(CueKind.Promo, seconds, Auto: promo.Clone()));
+                }
+                else
+                {
+                    // A title is the short form of {"title": "..."}.
+                    var packets = ControlLineFeed.Promo(
+                        promo.ValueKind == JsonValueKind.String ? TitleRequest(promo.GetString()!) : promo);
+                    cues.Add(new Cue(CueKind.Promo, seconds, Promo: packets));
+                }
             }
             else if (element.TryGetProperty("logo", out var logo))
             {
@@ -201,12 +213,49 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
         }
     }
 
+    /// <summary>
+    /// Sends a promo cue. For "auto", it chooses the program now. Returns false if no program fits: then the top half is
+    /// clear, and the cue can try again.
+    /// </summary>
+    private bool SendPromo(Cue cue, bool first)
+    {
+        if (cue.Auto is not { } request)
+        {
+            Send("promo", cue.Promo!);
+            return true;
+        }
+
+        try
+        {
+            if (auto == null)
+                throw new FormatException("\"auto\" needs the listings of ESQ, and the launcher does not know this ESQ.");
+            Send("promo", auto.Packets(request, out var program));
+            log.WriteLine($"Schedule: promo of {program.Title} on {program.CallLetters} ({program.Number}).");
+            return true;
+        }
+        catch (FormatException e)
+        {
+            // ESQ has no listings for some seconds after it starts, so the cue tries again.
+            if (first)
+            {
+                log.WriteLine($"Schedule: {e.Message} The cue tries again.");
+                Send("clear", [ControlLineFeed.Packet(1, "3")]);
+            }
+
+            return false;
+        }
+    }
+
     /// <summary>The cues of the top half of one segment.</summary>
     private sealed class TopCue(PrevueSchedule schedule, Top top) : IScheduleCue
     {
+        private static readonly TimeSpan RetryTime = TimeSpan.FromSeconds(2);
+
         private int _next;
         private double _nextStart;
         private bool _hold;
+        private Cue? _retry;
+        private TimeSpan _lastTry;
 
         public void Tick(TimeSpan elapsed)
         {
@@ -221,7 +270,8 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
                     switch (cue.Kind)
                     {
                         case CueKind.Promo:
-                            schedule.Send("promo", cue.Promo!);
+                            _retry = schedule.SendPromo(cue, first: true) ? null : cue;
+                            _lastTry = elapsed;
                             break;
                         case CueKind.Logo:
                             schedule.ShowLogo(cue.Logo);
@@ -231,6 +281,8 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
                             break;
                     }
 
+                    if (cue.Kind != CueKind.Promo)
+                        _retry = null;
                     _hold = cue.Kind == CueKind.Clear;
                     if (cue.Seconds is { } seconds)
                     {
@@ -240,6 +292,14 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
                     {
                         _nextStart = double.MaxValue;
                     }
+                }
+
+                // An automatic promo that found no program tries again while its time lasts.
+                if (_retry != null && elapsed.TotalSeconds < _nextStart && elapsed - _lastTry >= RetryTime)
+                {
+                    _lastTry = elapsed;
+                    if (schedule.SendPromo(_retry, first: false))
+                        _retry = null;
                 }
 
                 // After the last cue with a time, the top half is clear.

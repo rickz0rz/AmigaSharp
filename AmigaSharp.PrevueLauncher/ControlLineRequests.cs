@@ -13,6 +13,12 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
     /// <summary>The last request that sent commands, for example "promo". Null before the first one.</summary>
     public string? LastRequest { get; private set; }
 
+    /// <summary>
+    /// Chooses the programs of promos with "auto" (see <see cref="AutoPromo"/>). Null when the launcher does not know
+    /// the variables of ESQ.
+    /// </summary>
+    public AutoPromo? Auto { get; set; }
+
     /// <summary>The time of the last request that sent commands.</summary>
     public DateTime LastSent { get; private set; } = DateTime.MinValue;
 
@@ -37,6 +43,10 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
     /// <item>
     /// POST /prevue/ctrl/clear: removes the promo or the logo, so that the genlock video shows in the top half.
     /// </item>
+    /// <item>
+    /// POST /prevue/ctrl/promo with "auto": chooses a program from the listings, for example {"auto": {"movies": true}}
+    /// (see <see cref="AutoPromo"/>). The answer has the program in "picked".
+    /// </item>
     /// <item>POST /prevue/ctrl/logo: shows the current logo in the top half.</item>
     /// <item>POST /prevue/ctrl/packets: sends raw packets, as JSON: [{"type": 1, "body": "3"}].</item>
     /// </list>
@@ -46,6 +56,7 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
     public void Answer(HttpListenerContext context, string name)
     {
         var response = context.Response;
+        GuideProgram? picked = null;
         try
         {
             switch (context.Request.HttpMethod, name.TrimEnd('/'))
@@ -55,7 +66,19 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
                 case ("POST", "prevue/ctrl/promo"):
                 {
                     using var document = ReadJson(context);
-                    SendRequest("promo", ControlLineFeed.Promo(document.RootElement));
+                    var request = document.RootElement;
+                    if (request.ValueKind == JsonValueKind.Object && request.TryGetProperty("auto", out _))
+                    {
+                        if (Auto == null)
+                            throw new FormatException("\"auto\" needs the listings of ESQ, and the launcher does not know this ESQ.");
+                        SendRequest("promo", Auto.Packets(request, out var program));
+                        picked = program;
+                    }
+                    else
+                    {
+                        SendRequest("promo", ControlLineFeed.Promo(request));
+                    }
+
                     break;
                 }
                 case ("POST", "prevue/ctrl/clear"):
@@ -85,6 +108,12 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
                 json.WriteNumber("queued", queued);
                 json.WriteNumber("seconds", Math.Round(queued / ControlLineFeed.BytesPerSecond, 1));
                 json.WriteNumber("sent", line.Sent);
+                if (picked != null)
+                {
+                    json.WritePropertyName("picked");
+                    PrevueGuideRequests.WriteProgram(json, picked, Auto!.CurrentSlot);
+                }
+
                 json.WriteEndObject();
             }
 

@@ -117,6 +117,38 @@ curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "
 - If Prevue finds no program, it shows the next logo in place of the promo.
 - A promo covers one half of the top of the screen. The genlock video shows in the other half.
 
+### Automatic promos
+
+An automatic promo chooses a program from the listings of Prevue, so the promos stay current without titles in the
+schedule:
+
+```sh
+curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"auto": {"movies": true, "within": 3}, "brush": "AT"}'
+```
+
+The answer has the program in `picked`. `auto` is `true` for all programs, or an object with these values. Each value
+is optional:
+
+| Value | Meaning |
+|-------|---------|
+| `movies` | `true` for movies only, `false` for no movies. |
+| `premium` | `true` for premium channels only, `false` for no premium channels. |
+| `channels` | Call letters (with `*` for any text) or channel numbers, for example `["KTIV*", "4"]`. |
+| `titles` | Parts of titles, for example `["Seinfeld", "News"]`. Upper case and lower case are the same. |
+| `within` | The hours from now for the start of the program. The default is 3. |
+| `now` | `true` to also choose a program that plays now. |
+| `order` | `soonest` (the default) chooses the next program. `random` chooses by chance. |
+| `repeat` | The number of the last automatic promos whose titles do not show again. The default is 10. |
+
+- `brush` sets the background, as for a promo with a title. `side` is `right` (the default) or `left`.
+- The launcher reads the listings from the memory of Prevue. Thus Prevue always finds the program that it chooses.
+- A movie is a movie in the listings of Channels DVR. The saved listings of the drive have no movies.
+- If no program fits, the answer is an error, and nothing shows.
+
+`GET /prevue/guide` gives the programs that an automatic promo can choose from: the channel, the call letters, the
+title, `movie`, `premium`, and `minutes`, the time from the start of the current half hour to the start of the
+program. `?hours=5` sets the hours from now (the default is 3), and `?now=true` adds the programs that play now.
+
 ### Show a logo
 
 Show a specific logo of `LOGO.LST`:
@@ -196,7 +228,10 @@ values:
 - `"logos"`: the logo rotation of ESQ. The schedule sends no commands.
 - A list of cues, in order. Each cue has `seconds`, except the last cue:
   - `{"promo": "Seinfeld", "seconds": 30}`: a promo. The value is a title, or an object as for
-    `POST /prevue/ctrl/promo`, for example `{"left": {"title": "Seinfeld"}}`.
+    `POST /prevue/ctrl/promo`, for example `{"left": {"title": "Seinfeld"}}` or
+    `{"auto": {"movies": true}, "brush": "AT"}`. An automatic promo chooses its program when the cue starts (see
+    [Automatic promos](#automatic-promos)). If no program fits, the top half is clear, and the cue tries again each
+    2 seconds while its time lasts.
   - `{"logo": "Insider", "seconds": 30}`: a logo of `LOGO.LST`, by its name. `null` shows the loaded logo.
   - `{"clear": true}`: the genlock video in the top half.
 

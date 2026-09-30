@@ -427,10 +427,11 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 | Request | Result |
 |---------|--------|
 | `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
-| `POST /prevue/ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`. |
+| `POST /prevue/ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`, or a program that the launcher chooses: `{"auto": {"movies": true}}`. |
 | `POST /prevue/ctrl/clear` | Removes the promo or the logo. The genlock video shows in the top half. |
 | `POST /prevue/ctrl/logo` | Shows the current logo in the top half. |
 | `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
+| `GET /prevue/guide` | Gives the programs of the listings of Prevue from now, for automatic promos. |
 | `GET /prevue/state` | Gives what the top half shows, if Prevue read the commands, and the logos. |
 | `GET /prevue/logos` | Gives the logos of `LOGO.LST`, the loaded logo, and the next line. |
 | `POST /prevue/logos/show` | Shows a logo of `LOGO.LST` in about 5 seconds, and no other logo: `{"name": "Insider"}`. |

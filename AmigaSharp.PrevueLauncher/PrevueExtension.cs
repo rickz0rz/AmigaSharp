@@ -98,8 +98,14 @@ public sealed class PrevueExtension : ILauncherExtension
         var state = new PrevueState(context.Core, line.Feed, requests, esq, context.Log);
         context.StreamRequests.Add(state);
         if (esq != null)
+        {
             context.StreamRequests.Add(new LogoRequests(context.Core, state, esq));
-        context.ScheduleExtensions.Add(new PrevueSchedule(requests, esq != null ? state : null, context.Log));
+            requests.Auto = new AutoPromo(context.Core.Memory, esq);
+            context.StreamRequests.Add(new PrevueGuideRequests(context.Core.Memory, esq));
+        }
+
+        context.ScheduleExtensions.Add(new PrevueSchedule(requests, esq != null ? state : null, context.Log,
+            requests.Auto));
 
         if (_feedTrace != null)
         {

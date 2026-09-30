@@ -25,6 +25,10 @@ public sealed class EsqVariables
     public const string LoadedLogoCount = "_ESQIFF_LogoBrushListCount";
     public const string BytesAllocated = "_Global_MEM_BYTES_ALLOCATED";
     public const string FreeCount = "_Global_MEM_DEALLOC_COUNT";
+    public const string ChannelCount = "_TEXTDISP_PrimaryGroupEntryCount";
+    public const string ChannelRecords = "_TEXTDISP_PrimaryEntryPtrTable";
+    public const string ChannelSlots = "_TEXTDISP_PrimaryTitlePtrTable";
+    public const string CurrentSlot = "_CLOCK_HalfHourSlotIndex";
 
     /// <summary>
     /// The section (hunk) and the offset of each variable in the known build of ESQ. A test compares the table with the
@@ -45,6 +49,10 @@ public sealed class EsqVariables
             [LoadedLogoCount] = (1, 0x001B8),
             [BytesAllocated] = (1, 0x07B64),
             [FreeCount] = (1, 0x07B6C),
+            [ChannelCount] = (1, 0x087BC),
+            [ChannelRecords] = (1, 0x087C0),
+            [ChannelSlots] = (1, 0x09130),
+            [CurrentSlot] = (1, 0x0A308),
         };
 
     private readonly Dictionary<string, uint> _addresses;
