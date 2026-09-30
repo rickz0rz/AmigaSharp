@@ -164,6 +164,9 @@ public static class Launcher
 
         var log = Console.Error;
 
+        // A launcher that crashed or was killed could not remove its temporary folders.
+        TempFolders.RemoveOld(log);
+
         // A program on a disk image: extract the disk, and run the program from the copy.
         string? diskCopy = null;
         byte[]? diskImage = null;
@@ -182,7 +185,7 @@ public static class Launcher
                 return 1;
             }
 
-            diskCopy = Directory.CreateTempSubdirectory("AmigaSharp-Disk-").FullName;
+            diskCopy = TempFolders.Create("AmigaSharp-Disk-");
             disk.ExtractTo(diskCopy);
             log.WriteLine($"The disk {disk.VolumeName} is in {diskCopy}.");
             executablePath = Path.Combine([diskCopy, .. executablePath[(adfSeparator + 5)..].Split('/')]);
@@ -214,7 +217,7 @@ public static class Launcher
             core.FileSystem.AddAssign(name, path);
 
         // RAM: is a new directory for each run. T: is RAM:T, as in the Startup-Sequence of Workbench.
-        var ram = Directory.CreateTempSubdirectory("AmigaSharp-RAM-").FullName;
+        var ram = TempFolders.Create("AmigaSharp-RAM-");
         Directory.CreateDirectory(Path.Combine(ram, "T"));
         core.FileSystem.AddVolume("RAM", ram);
         if (assigns.All(assign => !assign.Name.Equals("T", StringComparison.OrdinalIgnoreCase)))
@@ -518,9 +521,9 @@ public static class Launcher
         }
         finally
         {
-            Directory.Delete(ram, recursive: true);
+            TempFolders.Delete(ram);
             if (diskCopy != null)
-                Directory.Delete(diskCopy, recursive: true);
+                TempFolders.Delete(diskCopy);
         }
 
         if (stats && core.InterpreterEntries.Count > 0)

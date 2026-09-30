@@ -32,6 +32,8 @@
 #                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
+#   --restart                Start Prevue again when it stops, for a channel that runs without a person. It needs
+#                            --headless. Ctrl-C stops it.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
 #
 # Environment variables:
@@ -44,7 +46,7 @@ LAUNCHER=$HERE/AmigaSharp.PrevueLauncher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -53,7 +55,7 @@ fail() {
 }
 
 DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" GENLOCK_PLAYLIST="" SCHEDULE="" CTRL_PORT="" NAME="Prevue Guide"
-HEADLESS="" RESET="" GENLOCK_CONTROL=""
+HEADLESS="" RESTART="" RESET="" GENLOCK_CONTROL=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --drive) [ $# -ge 2 ] || fail "$1 needs a value."; DRIVE=$2; shift 2 ;;
@@ -71,6 +73,7 @@ while [ $# -gt 0 ]; do
         --prevue-ctrl-port) [ $# -ge 2 ] || fail "$1 needs a value."; CTRL_PORT=$2; shift 2 ;;
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
+        --restart) RESTART=1; shift ;;
         --genlock-control) GENLOCK_CONTROL=1; shift ;;
         --reset) RESET=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -80,6 +83,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$DRIVE" ] || { usage >&2; fail "--drive is necessary."; }
+[ -z "$RESTART" ] || [ -n "$HEADLESS" ] || fail "--restart needs --headless."
 [ -d "$DRIVE" ] || fail "the drive $DRIVE does not exist."
 [ -x "$LAUNCHER" ] || fail "$LAUNCHER is missing. Keep the files of this directory together."
 if [ -n "$STREAM" ] && ! command -v ffmpeg >/dev/null 2>&1; then
@@ -126,7 +130,27 @@ if [ -n "$STREAM" ]; then
     [ -n "$SCHEDULE" ] && set -- "$@" --schedule "$SCHEDULE"
 fi
 
-if [ -n "$CHANNELS_DVR" ]; then
+# ESQ parses the feed faster than 4 times 2400 baud, so a large update arrives sooner.
+[ -n "$CHANNELS_DVR" ] && set -- "$@" --serial-speed 4
+
+TOOL="" LAUNCHER_PID="" STOPPED=""
+stop_tool() {
+    if [ -n "$TOOL" ]; then
+        kill "$TOOL" 2>/dev/null || true
+        TOOL=""
+    fi
+}
+# Ctrl-C and SIGTERM stop the launcher as a normal stop, and then the script.
+stop() {
+    STOPPED=1
+    if [ -n "$LAUNCHER_PID" ]; then
+        kill -TERM "$LAUNCHER_PID" 2>/dev/null || true
+    fi
+}
+trap stop INT TERM
+trap stop_tool EXIT
+
+start_listings() {
     # The listings tool writes the listing files, makes the ready file, and then sends the changes of the guide to the
     # serial port of the launcher (TCP port 5400).
     READY=$PREVUE_DATA/listings-ready
@@ -134,13 +158,39 @@ if [ -n "$CHANNELS_DVR" ]; then
     "$LISTINGS" --server "$CHANNELS_DVR" --output "$WORK" --ready "$READY" --serve localhost:5400 \
         --interval "$INTERVAL" ${PREMIUM:+--premium "$PREMIUM"} ${DATE:+--clock "$DATE"} &
     TOOL=$!
-    trap 'kill $TOOL 2>/dev/null' EXIT INT TERM
     while [ ! -f "$READY" ]; do
         kill -0 "$TOOL" 2>/dev/null || fail "the listings tool stopped. Is $CHANNELS_DVR correct?"
+        [ -z "$STOPPED" ] || exit 0
         sleep 1
     done
-    # ESQ parses the feed faster than 4 times 2400 baud, so a large update arrives sooner.
-    set -- "$@" --serial-speed 4
-fi
+}
 
-"$LAUNCHER" "$@"
+# With --restart, the script starts Prevue again after it stops. The listings tool starts again too, so that ESQ reads
+# listing files of now. The wait before a start doubles, to a maximum of a minute, while Prevue stops soon after it
+# starts.
+DELAY=5
+while :; do
+    [ -n "$CHANNELS_DVR" ] && start_listings
+    STARTED=$(date +%s)
+    "$LAUNCHER" "$@" &
+    LAUNCHER_PID=$!
+    CODE=0
+    wait "$LAUNCHER_PID" || CODE=$?
+    # A signal ends the wait before the launcher stops.
+    while kill -0 "$LAUNCHER_PID" 2>/dev/null; do
+        CODE=0
+        wait "$LAUNCHER_PID" || CODE=$?
+    done
+    LAUNCHER_PID=""
+    stop_tool
+    # Exit code 2 is an error in the options: a new start does not help.
+    if [ -z "$RESTART" ] || [ -n "$STOPPED" ] || [ "$CODE" -eq 2 ]; then
+        exit "$CODE"
+    fi
+    [ $(( $(date +%s) - STARTED )) -lt 300 ] || DELAY=5
+    echo "Prevue stopped (exit code $CODE). It starts again in $DELAY seconds." >&2
+    sleep "$DELAY" &
+    wait $! || true
+    [ -z "$STOPPED" ] || exit "$CODE"
+    DELAY=$(( DELAY * 2 > 60 ? 60 : DELAY * 2 ))
+done

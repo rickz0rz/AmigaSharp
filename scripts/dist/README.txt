@@ -76,6 +76,12 @@ A schedule file plays the videos, the music, the promos and the logos by itself.
 The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp tells how
 to use the videos, the music, the promos and the logos together.
 
+For a channel that runs without a person, add --restart. Then the script starts Prevue again if it stops, for
+example after a crash. It needs --headless. Ctrl-C stops the script:
+
+    ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 \
+        --headless --stream 8091 --restart
+
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.
 

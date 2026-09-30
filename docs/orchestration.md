@@ -40,6 +40,8 @@ Start the stream with an empty genlock queue, so that the coordinator controls t
 - `--schedule <file>` plays a schedule in place of `--genlock-control`. A schedule controls the video, the music, and
   the top half, without a coordinator. See [Schedules](#schedules).
 - `--audio` fills the music queue and plays it in a loop.
+- `--restart` starts Prevue again if it stops, for example after a crash. It needs `--headless`. The listings of
+  Channels DVR start again too, and the new launcher removes the temporary folders of the old one.
 - The logos come from `LOGO.LST` on the drive. Edit it in the copy of the drive before the stream starts. See
   [Logos](#logos).
 

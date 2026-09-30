@@ -32,6 +32,8 @@
 #                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
+#   --restart                Start Prevue again when it stops, for a channel that runs without a person. It needs
+#                            --headless. Ctrl-C stops it.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
 #
 # Other options go to the launcher, for example --scale 3.
@@ -44,7 +46,7 @@
 $ErrorActionPreference = 'Stop'
 
 function Show-Usage {
-    Get-Content $PSCommandPath | Select-Object -First 40 | ForEach-Object { $_ -replace '^# ?', '' }
+    Get-Content $PSCommandPath | Select-Object -First 42 | ForEach-Object { $_ -replace '^# ?', '' }
 }
 
 function Fail([string]$Message) {
@@ -71,7 +73,7 @@ $Launcher = Join-Path $Here 'AmigaSharp.PrevueLauncher.exe'
 $Listings = Join-Path $Here 'AmigaSharp.PrevueListings.exe'
 
 $Drive = ''; $Esq = ''; $Code = 'GA24005'; $ChannelsDvr = ''; $Interval = '10'; $Premium = ''; $Date = ''
-$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $Schedule = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Reset = $false; $GenlockControl = $false
+$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $Schedule = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Restart = $false; $Reset = $false; $GenlockControl = $false
 $launcherOptions = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
     $option = [string]$args[$i]
@@ -98,6 +100,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--prevue-ctrl-port' { $CtrlPort = $value }
         '--name' { $Name = $value }
         '--headless' { $Headless = $true }
+        '--restart' { $Restart = $true }
         '--genlock-control' { $GenlockControl = $true }
         '--reset' { $Reset = $true }
         { $_ -in '-h', '--help', '-?' } { Show-Usage; exit 0 }
@@ -115,6 +118,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 }
 
 if (-not $Drive) { Show-Usage | Write-Host; Fail '--drive is necessary.' }
+if ($Restart -and -not $Headless) { Fail '--restart needs --headless.' }
 if (-not (Test-Path -PathType Container $Drive)) { Fail "the drive $Drive does not exist." }
 if (-not (Test-Path $Launcher)) { Fail "$Launcher is missing. Keep the files of this directory together." }
 if ($Stream -and -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
@@ -157,28 +161,45 @@ if ($Stream) {
     if ($Schedule) { $arguments += '--schedule', $Schedule }
 }
 
-$tool = $null
-try {
-    if ($ChannelsDvr) {
-        # The listings tool writes the listing files, makes the ready file, and then sends the changes of the guide to
-        # the serial port of the launcher (TCP port 5400).
-        $ready = Join-Path $PrevueData 'listings-ready'
-        Remove-Item -Force $ready -ErrorAction SilentlyContinue
-        $toolArguments = @('--server', (Quote $ChannelsDvr), '--output', (Quote $Work), '--ready', (Quote $ready),
-            '--serve', 'localhost:5400', '--interval', $Interval)
-        if ($Premium) { $toolArguments += '--premium', (Quote $Premium) }
-        if ($Date) { $toolArguments += '--clock', (Quote $Date) }
-        $tool = Start-Process -FilePath $Listings -ArgumentList $toolArguments -NoNewWindow -PassThru
-        while (-not (Test-Path $ready)) {
-            if ($tool.HasExited) { Fail "the listings tool stopped. Is $ChannelsDvr correct?" }
-            Start-Sleep -Seconds 1
-        }
-        # ESQ parses the feed faster than 4 times 2400 baud, so a large update arrives sooner.
-        $arguments += '--serial-speed', '4'
-    }
+# ESQ parses the feed faster than 4 times 2400 baud, so a large update arrives sooner.
+if ($ChannelsDvr) { $arguments += '--serial-speed', '4' }
 
-    Invoke-Program $Launcher @arguments
-    $exitCode = $LASTEXITCODE
+# With --restart, the script starts Prevue again after it stops. The listings tool starts again too, so that ESQ reads
+# listing files of now. The wait before a start doubles, to a maximum of a minute, while Prevue stops soon after it
+# starts. Ctrl-C stops the script, and the finally block stops the listings tool.
+$tool = $null
+$delay = 5
+$exitCode = 0
+try {
+    while ($true) {
+        if ($ChannelsDvr) {
+            # The listings tool writes the listing files, makes the ready file, and then sends the changes of the guide
+            # to the serial port of the launcher (TCP port 5400).
+            $ready = Join-Path $PrevueData 'listings-ready'
+            Remove-Item -Force $ready -ErrorAction SilentlyContinue
+            $toolArguments = @('--server', (Quote $ChannelsDvr), '--output', (Quote $Work), '--ready', (Quote $ready),
+                '--serve', 'localhost:5400', '--interval', $Interval)
+            if ($Premium) { $toolArguments += '--premium', (Quote $Premium) }
+            if ($Date) { $toolArguments += '--clock', (Quote $Date) }
+            $tool = Start-Process -FilePath $Listings -ArgumentList $toolArguments -NoNewWindow -PassThru
+            while (-not (Test-Path $ready)) {
+                if ($tool.HasExited) { Fail "the listings tool stopped. Is $ChannelsDvr correct?" }
+                Start-Sleep -Seconds 1
+            }
+        }
+
+        $started = Get-Date
+        Invoke-Program $Launcher @arguments
+        $exitCode = $LASTEXITCODE
+        if ($tool -and -not $tool.HasExited) { Stop-Process -Id $tool.Id -Force -ErrorAction SilentlyContinue }
+        $tool = $null
+        # Exit code 2 is an error in the options: a new start does not help.
+        if (-not $Restart -or $exitCode -eq 2) { break }
+        if (((Get-Date) - $started).TotalSeconds -ge 300) { $delay = 5 }
+        [Console]::Error.WriteLine("Prevue stopped (exit code $exitCode). It starts again in $delay seconds.")
+        Start-Sleep -Seconds $delay
+        $delay = [Math]::Min($delay * 2, 60)
+    }
 }
 finally {
     if ($tool -and -not $tool.HasExited) { Stop-Process -Id $tool.Id -Force -ErrorAction SilentlyContinue }

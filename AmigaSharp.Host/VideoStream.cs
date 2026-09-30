@@ -42,7 +42,7 @@ public sealed class VideoStream : IDisposable
 
     private readonly Display _display;
     private readonly TextWriter _log;
-    private readonly string _directory = Directory.CreateTempSubdirectory("AmigaSharp-stream-").FullName;
+    private readonly string _directory = TempFolders.Create("AmigaSharp-stream-");
     private readonly Process _ffmpeg;
     private readonly HttpListener _http = new();
     private readonly string _channelName;
@@ -193,7 +193,7 @@ public sealed class VideoStream : IDisposable
         }
 
         _ffmpeg.Dispose();
-        Directory.Delete(_directory, recursive: true);
+        TempFolders.Delete(_directory);
     }
 
     /// <summary>
