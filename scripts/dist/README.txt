@@ -77,7 +77,7 @@ The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orches
 to use the videos, the music, the promos and the logos together.
 
 For a channel that runs without a person, add --restart. Then the script starts Prevue again if it stops, for
-example after a crash. It needs --headless. Ctrl-C stops the script:
+example after a crash, or if its picture does not change for a minute. It needs --headless. Ctrl-C stops the script:
 
     ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 \
         --headless --stream 8091 --restart

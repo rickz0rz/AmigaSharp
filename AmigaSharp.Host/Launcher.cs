@@ -17,6 +17,9 @@ public sealed record LauncherApp(string Name, string Description, IReadOnlyList<
 /// </summary>
 public static class Launcher
 {
+    /// <summary>The exit code when the watchdog stopped the program.</summary>
+    public const int WatchdogExitCode = 3;
+
     private const string UsageTemplate = """
         Usage: @NAME@ <executable> [options]
 
@@ -106,6 +109,9 @@ public static class Launcher
           --turbo-until <label>     Run the 68000 as fast as the host can until the word at the label of the listing is
                                     not 0, and then at the speed of a real 68000. For ESQ, the label
                                     _ESQ_MainLoopUiTickEnabledFlag becomes 1 when its main loop starts.
+          --watchdog <seconds>      Stop the program when its picture does not change for the seconds, with the exit
+                                    code 3. Use it for a program whose picture always moves, for example Prevue, so
+                                    that a script can start it again.
           --stats                   Write the speed of the emulation each second: the frames that the display made and
                                     dropped, the time to make a frame, the time that the program waited, and the free
                                     memory of the Amiga.
@@ -398,6 +404,15 @@ public static class Launcher
             }
         }, 64 * 1024 * 1024) { IsBackground = true, Name = "68000" };
         runner.Start();
+
+        // The watchdog stops the program when its picture does not change, with the exit code 3.
+        using var watchdog = options.Watchdog is { } watchdogSeconds
+            ? new Watchdog(core.Chipset.Display.CopyFrame, TimeSpan.FromSeconds(watchdogSeconds), log, () =>
+            {
+                exitCode = WatchdogExitCode;
+                terminated = true;
+            })
+            : null;
 
         // The scripted key presses: each key goes down, and up again 0.1 second later.
         if (presses.Count > 0)

@@ -484,8 +484,9 @@ with the options of the Prevue machine. It can also start the listings of Channe
 ./run-prevue.sh --drive /path/to/drive --channels-dvr http://channels-dvr.local:8089 --headless --stream 8091
 ```
 
-Add `--restart` for a channel that runs without a person: the script starts Prevue again if it stops. A launcher
-also removes the temporary folders that a launcher that crashed or that was killed left.
+Add `--restart` for a channel that runs without a person: the script starts Prevue again if it stops, or if its
+picture does not change for a minute (`--watchdog 60`). A launcher also removes the temporary folders that a launcher
+that crashed or that was killed left.
 
 Keep the files of the directory together. The launcher needs the SDL2 library next to it. Native AOT compiles only
 for the operating system of the host, so build the Linux programs on Linux and the Windows programs on Windows.

@@ -47,6 +47,9 @@ public sealed class LauncherOptions
     public double? TurboSeconds { get; set; }
     public string? TurboLabel { get; set; }
     public bool Stats { get; set; }
+
+    /// <summary>The seconds that the picture can stay the same before the launcher stops the program, or null.</summary>
+    public double? Watchdog { get; set; }
     public List<string> Watches { get; } = [];
     public bool Trace { get; set; }
 
@@ -92,6 +95,11 @@ public sealed class LauncherOptions
                 case "--screenshot-every": options.ScreenshotEvery = Number(); break;
                 case "--trace": options.Trace = true; break;
                 case "--stats": options.Stats = true; break;
+                case "--watchdog":
+                    options.Watchdog = Number();
+                    if (options.Watchdog < 5)
+                        throw new ArgumentException("--watchdog needs 5 seconds or more.");
+                    break;
                 case "--deinterlace": options.Deinterlace = Enum.Parse<DeinterlaceMode>(Next(), ignoreCase: true); break;
                 case "--headless": options.Headless = true; break;
                 case "--stream": options.StreamPort = int.Parse(Next()); break;

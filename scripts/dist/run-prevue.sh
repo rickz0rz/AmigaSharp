@@ -32,8 +32,8 @@
 #                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
 #   --headless               Do not open a window. Stop with Ctrl-C.
-#   --restart                Start Prevue again when it stops, for a channel that runs without a person. It needs
-#                            --headless. Ctrl-C stops it.
+#   --restart                Start Prevue again when it stops, or when its picture does not change for a minute,
+#                            for a channel that runs without a person. It needs --headless. Ctrl-C stops it.
 #   --reset                  Delete the copy of the drive, and copy the drive again.
 #
 # Environment variables:
@@ -120,6 +120,8 @@ set -- "$ESQ" --drive "$WORK" --volume "DH1=$WORK" --assign DF0=DH1: --assign EN
     --arguments "$CODE" --command-name esq --turbo 8 --deinterlace blend --scale 2 "$@"
 [ -n "$DATE" ] && set -- "$@" --date "$DATE"
 [ -n "$HEADLESS" ] && set -- "$@" --headless
+# The watchdog of the launcher stops a Prevue that does not work any more, so that the script starts it again.
+[ -n "$RESTART" ] && set -- "$@" --watchdog 60
 [ -n "$CTRL_PORT" ] && set -- "$@" --prevue-ctrl-port "$CTRL_PORT"
 if [ -n "$STREAM" ]; then
     set -- "$@" --stream "$STREAM" --stream-name "$NAME"
