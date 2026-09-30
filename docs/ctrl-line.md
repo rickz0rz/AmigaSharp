@@ -217,10 +217,14 @@ After the last line, it starts at the first line again.
 - Type 1 with `3` (`POST /prevue/ctrl/clear`) removes the logo at once. The next logo of the rotation shows about 3
   minutes after the command.
 
-To show a specific logo, count the lines. The logo that shows is the line after the last logo that showed. A
-coordinator that sends `/prevue/ctrl/logo` or `/prevue/ctrl/clear` more often than each 3 minutes stops the
-rotation, so it knows the position in the list. ESQ needs some time to load the next logo. The code shows no logo
-if the command comes before the logo is loaded. In the tests, 20 seconds between two logo commands was enough.
+To show a specific logo, choose it with `POST /prevue/logos/next` before a logo command. ESQ counts the lines of
+`LOGO.LST` that it read in a variable. The launcher sets this variable, so ESQ loads the chosen line when it shows
+the loaded logo. `GET /prevue/state` gives the loaded logo and the next line. See
+[orchestration.md](orchestration.md#show-a-logo).
+
+ESQ needs some time to load the next logo. The code shows no logo if the command comes before the logo is loaded. In
+the tests, 10 to 20 seconds between two logo commands was enough. `logos.loaded` in `GET /prevue/state` is not
+`null` when the logo is ready.
 
 To keep the genlock video in the top half:
 

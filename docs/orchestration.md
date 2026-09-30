@@ -1,8 +1,9 @@
 # Orchestrate the Prevue stream
 
 The stream of AmigaSharp is a TV channel with parts that change while it plays. The parts are the video behind the
-grid, the top half of the screen, and the layers of the sound. A **coordinator** is a program that changes these parts on a
-schedule. For example, a script, Home Assistant, or a cron job. It sends HTTP requests to the port of the stream.
+grid, the top half of the screen, and the layers of the sound. A **coordinator** is a program that changes these
+parts on a schedule. For example, a script, Home Assistant, or a cron job. It sends HTTP requests to the port of the
+stream.
 
 This document tells what each part does, how fast it changes, and how to use the parts together. The README and
 [ctrl-line.md](ctrl-line.md) give all the requests.
@@ -14,7 +15,7 @@ This document tells what each part does, how fast it changes, and how to use the
 | Part | What shows or plays | Requests |
 |------|---------------------|----------|
 | Genlock video | The video behind the grid and in the top half. | `/genlock` (queue) |
-| Top half | The genlock video, a promo, or a logo. | `/prevue/ctrl` |
+| Top half | The genlock video, a promo, or a logo. | `/prevue/ctrl`, `/prevue/logos` |
 | Grid | The listings. The coordinator does not control it. | none |
 | Video sound | The sound of the current genlock video. | `/mixer/video` |
 | Music | A queue of audio files. | `/music` (queue), `/mixer/music` |
@@ -59,7 +60,39 @@ A coordinator must know how fast each part changes:
 | The next logo is ready | ESQ loads it after a logo shows. 20 seconds was enough in tests. |
 | A volume change | The `fade` of the request. |
 
-To send control commands in sequence, wait until `queued` in `GET /prevue/ctrl` is 0. Then wait some seconds more.
+To send control commands in sequence, wait until `lastRequest.read` in `GET /prevue/state` is `true`. See
+[Watch the state](#watch-the-state).
+
+## Watch the state
+
+`GET /prevue/state` tells the coordinator what Prevue does now:
+
+```json
+{
+  "topHalf": "promo-right",
+  "line": {"queued": 0, "inEsq": 0, "idle": true, "commands": 2, "checksumErrors": 0},
+  "lastRequest": {"name": "promo", "read": true},
+  "logos": {
+    "loaded": "Enews.uv",
+    "nextLine": 3,
+    "shown": "tvgsport.uv",
+    "list": [{"line": 1, "path": "Logos/tvgsport.uv", "channel": false}]
+  }
+}
+```
+
+- `topHalf` is what the top half shows: `video`, `promo-right`, `promo-left`, `logo`, or `other`. The launcher reads
+  it from the picture, so it is always correct.
+- `line` is the state of the control line. `queued` is the bytes in the queue of the launcher, and `inEsq` is the
+  bytes that Prevue received and did not read. `idle` is `true` when Prevue read all the commands.
+- `lastRequest` is the last request of `/prevue/ctrl`, and `read` is `true` when Prevue read it. For example, after a
+  promo request, `read` becomes `true`. Then `topHalf` tells if Prevue found the program: `promo-right` or
+  `promo-left` if it found it, and `logo` if not.
+- `logos.loaded` is the logo that shows at the next logo command. `logos.nextLine` is the line of `LOGO.LST` that
+  Prevue loads after it. `logos.shown` is the last logo that showed.
+
+The launcher knows the variables of Prevue from the listing (`--listing`), or for the known build of ESQ. For another
+build of ESQ without a listing, the state has only `topHalf`, the queue of the launcher, and the last request.
 
 ## Recipes
 
@@ -88,9 +121,21 @@ curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "
 curl -X POST -d '' http://localhost:8091/prevue/ctrl/logo
 ```
 
-- Each request shows the next logo of `LOGO.LST`, in the order of the file.
-- To show a specific logo, count: the logo that shows is the line after the last logo that showed. The rotation of
-  ESQ also moves to the next line. Send a command more often than each 3 minutes, and the rotation does not move.
+- Each request shows the loaded logo (`logos.loaded` in `GET /prevue/state`). Then Prevue loads the next line of
+  `LOGO.LST`.
+- To choose the logo after the loaded one, send `POST /prevue/logos/next` before the logo command:
+
+  ```sh
+  curl -X POST http://localhost:8091/prevue/logos/next -d '{"name": "Insider"}'
+  curl -X POST -d '' http://localhost:8091/prevue/ctrl/logo
+  ```
+
+  The second request shows the loaded logo, and Prevue loads Insider. The next logo command shows Insider. The name
+  is the path of the line, its file name, or its file name without the extension. `{"line": 3}` chooses a line by
+  its number.
+- To show a planned sequence of logos, choose the next logo before each logo command. The first logo is the first line
+  of `LOGO.LST`. The rotation of ESQ also shows the loaded logo. Send a command more often than each 3 minutes, and
+  the rotation does not start.
 - A channel logo (a line without a comma) shows the call letters and the channel number on the picture.
 
 See [Logos](ctrl-line.md#logos) for the format of `LOGO.LST`.
@@ -134,6 +179,9 @@ only the genlock video. The logos of ESQ rotate, and no promos show.
 python3 scripts/examples/prevue-coordinator.py --url http://localhost:8091 \
     --video /videos/prevue-1993.mp4 --title Seinfeld --title "Bob's Burgers"
 ```
+
+The script waits until Prevue read each command (`GET /prevue/state`). With `--logo <name>` (more than one), it
+shows these logos in turn: before each logo command, it chooses the logo of the next pause.
 
 The script needs only Python 3. The video path is a path on the computer of the launcher. Use `--help` to see the
 options. Change the script to make your own schedule.

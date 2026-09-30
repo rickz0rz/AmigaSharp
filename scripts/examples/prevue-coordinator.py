@@ -46,9 +46,10 @@ class Stream:
         return request(self.url + path, "POST", body if body is not None else {})
 
     def ctrl(self, path, body=None):
-        """Sends a command on the control line, and waits until the line sent it."""
+        """Sends a command on the control line, and waits until Prevue read it (see GET /prevue/state)."""
         self.post("/prevue/ctrl/" + path, body)
-        while self.get("/prevue/ctrl")["queued"] > 0:
+        time.sleep(0.5)
+        while not self.get("/prevue/state")["lastRequest"].get("read", True) or self.get("/prevue/ctrl")["queued"] > 0:
             time.sleep(0.5)
 
     def queue(self, item):
@@ -88,7 +89,19 @@ def play_video(stream, video):
             last_clear = time.monotonic()
 
 
-def pause(stream, seconds, titles, promo_seconds, logo_seconds):
+def show_logo(stream, logos, cycle):
+    """Shows the loaded logo, and makes the logo of the next cycle the logo that Prevue loads after it.
+
+    Prevue loads the next logo when it shows a logo, so the script chooses the next logo before the show.
+    """
+    if logos:
+        stream.post("/prevue/logos/next", {"name": logos[(cycle + 1) % len(logos)]})
+    loaded = stream.get("/prevue/state")["logos"]["loaded"]
+    print(f"logo: {loaded}", flush=True)
+    stream.ctrl("logo")
+
+
+def pause(stream, seconds, titles, promo_seconds, logo_seconds, logos, cycle):
     print(f"pause: {seconds} s", flush=True)
     stream.music(1.0, 3)
     stream.queue({"source": "black", "seconds": seconds})
@@ -100,8 +113,7 @@ def pause(stream, seconds, titles, promo_seconds, logo_seconds):
         stream.ctrl("promo", {"title": title})
         hold(stream, promo_seconds, clear=False)
     if time.monotonic() + logo_seconds <= end:
-        print("logo", flush=True)
-        stream.ctrl("logo")
+        show_logo(stream, logos, cycle)
         hold(stream, logo_seconds, clear=False)
     stream.ctrl("clear")
     hold(stream, max(0, end - time.monotonic()), clear=True)
@@ -115,6 +127,9 @@ def main():
     parser.add_argument("--pause", type=float, default=180, help="the seconds of the pause (default 180)")
     parser.add_argument("--promo-seconds", type=float, default=30, help="the seconds of each promo (default 30)")
     parser.add_argument("--logo-seconds", type=float, default=30, help="the seconds of the logo (default 30)")
+    parser.add_argument("--logo", action="append", default=[],
+                        help="a logo of LOGO.LST for the pauses, in turn (more than one is OK). Put the first one first "
+                             "in LOGO.LST, because the first pause shows the logo that Prevue loaded at its start.")
     parser.add_argument("--cycles", type=int, default=0, help="the number of cycles (default 0: no end)")
     args = parser.parse_args()
 
@@ -122,7 +137,7 @@ def main():
     cycle = 0
     while args.cycles == 0 or cycle < args.cycles:
         play_video(stream, args.video)
-        pause(stream, args.pause, args.title, args.promo_seconds, args.logo_seconds)
+        pause(stream, args.pause, args.title, args.promo_seconds, args.logo_seconds, args.logo, cycle)
         cycle += 1
 
 

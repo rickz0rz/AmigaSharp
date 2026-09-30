@@ -10,6 +10,9 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
 {
     public string Prefix => "prevue/ctrl";
 
+    /// <summary>The last request that sent commands, for example "promo". Null before the first one.</summary>
+    public string? LastRequest { get; private set; }
+
     /// <summary>Answers a request for the control line of Prevue (see docs/ctrl-line.md).</summary>
     /// <remarks>
     /// <list type="bullet">
@@ -42,18 +45,22 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
                 {
                     using var document = ReadJson(context);
                     line.Add(ControlLineFeed.Promo(document.RootElement));
+                    LastRequest = "promo";
                     break;
                 }
                 case ("POST", "prevue/ctrl/clear"):
                     line.Add([ControlLineFeed.Packet(1, "3")]);
+                    LastRequest = "clear";
                     break;
                 case ("POST", "prevue/ctrl/logo"):
                     line.Add([ControlLineFeed.Packet(1, "D")]);
+                    LastRequest = "logo";
                     break;
                 case ("POST", "prevue/ctrl/packets"):
                 {
                     using var document = ReadJson(context);
                     line.Add(ControlLineFeed.Packets(document.RootElement));
+                    LastRequest = "packets";
                     break;
                 }
                 default:

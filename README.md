@@ -431,6 +431,9 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 | `POST /prevue/ctrl/clear` | Removes the promo or the logo. The genlock video shows in the top half. |
 | `POST /prevue/ctrl/logo` | Shows the current logo in the top half. |
 | `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
+| `GET /prevue/state` | Gives what the top half shows, if Prevue read the commands, and the logos. |
+| `GET /prevue/logos` | Gives the logos of `LOGO.LST`, the loaded logo, and the next line. |
+| `POST /prevue/logos/next` | Chooses the logo that Prevue loads at the next logo command: `{"name": "Insider"}`. |
 
 For example, show a promo for Seinfeld from the saved listings, and then remove it:
 

@@ -54,6 +54,9 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   Prevue code in `AmigaSharp.PrevueLauncher`. Plug HTTP routes into the stream through `IStreamRequests`, not by
   editing `VideoStream`. Prevue is a good example in comments, but name things for the general mechanism
   (`CtsLine`, not "ControlLine").
+- `/prevue/state` and `/prevue/logos` read ESQ variables through `EsqVariables`: from `--listing`, else from a table
+  of offsets for the known ESQ build (SHA-256 checked). If you need a new variable, add it to the table from
+  `build/target/ESQ.lst`; `PrevueStateTests.KnownOffsets_AreTheOffsetsOfTheListing` verifies the table.
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
   registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,

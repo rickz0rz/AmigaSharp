@@ -32,8 +32,9 @@ public sealed class PrevueExtension : ILauncherExtension
                                     Write the commands that the feed parser of ESQ reads, and the changes of its
                                     counters, to the file. This option needs --listing.
 
-        With --stream, the port of the stream also has the requests of /prevue/ctrl: promos and logos in the top half
-        of the screen. See docs/orchestration.md.
+        With --stream, the port of the stream also has the requests of /prevue/ctrl (promos and logos in the top half
+        of the screen), /prevue/state (what the top half shows) and /prevue/logos (the logos, and the choice of the
+        next logo). See docs/orchestration.md.
 
         Defaults of a Prevue machine: with --drive, the drive is also DH1:, and DF0: and ENV: are DH1:. The executable
         is ESQ on the drive, the command name is esq, and the arguments are the selection code GA24005. The turbo
@@ -87,7 +88,17 @@ public sealed class PrevueExtension : ILauncherExtension
     public void Start(LauncherContext context)
     {
         var line = context.Own(new PrevueControlLine(context.Core, context.Clock, _ctrlPort, _ctrlFile, context.Log));
-        context.StreamRequests.Add(new ControlLineRequests(line.Feed));
+        var requests = new ControlLineRequests(line.Feed);
+        context.StreamRequests.Add(requests);
+
+        // The state needs the addresses of some variables of ESQ: from the listing, or for the known build of ESQ.
+        var esq = EsqVariables.Find(context.Executable, context.Options.Listing);
+        if (esq == null)
+            context.Log.WriteLine("The state of Prevue has only the top half: the launcher does not know this ESQ.");
+        var state = new PrevueState(context.Core, line.Feed, requests, esq);
+        context.StreamRequests.Add(state);
+        if (esq != null)
+            context.StreamRequests.Add(new LogoRequests(context.Core, state, esq));
 
         if (_feedTrace != null)
         {
