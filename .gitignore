@@ -10,3 +10,4 @@ screenshots/
 .mcp.json
 .claude/
 TestResults/
+__pycache__/

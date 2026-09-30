@@ -21,7 +21,7 @@ public class BitBangedLineTests
     [Fact]
     public void Byte_IsAStartBit_EightDataBitsLowestFirst_AndAStopBit_OnTheCtsPin()
     {
-        var line = _chipset.ControlLine;
+        var line = _chipset.CtsLine;
         line.Connection = new ReplaySerialConnection([0b1000_0101]);
 
         // The line is high while it has no byte. The byte starts at the first update.
@@ -46,7 +46,7 @@ public class BitBangedLineTests
     public void Line_KeepsItsBytes_UntilTheProgramIsReady()
     {
         var ready = false;
-        var line = _chipset.ControlLine;
+        var line = _chipset.CtsLine;
         line.Connection = new ReplaySerialConnection([0x00]);
         line.Ready = () => ready;
 
@@ -86,7 +86,7 @@ public class BitBangedLineTests
     public void Line_UsesItsTime_AndTheTimeNeverGoesBack()
     {
         var time = TimeSpan.Zero;
-        var line = _chipset.ControlLine;
+        var line = _chipset.CtsLine;
         line.Time = () => time;
         line.Connection = new ReplaySerialConnection([0xFF]);
         line.Update();
@@ -106,11 +106,11 @@ public class BitBangedLineTests
     }
 
     [Fact]
-    public void ConsoleLine_UsesTheDsrPin()
+    public void DsrLine_UsesTheDsrPin()
     {
-        _chipset.ConsoleLine.Connection = new ReplaySerialConnection([0x00]);
+        _chipset.DsrLine.Connection = new ReplaySerialConnection([0x00]);
 
-        _chipset.ConsoleLine.Update();
+        _chipset.DsrLine.Update();
 
         Assert.Equal(0, _memory.Read8(CiaBPra) & 0x08);
         Assert.True(Cts());

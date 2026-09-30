@@ -45,8 +45,8 @@ public sealed class Chipset : IHardware
         Audio = new AudioOutput(memory, Custom, () => (CiaA.OutputA & 0x02) == 0);
         Disks = new DiskController(memory, Custom, CiaA, CiaB, Beam);
         // The handshake inputs of the serial port: CTS is CIA-B port A bit 4, and DSR is bit 3.
-        ControlLine = new BitBangedLine(CiaB, 0x10, () => Beam.Clock.Elapsed);
-        ConsoleLine = new BitBangedLine(CiaB, 0x08, () => Beam.Clock.Elapsed);
+        CtsLine = new BitBangedLine(CiaB, 0x10, () => Beam.Clock.Elapsed);
+        DsrLine = new BitBangedLine(CiaB, 0x08, () => Beam.Clock.Elapsed);
         Display = new Display(memory, Custom, Beam);
         Custom.Blitter = new Blitter(memory, Custom);
         Custom.FrameEnded += Display.RunFrame;
@@ -65,13 +65,17 @@ public sealed class Chipset : IHardware
     public Func<DateTime> Now { get; set; } = () => DateTime.Now;
 
     /// <summary>
-    /// A 110 baud line on the CTS pin of the serial port. Prevue reads its control commands there, for example the
-    /// promotions of programs.
+    /// A slow serial line on the CTS pin of the serial port (CIA-B port A bit 4), for a program that reads the pin bit
+    /// by bit. The line is idle (high) until the launcher gives it a connection. For example, Prevue reads its 110 baud
+    /// control line (CTRL) there: the commands that show the promos and the logos in the top half of the screen.
     /// </summary>
-    public BitBangedLine ControlLine { get; }
+    public BitBangedLine CtsLine { get; }
 
-    /// <summary>A 110 baud line on the DSR pin of the serial port. Prevue reads its operator console there.</summary>
-    public BitBangedLine ConsoleLine { get; }
+    /// <summary>
+    /// A slow serial line on the DSR pin of the serial port (CIA-B port A bit 3), as <see cref="CtsLine"/>. For
+    /// example, Prevue reads its operator console there.
+    /// </summary>
+    public BitBangedLine DsrLine { get; }
 
     /// <summary>The floppy drives and the disk DMA.</summary>
     public DiskController Disks { get; }

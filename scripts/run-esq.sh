@@ -78,5 +78,5 @@ fi
 # shellcheck disable=SC2086
 $LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
     --drive "$DRIVE" --volume "DH1=$DRIVE" \
-    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq \
+    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --prevue \
     --turbo-until _ESQ_MainLoopUiTickEnabledFlag $EXTRA_OPTIONS --scale "${ESQ_SCALE:-2}" "$@"

@@ -1,4 +1,5 @@
 using AmigaSharp.Launcher;
+using AmigaSharp.Launcher.Prevue;
 using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Graphics;
@@ -39,14 +40,6 @@ const string usage = """
       --serial-speed <n>        Receive the serial bytes n times faster than the baud rate of SERPER. The default is 1.
                                 ESQ has no flow control: a factor that is too large fills its receive buffer.
       --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
-      --prevue-ctrl-port <port> A TCP port for the 110 baud control line of Prevue, on the CTS pin of the serial
-                                port. Prevue reads its control commands there. Each byte that a client sends goes on
-                                the line. The line keeps the bytes until one second after Prevue starts to sample it.
-      --prevue-ctrl-file <file> Send the bytes of the file on the control line of Prevue, in place of
-                                --prevue-ctrl-port. The bytes go one second after Prevue starts to sample the line
-                                (after it enables the AUD1 interrupt).
-      --feed-trace <file>       Write the commands that the ESQ feed parser reads, and the changes of its counters,
-                                to the file. This option needs --listing.
       --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
       --deinterlace <mode>      How the window, the screenshots and the stream show an interlaced display: weave
                                 (both fields, as a TV; the default), bob (the last field, each row twice) or blend
@@ -102,6 +95,19 @@ const string usage = """
       --watch <label>           Write each change of the word at a label of the listing, with the time. The option can
                                 occur more than once. This option needs --listing.
       --trace                   Write each library call to the standard error stream.
+
+    Options for Prevue (ESQ, the program of the Prevue Guide channel):
+      --prevue                  Turn on the parts of the launcher for Prevue: its 110 baud control line (CTRL) on the
+                                CTS pin of the serial port, and the requests of /prevue/ctrl on the port of the
+                                stream. See docs/ctrl-line.md. The other options for Prevue turn it on too.
+      --prevue-ctrl-port <port> A TCP port for the control line. Each byte that a client sends goes on the line. The
+                                line keeps the bytes until one second after Prevue starts to sample it.
+      --prevue-ctrl-file <file> Send the bytes of the file on the control line, in place of --prevue-ctrl-port. The
+                                bytes go one second after Prevue starts to sample the line (after it enables the
+                                AUD1 interrupt).
+      --prevue-feed-trace <file>
+                                Write the commands that the feed parser of ESQ reads, and the changes of its
+                                counters, to the file. This option needs --listing.
     """;
 
 if (args.Length > 0 && args[0] == "unpack")
@@ -112,6 +118,7 @@ if (args.Length > 0 && args[0] == "extract")
 string? executablePath = null, listing = null, drive = null, arguments = "", commandName = null, screenshot = null;
 string? serialFile = null, serialLog = null, feedTrace = null, audioFile = null, ctrlFile = null;
 var ctrlPort = 0;
+var prevue = false;
 var serialStart = 0.0;
 var serialSpeed = 1.0;
 var volumes = new List<(string Name, string Path)>();
@@ -165,12 +172,13 @@ try
             case "--command-name": commandName = Next(); break;
             case "--serial-port": serialPort = int.Parse(Next()); break;
             case "--serial-file": serialFile = Next(); break;
+            case "--prevue": prevue = true; break;
             case "--prevue-ctrl-port": ctrlPort = int.Parse(Next()); break;
             case "--prevue-ctrl-file": ctrlFile = Next(); break;
             case "--serial-start": serialStart = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--serial-log": serialLog = Next(); break;
             case "--serial-speed": serialSpeed = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
-            case "--feed-trace": feedTrace = Next(); break;
+            case "--prevue-feed-trace": feedTrace = Next(); break;
             case "--scale": scale = int.Parse(Next()); break;
             case "--screenshot": screenshot = Next(); break;
             case "--seconds": seconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
@@ -218,7 +226,8 @@ try
     if ((genlock != null || genlockControl || genlockQueue != null) && streamPort == null)
         throw new ArgumentException("--genlock, --genlock-control and --genlock-playlist need --stream.");
     if (feedTrace != null && listing == null)
-        throw new ArgumentException("--feed-trace needs --listing.");
+        throw new ArgumentException("--prevue-feed-trace needs --listing.");
+    prevue |= ctrlPort > 0 || ctrlFile != null || feedTrace != null;
     if ((turboLabel != null || watches.Count > 0) && listing == null)
         throw new ArgumentException("--turbo-until and --watch need --listing.");
 }
@@ -305,39 +314,9 @@ if (serialFile != null)
 
 core.Chipset.Custom.Serial.SpeedFactor = serialSpeed;
 
-// The control line on the CTS pin: a TCP bridge or a replay of a file. The program samples the line in the AUD1
-// interrupt, so the line uses the time of that interrupt. The program resets its state while it starts. So the line
-// keeps its bytes until one second after the program enables the interrupt.
-{
-    var custom = core.Chipset.Custom;
-    TimeSpan? sampling = null;
-    core.Chipset.ControlLine.Time = () => custom.AudioSampleTime(1);
-    core.Chipset.ControlLine.Ready = () =>
-    {
-        if ((custom.Intena & (1 << (InterruptBit.Audio0 + 1))) == 0)
-            return false;
-        sampling ??= clock.Elapsed;
-        return clock.Elapsed - sampling.Value >= TimeSpan.FromSeconds(1);
-    };
-}
-
-using var ctrlBridge = ctrlPort > 0 && ctrlFile == null ? new TcpSerialBridge(ctrlPort, log: log) : null;
-if (ctrlBridge != null)
-{
-    core.Chipset.ControlLine.Connection = ctrlBridge;
-    log.WriteLine($"Control line bridge on localhost:{ctrlBridge.Port}.");
-}
-
-if (ctrlFile != null)
-{
-    var ctrlData = File.ReadAllBytes(ctrlFile);
-    core.Chipset.ControlLine.Connection = new ReplaySerialConnection(ctrlData);
-    log.WriteLine($"Sending {ctrlData.Length} bytes from {ctrlFile} on the control line.");
-}
-
-// The HTTP server of the stream adds packets to the control line too (see /prevue/ctrl).
-var controlLine = new ControlLineFeed(core.Chipset.ControlLine.Connection);
-core.Chipset.ControlLine.Connection = controlLine;
+// The parts for Prevue: its control line on the CTS pin, and the requests of /prevue/ctrl on the port of the stream.
+using var prevueControlLine = prevue ? new PrevueControlLine(core, clock, ctrlPort, ctrlFile, log) : null;
+IStreamRequests[] streamRequests = prevueControlLine == null ? [] : [new ControlLineRequests(prevueControlLine.Feed)];
 
 using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
 using var loggingConnection = serialLogWriter == null
@@ -353,7 +332,7 @@ using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.C
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
     ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-        genlockControl, core.Chipset.Audio.OpenTap(), controlLine, genlockQueue)
+        genlockControl, core.Chipset.Audio.OpenTap(), streamRequests, genlockQueue)
     : null;
 
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is

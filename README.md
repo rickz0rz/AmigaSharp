@@ -384,7 +384,7 @@ Prevue gets its listings on the serial port. The launcher can replay a captured 
   SERPER. The replay starts when the program enables the RBF interrupt.
 - `--serial-start <seconds>` delays the replay. Prevue empties its receive buffer while it starts, so use 8 or more.
 - `--serial-log <file>` writes each byte in the two directions to the file, with the time of the Amiga clock.
-- `--feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters. For
+- `--prevue-feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters. For
   example, a change of `_DATACErrs` shows a checksum error. This option needs `--listing`.
 
 Use `--virtual-time` with a replay. The run is then the same each time. Run the replay on a copy of the drive,
@@ -394,7 +394,7 @@ because Prevue writes the data that it receives to the drive:
 dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
     --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --virtual-time \
-    --serial-file feed.bin --serial-start 8 --serial-log serial.log --feed-trace feed.log
+    --serial-file feed.bin --serial-start 8 --serial-log serial.log --prevue-feed-trace feed.log
 ```
 
 ## Send control commands
@@ -427,6 +427,8 @@ curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
   to read the line some seconds after the stream starts.
 - `--prevue-ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--prevue-ctrl-file <file>` sends
   the bytes of a file. Do not send raw bytes and HTTP requests at the same time.
+- These requests need the option `--prevue`. The scripts for Prevue (`scripts/run-esq.sh` and `run-prevue.sh`) give
+  it. Without it, the launcher has nothing of Prevue, so it runs other programs as a plain Amiga.
 
 [docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
 [docs/orchestration.md](docs/orchestration.md) tells how to use the videos, the music, the promos and the logos

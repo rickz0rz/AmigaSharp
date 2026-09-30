@@ -110,7 +110,7 @@ ESQ=${ESQ:-$WORK/ESQ}
 [ -f "$ESQ" ] || fail "the program $ESQ does not exist. Use --esq."
 
 set -- "$ESQ" --drive "$WORK" --volume "DH1=$WORK" --assign DF0=DH1: --assign ENV=DH1: \
-    --arguments "$CODE" --command-name esq --turbo 8 --deinterlace blend --scale 2 "$@"
+    --arguments "$CODE" --command-name esq --prevue --turbo 8 --deinterlace blend --scale 2 "$@"
 [ -n "$DATE" ] && set -- "$@" --date "$DATE"
 [ -n "$HEADLESS" ] && set -- "$@" --headless
 [ -n "$CTRL_PORT" ] && set -- "$@" --prevue-ctrl-port "$CTRL_PORT"

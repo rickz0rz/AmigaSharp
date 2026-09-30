@@ -47,8 +47,13 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 - `scripts/dist/run-prevue.sh` and `run-prevue.ps1` must stay in parity (same options, same help text). Both print
   their help from the header comment by line count (`sed -n '2,Np'` and `Select-Object -First N`): update the count
   when the header changes. Keep `scripts/dist/README.txt` in step with user-visible options.
+- Keep the runtime and the launcher generic: they must run any Amiga program. Prevue-specific launcher code lives in
+  `AmigaSharp.Launcher/Prevue/` (namespace `AmigaSharp.Launcher.Prevue`) and is set up only with `--prevue` (or an
+  option that implies it). Plug HTTP routes into the stream through `IStreamRequests`, not by editing
+  `VideoStream`. Prevue is a good example in comments, but name things for the general mechanism (`CtsLine`, not
+  "ControlLine").
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,
-  `/prevue/ctrl`). Generic ones do not (`/genlock`, `/music`, `/mixer`).
+  `/prevue/ctrl`, `--prevue-feed-trace`). Generic ones do not (`/genlock`, `/music`, `/mixer`).
 - HTTP API style (see `VideoStream`): JSON via `JsonDocument`/`Utf8JsonWriter` (AOT-safe, no reflection
   serialization), errors as `{"error": "..."}` with 400/404, each POST answers with the current state.
 

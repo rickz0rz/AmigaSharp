@@ -128,7 +128,7 @@ try {
 
     $arguments = @($Esq, '--listing', (Join-Path $Root 'build\target\ESQ.lst'),
         '--drive', $Drive, '--volume', "DH1=$Drive",
-        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq',
+        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq', '--prevue',
         '--turbo-until', '_ESQ_MainLoopUiTickEnabledFlag') + $options + @('--scale', $Scale)
     if ($LauncherArguments) { $arguments += $LauncherArguments }
     Invoke-Program dotnet $Launcher @arguments
