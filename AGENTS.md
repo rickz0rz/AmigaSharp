@@ -33,7 +33,9 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   $100008.
 - https://github.com/rickz0rz/esq-decomp has readable C for most functions. It is a good map, but check details
   against the listing: for example, its letters for the type 1 CTRL sub-commands are wrong.
-- `docs/ctrl-line.md` documents the 110 baud control line (promos) and what is verified versus only read from code.
+- `docs/ctrl-line.md` documents the 110 baud control line (promos, logos) and what is verified versus only read
+  from code. `docs/orchestration.md` is the user-facing guide to using videos, music, promos and logos together;
+  keep it in step when these features change. `scripts/examples/prevue-coordinator.py` is its tested example.
 
 ## Conventions
 
@@ -60,3 +62,6 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 - The stream's HTTP server is up before ESQ reads its control line, so early `/prevue/ctrl` requests wait in the
   queue. The line sends 11 bytes per second, and ESQ defers parsing while its display is busy: when sequencing
   commands, wait for `queued` to reach 0 and then a few seconds more.
+- ESQ's logo timing (first logo, rotation) is not deterministic even with `--virtual-time`: the IFF loader runs as
+  a separate task. To time a CTRL command against a logo, watch the screenshots live (for example the mean of the
+  top 200 rows) and send the command over `--prevue-ctrl-port` when the logo shows.

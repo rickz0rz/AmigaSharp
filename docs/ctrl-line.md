@@ -184,12 +184,42 @@ The top half of the screen has two kinds of graphics:
   the drive has "TV Guide sportsview", "Entertainment News", "Insider", "Movie Profile" and "Weather". They advertise
   the shows of the TV Guide Channel. They hide the genlock video.
 
-ESQ reads the list of the logos from `LOGO.LST` on its drive. Each line is a file in `Logos/`. A line that ends with
-a comma always shows. A line without a comma shows only if its name matches the call letters of a channel.
+### The list of logos
 
-In tests with the saved listings, the first logo shows about 3 minutes after the start. Then ESQ changes the logo
-about each 3 minutes. The logo stays until the next logo. Type 1 with `3` removes the logo at once, but the next logo
-shows about 3 minutes after the command.
+ESQ reads the list of the logos from `LOGO.LST` on its drive. Each line is the path of an IFF picture on the drive.
+Change the file before ESQ starts. For example:
+
+```
+Logos/tvgsport.uv,
+Logos/KTIVDT
+Logos/KSIN!
+```
+
+- A line that ends with a comma is a **general logo**. It always shows.
+- A line without a comma is a **channel logo**. ESQ compares the file name (the text after the last `/`) with the
+  call letters of the channels. A `!` in the name is a wildcard for the rest of the call letters: `KSIN!` matches
+  KSINDT. If no channel matches, ESQ skips the line.
+- On a channel logo, ESQ writes the call letters and the channel number at the right side. For example, it writes
+  "KSINDT on Channel 27". Make the right part of the picture empty for this text.
+
+ESQ loads one logo at a time, in the order of the list. When it shows a logo, it loads the logo of the next line.
+After the last line, it starts at the first line again.
+
+### When logos show
+
+- ESQ rotates the logos. In tests with the saved listings, the first logo shows about 3 minutes after the start.
+  Then ESQ shows the next logo about each 3 minutes. The logo stays until the next logo.
+- Type 1 with `D` (`POST /prevue/ctrl/logo`) shows the loaded logo at once, and ESQ loads the next logo. Thus each
+  command shows the next line of the list. In a test with a command each 20 seconds, the logos came in the order of
+  the list.
+- A promo that finds no program shows the loaded logo too.
+- Type 1 with `3` (`POST /prevue/ctrl/clear`) removes the logo at once. The next logo of the rotation shows about 3
+  minutes after the command.
+
+To show a specific logo, count the lines. The logo that shows is the line after the last logo that showed. A
+coordinator that sends `/prevue/ctrl/logo` or `/prevue/ctrl/clear` more often than each 3 minutes stops the
+rotation, so it knows the position in the list. ESQ needs some time to load the next logo. The code shows no logo
+if the command comes before the logo is loaded. In the tests, 20 seconds between two logo commands was enough.
 
 To keep the genlock video in the top half:
 

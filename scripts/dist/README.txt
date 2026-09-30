@@ -70,7 +70,8 @@ send them to the stream port. For example, show a promo for Seinfeld, and then r
     curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
     curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 
-The README of AmigaSharp has all the /prevue/ctrl requests.
+The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp tells how
+to use the videos, the music, the promos and the logos together.
 
 Use ./run-prevue.sh --help to see all the options. The script copies the drive to its data directory on the first
 run, and it does not change the original drive. Use --reset to copy the drive again.

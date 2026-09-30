@@ -429,6 +429,8 @@ curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
   the bytes of a file. Do not send raw bytes and HTTP requests at the same time.
 
 [docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
+[docs/orchestration.md](docs/orchestration.md) tells how to use the videos, the music, the promos and the logos
+together, with an example coordinator.
 
 ## Build programs for other people
 
