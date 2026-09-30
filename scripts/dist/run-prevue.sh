@@ -26,6 +26,8 @@
 #                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
 #   --genlock-playlist <file> Start the genlock with the videos of a JSON file, for example to play a video and
 #                            then a pause of "black" in a loop. See the README of AmigaSharp.
+#   --schedule <file>        Play a schedule: a JSON file of videos, pauses, music, promos and logos. It needs
+#                            --stream. See docs/orchestration.md of AmigaSharp.
 #   --prevue-ctrl-port <port> A TCP port for the control line of Prevue. Its commands show promos of programs. With
 #                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
@@ -42,7 +44,7 @@ LAUNCHER=$HERE/AmigaSharp.PrevueLauncher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -50,7 +52,7 @@ fail() {
     exit 2
 }
 
-DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" GENLOCK_PLAYLIST="" CTRL_PORT="" NAME="Prevue Guide"
+DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" GENLOCK_PLAYLIST="" SCHEDULE="" CTRL_PORT="" NAME="Prevue Guide"
 HEADLESS="" RESET="" GENLOCK_CONTROL=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -65,6 +67,7 @@ while [ $# -gt 0 ]; do
         --audio) [ $# -ge 2 ] || fail "$1 needs a value."; AUDIO=$2; shift 2 ;;
         --genlock) [ $# -ge 2 ] || fail "$1 needs a value."; GENLOCK=$2; shift 2 ;;
         --genlock-playlist) [ $# -ge 2 ] || fail "$1 needs a value."; GENLOCK_PLAYLIST=$2; shift 2 ;;
+        --schedule) [ $# -ge 2 ] || fail "$1 needs a value."; SCHEDULE=$2; shift 2 ;;
         --prevue-ctrl-port) [ $# -ge 2 ] || fail "$1 needs a value."; CTRL_PORT=$2; shift 2 ;;
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
@@ -120,6 +123,7 @@ if [ -n "$STREAM" ]; then
     [ -n "$GENLOCK" ] && set -- "$@" --genlock "$GENLOCK"
     [ -n "$GENLOCK_CONTROL" ] && set -- "$@" --genlock-control
     [ -n "$GENLOCK_PLAYLIST" ] && set -- "$@" --genlock-playlist "$GENLOCK_PLAYLIST"
+    [ -n "$SCHEDULE" ] && set -- "$@" --schedule "$SCHEDULE"
 fi
 
 if [ -n "$CHANNELS_DVR" ]; then

@@ -160,6 +160,23 @@ public sealed class GenlockPlaylist : IDisposable
         }
     }
 
+    /// <summary>The id of the current item, or null if no item plays.</summary>
+    public int? CurrentId
+    {
+        get
+        {
+            lock (_lock)
+                return _current?.Id;
+        }
+    }
+
+    /// <summary>True if the item is in the queue or plays now.</summary>
+    public bool Has(int id)
+    {
+        lock (_lock)
+            return _current?.Id == id || _queue.Any(item => item.Id == id);
+    }
+
     /// <summary>Ends the current item. The next item starts, or black shows.</summary>
     public void Skip()
     {

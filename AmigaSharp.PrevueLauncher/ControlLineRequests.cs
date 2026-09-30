@@ -13,6 +13,13 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
     /// <summary>The last request that sent commands, for example "promo". Null before the first one.</summary>
     public string? LastRequest { get; private set; }
 
+    /// <summary>Sends packets on the line as a request, for example of a schedule. The state notes the request.</summary>
+    public void SendRequest(string request, IEnumerable<byte[]> packets)
+    {
+        line.Add(packets);
+        LastRequest = request;
+    }
+
     /// <summary>Answers a request for the control line of Prevue (see docs/ctrl-line.md).</summary>
     /// <remarks>
     /// <list type="bullet">

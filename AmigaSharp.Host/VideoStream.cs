@@ -52,6 +52,12 @@ public sealed class VideoStream : IDisposable
     private readonly StreamMixer _mixer;
     private readonly IReadOnlyList<IStreamRequests> _requests;
 
+    /// <summary>The queue of the genlock videos, or null without the genlock.</summary>
+    public GenlockPlaylist? Genlock => _genlock;
+
+    /// <summary>The mixer of the sound of the stream.</summary>
+    public StreamMixer Mixer => _mixer;
+
     // The sound goes to the encoder through this port. The sender adds the sound of each picture to the plan: the
     // sound of its video (or null), and if the video has sound.
     private readonly TcpListener _audioPort = new(IPAddress.Loopback, 0);

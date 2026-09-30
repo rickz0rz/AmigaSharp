@@ -78,18 +78,13 @@ public sealed class LogoRequests(Core core, PrevueState state, EsqVariables esq)
                    text.ValueKind == JsonValueKind.String
             ? text.GetString()!
             : throw new FormatException("Give \"name\" or \"line\", for example {\"name\": \"Insider\"}.");
-        foreach (var entry in lines)
-        {
-            var file = entry.Path[(entry.Path.LastIndexOfAny(['/', ':']) + 1)..];
-            if (Matches(entry.Path) || Matches(file) || Matches(Path.GetFileNameWithoutExtension(file)))
-                return entry.Line;
-        }
+        if (state.FindLogoLine(name) is { } found)
+            return found;
 
         var names = new StringBuilder();
         foreach (var entry in lines)
             names.Append(names.Length > 0 ? ", " : "").Append(entry.Path);
         throw new FormatException($"LOGO.LST has no logo {name}. The logos are: {names}.");
 
-        bool Matches(string candidate) => string.Equals(candidate, name, StringComparison.OrdinalIgnoreCase);
     }
 }

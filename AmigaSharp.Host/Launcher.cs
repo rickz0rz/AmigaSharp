@@ -78,6 +78,11 @@ public static class Launcher
                                     "queue": [{"source": "promo.mp4"}, {"source": "black", "seconds": 180}]}. "black" is
                                     black and silence. The HTTP server controls the queue as with --genlock-control. This
                                     option needs --stream.
+          --schedule <file>         Play a schedule of a JSON file: segments of videos and pauses, with the settings of
+                                    the music, for example {"loop": true, "segments": [{"video": "promo.mp4"},
+                                    {"pause": 180, "music": {"volume": 1}}]}. A launcher with an extension has more
+                                    keys, for example "top" for Prevue. GET /schedule gives its state. This option needs
+                                    --stream. See docs/orchestration.md.
           --audio-file <file.wav>   Write the sound of the audio channels to a WAV file. Without this option, the window
                                     plays the sound.
           --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
@@ -238,6 +243,24 @@ public static class Launcher
         foreach (var extension in app.Extensions)
             extension.Start(context);
 
+        // The schedule needs the keys of the extensions, so the launcher reads it after they start.
+        Schedule? schedule = null;
+        var scheduleRequests = new ScheduleRequests();
+        if (options.Schedule != null)
+        {
+            try
+            {
+                schedule = Schedule.Read(options.Schedule, context.ScheduleExtensions);
+            }
+            catch (FormatException e)
+            {
+                Console.Error.WriteLine($"error: {e.Message}");
+                return 2;
+            }
+
+            context.StreamRequests.Add(scheduleRequests);
+        }
+
         using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
         using var loggingConnection = serialLogWriter == null
             ? null
@@ -251,8 +274,13 @@ public static class Launcher
         core.Chipset.Display.Deinterlace = deinterlace;
         using var videoStream = streamPort is { } port
             ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-                genlockControl, core.Chipset.Audio.OpenTap(), context.StreamRequests, genlockQueue)
+                genlockControl || schedule != null, core.Chipset.Audio.OpenTap(), context.StreamRequests,
+                genlockQueue)
             : null;
+        using var scheduleRunner = schedule != null && videoStream != null
+            ? new ScheduleRunner(schedule, videoStream.Genlock!, videoStream.Mixer, context.ScheduleExtensions, log)
+            : null;
+        scheduleRequests.Runner = scheduleRunner;
 
         // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
         // a constant in such a build, so the trimmer removes the compiler from it.

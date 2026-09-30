@@ -99,6 +99,7 @@ public sealed class PrevueExtension : ILauncherExtension
         context.StreamRequests.Add(state);
         if (esq != null)
             context.StreamRequests.Add(new LogoRequests(context.Core, state, esq));
+        context.ScheduleExtensions.Add(new PrevueSchedule(requests, esq != null ? state : null, context.Log));
 
         if (_feedTrace != null)
         {

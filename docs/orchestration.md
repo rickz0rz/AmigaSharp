@@ -37,8 +37,8 @@ Start the stream with an empty genlock queue, so that the coordinator controls t
 ./run-prevue.sh --drive /path/to/drive --headless --stream 8091 --genlock-control --audio /path/to/music
 ```
 
-- `--genlock-playlist <file>` starts the queue from a JSON file in place of `--genlock-control`. It is good for a
-  fixed schedule without a coordinator. See [A schedule without a coordinator](#a-schedule-without-a-coordinator).
+- `--schedule <file>` plays a schedule in place of `--genlock-control`. A schedule controls the video, the music, and
+  the top half, without a coordinator. See [Schedules](#schedules).
 - `--audio` fills the music queue and plays it in a loop.
 - The logos come from `LOGO.LST` on the drive. Edit it in the copy of the drive before the stream starts. See
   [Logos](#logos).
@@ -151,22 +151,74 @@ See [Logos](ctrl-line.md#logos) for the format of `LOGO.LST`.
 `{"source": "black", "seconds": 180}` in the genlock queue shows the grid over black for 3 minutes. It has no sound,
 so the music plays at its full volume.
 
-### A schedule without a coordinator
+## Schedules
 
-A JSON file with `"loop": "all"` repeats a schedule. For example, a video and then 3 minutes over black:
+A schedule is a JSON file that the launcher plays by itself. It controls the genlock video, the music, and the top
+half of the screen, so a simple channel does not need a coordinator. Start the stream with `--schedule <file>`:
+
+```sh
+./run-prevue.sh --drive /path/to/drive --headless --stream 8091 --audio /path/to/music --schedule channel.json
+```
+
+For example, this schedule plays a video with the top half clear and quiet music. Then it shows 3 minutes over black
+with loud music: a promo, a logo, and the top half clear again.
 
 ```json
 {
-  "loop": "all",
-  "queue": [
-    {"source": "prevue-1993.mp4"},
-    {"source": "black", "seconds": 180}
+  "loop": true,
+  "segments": [
+    {"video": "prevue-1993.mp4", "music": {"volume": 0.3, "fade": 2}, "top": "clear"},
+    {"pause": 180, "music": {"volume": 1, "fade": 3}, "top": [
+      {"promo": "Seinfeld", "seconds": 30},
+      {"logo": "Insider", "seconds": 30},
+      {"clear": true}
+    ]}
   ]
 }
 ```
 
-Start the stream with `--genlock-playlist <file>`. Relative files are relative to the JSON file. The file controls
-only the genlock video. The logos of ESQ rotate, and no promos show.
+The segments play in order. With `"loop": true`, the first segment follows the last segment. Each segment has these
+values:
+
+| Value | Meaning |
+|-------|---------|
+| `video` | A file or a URL for the genlock. A relative file is relative to the schedule file. |
+| `seconds` | Optional, with `video`: the time of the video. Without it, a file plays to its end. |
+| `loop` | Optional, with `video`: `true` to play a file in a loop, for example for its `seconds`. |
+| `pause` | In place of `video`: the seconds of a pause over black, with no sound. |
+| `music` | Optional: the settings of the music when the segment starts: `volume`, `muted` and `fade`. |
+| `top` | Optional, for Prevue: the top half of the screen during the segment. |
+
+`top` is one of these:
+
+- `"clear"`: the genlock video shows in the top half during all the segment.
+- `"logos"`: the logo rotation of ESQ. The schedule sends no commands.
+- A list of cues, in order. Each cue has `seconds`, except the last cue:
+  - `{"promo": "Seinfeld", "seconds": 30}`: a promo. The value is a title, or an object as for
+    `POST /prevue/ctrl/promo`, for example `{"left": {"title": "Seinfeld"}}`.
+  - `{"logo": "Insider", "seconds": 30}`: a logo of `LOGO.LST`, by its name. `null` shows the loaded logo.
+  - `{"clear": true}`: the genlock video in the top half.
+
+About the top half:
+
+- A segment starts when its video starts, and its cues count from that time.
+- After a cue with `seconds`, the top half is clear. A clear top half gets a clear command each minute, so the logo
+  rotation of ESQ does not start.
+- The last cue without `seconds` stays until the end of the segment. A segment without `top` does not change the top
+  half.
+- The schedule chooses each named logo before the logo before it shows. Thus the logos show in the order of the
+  schedule. The first named logo must be the loaded logo when the schedule starts. If it is not, the schedule shows
+  the loaded logo for a moment to load it. Put the first logo of the schedule first in `LOGO.LST` to prevent this.
+- Keep each promo and logo cue shorter than 3 minutes. Else the logo rotation of ESQ can replace it.
+
+`GET /schedule` gives the state of the schedule: the current segment, the seconds since its start, and the number of
+cycles. The requests of the genlock, the music, the mixer and `/prevue/ctrl` still work while a schedule plays. But
+a request that changes the genlock queue can change the order of the segments.
+
+A schedule needs the launcher for Prevue for `top`. The generic launcher plays schedules without `top`.
+
+`--genlock-playlist <file>` is a simpler file for the genlock queue only (see the README). It does not have the music
+or the top half.
 
 ## Example coordinator
 

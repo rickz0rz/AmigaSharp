@@ -199,6 +199,40 @@ public sealed class PrevueState : IStreamRequests
         json.WriteEndObject();
     }
 
+    /// <summary>The file name of the logo that ESQ loaded, or null if it loads a logo now or has none.</summary>
+    public string? LoadedLogo
+    {
+        get
+        {
+            var node = _core.Memory.Read32(_esq![EsqVariables.LoadedLogo]);
+            return node == 0 ? null : ReadString(_core.Memory, node, 190);
+        }
+    }
+
+    /// <summary>
+    /// True if the name is the logo: its path, its file name, or its file name without the extension. Upper case and
+    /// lower case are the same.
+    /// </summary>
+    public static bool IsLogo(string path, string name)
+    {
+        var file = path[(path.LastIndexOfAny(['/', ':']) + 1)..];
+        return string.Equals(path, name, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(file, name, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(Path.GetFileNameWithoutExtension(file), name, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The line of LOGO.LST of a logo name, or null if the list does not have it.</summary>
+    public int? FindLogoLine(string name)
+    {
+        foreach (var entry in LogoList(_core.Memory, _esq!))
+        {
+            if (IsLogo(entry.Path, name))
+                return entry.Line;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Makes a line of LOGO.LST the next line that ESQ loads. ESQ loads it when it shows the loaded logo, so the change
     /// is for the next show of a logo.

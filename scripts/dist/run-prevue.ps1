@@ -26,6 +26,8 @@
 #                            from http://<this computer>:<port>/genlock. See the README of AmigaSharp.
 #   --genlock-playlist <file> Start the genlock with the videos of a JSON file, for example to play a video and
 #                            then a pause of "black" in a loop. See the README of AmigaSharp.
+#   --schedule <file>        Play a schedule: a JSON file of videos, pauses, music, promos and logos. It needs
+#                            --stream. See docs/orchestration.md of AmigaSharp.
 #   --prevue-ctrl-port <port> A TCP port for the control line of Prevue. Its commands show promos of programs. With
 #                            --stream, the stream port also takes them at /prevue/ctrl. See docs/ctrl-line.md.
 #   --name <name>            The name of the channel of the stream. The default is "Prevue Guide".
@@ -42,7 +44,7 @@
 $ErrorActionPreference = 'Stop'
 
 function Show-Usage {
-    Get-Content $PSCommandPath | Select-Object -First 38 | ForEach-Object { $_ -replace '^# ?', '' }
+    Get-Content $PSCommandPath | Select-Object -First 40 | ForEach-Object { $_ -replace '^# ?', '' }
 }
 
 function Fail([string]$Message) {
@@ -69,12 +71,12 @@ $Launcher = Join-Path $Here 'AmigaSharp.PrevueLauncher.exe'
 $Listings = Join-Path $Here 'AmigaSharp.PrevueListings.exe'
 
 $Drive = ''; $Esq = ''; $Code = 'GA24005'; $ChannelsDvr = ''; $Interval = '10'; $Premium = ''; $Date = ''
-$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Reset = $false; $GenlockControl = $false
+$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $Schedule = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Reset = $false; $GenlockControl = $false
 $launcherOptions = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
     $option = [string]$args[$i]
     $valueOptions = '--drive', '--esq', '--code', '--channels-dvr', '--interval', '--premium', '--date', '--stream',
-        '--audio', '--genlock', '--genlock-playlist', '--prevue-ctrl-port', '--name'
+        '--audio', '--genlock', '--genlock-playlist', '--schedule', '--prevue-ctrl-port', '--name'
     if ($valueOptions -contains $option) {
         if ($i + 1 -ge $args.Count) { Fail "$option needs a value." }
         $i++
@@ -92,6 +94,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--audio' { $Audio = $value }
         '--genlock' { $Genlock = $value }
         '--genlock-playlist' { $GenlockPlaylist = $value }
+        '--schedule' { $Schedule = $value }
         '--prevue-ctrl-port' { $CtrlPort = $value }
         '--name' { $Name = $value }
         '--headless' { $Headless = $true }
@@ -151,6 +154,7 @@ if ($Stream) {
     if ($Genlock) { $arguments += '--genlock', $Genlock }
     if ($GenlockControl) { $arguments += '--genlock-control' }
     if ($GenlockPlaylist) { $arguments += '--genlock-playlist', $GenlockPlaylist }
+    if ($Schedule) { $arguments += '--schedule', $Schedule }
 }
 
 $tool = $null

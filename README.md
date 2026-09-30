@@ -435,6 +435,9 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 | `GET /prevue/logos` | Gives the logos of `LOGO.LST`, the loaded logo, and the next line. |
 | `POST /prevue/logos/next` | Chooses the logo that Prevue loads at the next logo command: `{"name": "Insider"}`. |
 
+`--schedule <file>` plays a schedule: segments of videos and pauses, with the settings of the music and, for Prevue,
+the top half of the screen. `GET /schedule` gives its state. See [Schedules](docs/orchestration.md#schedules).
+
 For example, show a promo for Seinfeld from the saved listings, and then remove it:
 
 ```sh

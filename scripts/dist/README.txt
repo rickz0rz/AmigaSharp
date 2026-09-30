@@ -70,6 +70,9 @@ send them to the stream port. For example, show a promo for Seinfeld, and then r
     curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
     curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 
+A schedule file plays the videos, the music, the promos and the logos by itself. Start with --schedule
+/path/to/channel.json. The file docs/orchestration.md of AmigaSharp tells how to write it.
+
 The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp tells how
 to use the videos, the music, the promos and the logos together.
 

@@ -44,6 +44,9 @@ public sealed class LauncherContext(Core core, IClock clock, TextWriter log, Lau
     /// <summary>More requests for the port of the stream (see <see cref="IStreamRequests"/>).</summary>
     public List<IStreamRequests> StreamRequests { get; } = [];
 
+    /// <summary>More keys for the segments of a schedule (see <see cref="Schedule"/>).</summary>
+    public List<IScheduleExtension> ScheduleExtensions { get; } = [];
+
     /// <summary>Adds a part that the launcher disposes when the program ends.</summary>
     public T Own<T>(T part) where T : IDisposable
     {

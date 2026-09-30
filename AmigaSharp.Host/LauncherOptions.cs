@@ -32,6 +32,9 @@ public sealed class LauncherOptions
     public string? Genlock { get; set; }
     public bool GenlockControl { get; set; }
     public QueueRequest.QueueFile? GenlockQueue { get; set; }
+
+    /// <summary>A schedule file for the genlock queue and the extensions (see <see cref="Host.Schedule"/>).</summary>
+    public string? Schedule { get; set; }
     public string? AudioFile { get; set; }
     public string? Screenshot { get; set; }
     public double Seconds { get; set; } = 10;
@@ -98,6 +101,7 @@ public sealed class LauncherOptions
                 case "--genlock": options.Genlock = Next(); break;
                 case "--genlock-control": options.GenlockControl = true; break;
                 case "--genlock-playlist": options.GenlockQueue = QueueRequest.ReadFile(Next()); break;
+                case "--schedule": options.Schedule = Next(); break;
                 case "--fast-cpu": options.FastCpu = true; break;
                 case "--turbo": options.TurboSeconds = Number(); break;
                 case "--turbo-until": options.TurboLabel = Next(); break;
@@ -140,8 +144,10 @@ public sealed class LauncherOptions
     {
         if (ExecutablePath == null)
             throw new ArgumentException("the executable is missing.");
-        if ((Genlock != null || GenlockControl || GenlockQueue != null) && StreamPort == null)
-            throw new ArgumentException("--genlock, --genlock-control and --genlock-playlist need --stream.");
+        if ((Genlock != null || GenlockControl || GenlockQueue != null || Schedule != null) && StreamPort == null)
+            throw new ArgumentException("--genlock, --genlock-control, --genlock-playlist and --schedule need --stream.");
+        if (Schedule != null && (Genlock != null || GenlockQueue != null))
+            throw new ArgumentException("--schedule fills the genlock queue. Do not use it with --genlock or --genlock-playlist.");
         if ((TurboLabel != null || Watches.Count > 0) && Listing == null)
             throw new ArgumentException("--turbo-until and --watch need --listing.");
     }
