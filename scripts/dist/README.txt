@@ -76,6 +76,10 @@ A schedule file plays the videos, the music, the promos and the logos by itself.
 The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp tells how
 to use the videos, the music, the promos and the logos together.
 
+Channel logos show the logo of a station with its call letters and channel number. --channel-logos (with
+--channels-dvr) makes them from the logo images of Channels DVR. --logos /path/to/directory makes them from your PNG
+files, named by call letters, for example KTIVDT.png.
+
 For a channel that runs without a person, add --restart. Then the script starts Prevue again if it stops, for
 example after a crash, or if its picture does not change for a minute. It needs --headless. Ctrl-C stops the script:
 

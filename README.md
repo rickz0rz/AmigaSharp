@@ -448,6 +448,8 @@ curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
 ```
 
 - Prevue finds the next time of the program in its listings. If it finds no program, it shows the current logo.
+- `run-prevue.sh --channel-logos` makes channel logos from the logo images of Channels DVR, and `--logos <dir>`
+  makes them from your PNG files. See [Make channel logos](docs/ctrl-line.md#make-channel-logos).
 - The logos (for example "TV Guide sportsview") come from `LOGO.LST` on the drive. They cover all the top half, and
   ESQ changes them about each 3 minutes. An empty `LOGO.LST` stops them. See [Logos](docs/ctrl-line.md#logos).
 - A promo can have a box on the right and a box on the left:

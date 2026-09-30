@@ -206,6 +206,27 @@ Logos/KSIN!
 ESQ loads one logo at a time, in the order of the list. When it shows a logo, it loads the logo of the next line.
 After the last line, it starts at the first line again.
 
+### Make channel logos
+
+The listings tool makes channel logos from PNG images:
+
+- `--channel-logos` (with `--channels-dvr` in `run-prevue.sh`) uses the logo image of each channel of Channels DVR.
+- `--logos <directory>` uses PNG files named by call letters, for example `KTIVDT.png`. They replace the images of
+  Channels DVR with the same names. Without Channels DVR, the command `AmigaSharp.PrevueListings logos --input <dir>
+  --output <drive>` makes them.
+
+![Channel logos with the call letters and the channel number of ESQ](prevue-channel-logos.png)
+
+Each logo has the format of the logos of the drive. It is an IFF picture of 320 by 240 low-resolution pixels with 32
+colors. The station image is on a light card at the left, on the navy of Prevue. The right part is empty for the text
+of ESQ. The picture does not use color 0, because the genlock video shows through color 0. The tool writes the logos
+to `Logos/Channels` in the drive, and their lines to `LOGO.LST` after the other lines. Each run replaces them.
+
+The name of each logo is the source name of its channel. A source name has a maximum of 6 letters and digits, in
+upper case. For Channels DVR, the tool uses the source names of its listings. Thus two channels with the same call
+letters get different logos. With `/prevue/logos/show`, a channel logo shows by its name, for example
+`{"name": "TBSHD"}`.
+
 ### When logos show
 
 - ESQ rotates the logos. In tests with the saved listings, the first logo shows about 3 minutes after the start.

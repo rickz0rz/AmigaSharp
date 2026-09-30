@@ -26,6 +26,13 @@ The minutes between two reads of the guide (CHANNELS_DVR_INTERVAL). The default 
 The premium channels: channel numbers or call signs, with commas between them, for example 222,HBOHD
 (CHANNELS_DVR_PREMIUM). Their programs have a red background.
 
+.PARAMETER ChannelLogos
+Make the channel logos from the logo images of the channels of Channels DVR (CHANNELS_DVR_LOGOS=1).
+
+.PARAMETER Logos
+A directory of PNG files, named by call letters (for example KTIVDT.png), for channel logos (ESQ_LOGOS). They replace
+the images of Channels DVR with the same names.
+
 .PARAMETER Date
 The date and the time of the Amiga at the start (ESQ_DATE). Without -ChannelsDvr, the default is 2020-11-01T16:00, the
 date of the saved listings. With -ChannelsDvr, the listings tool uses it too, to choose the current and the next
@@ -47,6 +54,8 @@ param(
     [int]$Interval = $(if ($env:CHANNELS_DVR_INTERVAL) { [int]$env:CHANNELS_DVR_INTERVAL } else { 10 }),
     [string]$Premium = $env:CHANNELS_DVR_PREMIUM,
     [string]$Date = $env:ESQ_DATE,
+    [switch]$ChannelLogos = ($env:CHANNELS_DVR_LOGOS -eq '1'),
+    [string]$Logos = $env:ESQ_LOGOS,
     [int]$Scale = $(if ($env:ESQ_SCALE) { [int]$env:ESQ_SCALE } else { 2 }),
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$LauncherArguments
@@ -112,6 +121,8 @@ try {
             '--ready', (Quote $ready), '--serve', 'localhost:5400', '--interval', $Interval)
         if ($Premium) { $toolArguments += '--premium', (Quote $Premium) }
         if ($Date) { $toolArguments += '--clock', (Quote $Date) }
+        if ($ChannelLogos) { $toolArguments += '--channel-logos' }
+        if ($Logos) { $toolArguments += '--logos', (Quote $Logos) }
         $tool = Start-Process -FilePath dotnet -ArgumentList $toolArguments -NoNewWindow -PassThru
         while (-not (Test-Path $ready)) {
             if ($tool.HasExited) { Fail 'the listings tool stopped.' }
@@ -124,6 +135,11 @@ try {
     }
     else {
         $options += '--date', $(if ($Date) { $Date } else { '2020-11-01T16:00' })
+        if ($Logos) {
+            Invoke-Program dotnet build (Join-Path $Root 'AmigaSharp.PrevueListings') -c Release -v quiet -nologo | Out-Null
+            if ($LASTEXITCODE -ne 0) { Fail 'the listings tool does not build. Run dotnet build to see the errors.' }
+            Invoke-Program dotnet $ListingsTool logos --input $Logos --output $Drive
+        }
     }
 
     $arguments = @($Esq, '--listing', (Join-Path $Root 'build\target\ESQ.lst'),

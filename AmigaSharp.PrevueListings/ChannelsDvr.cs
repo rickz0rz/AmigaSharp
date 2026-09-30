@@ -9,7 +9,8 @@ public sealed record GuideChannel(
     [property: JsonPropertyName("Name")] string? Name,
     [property: JsonPropertyName("CallSign")] string? CallSign,
     [property: JsonPropertyName("HD")] bool HD,
-    [property: JsonPropertyName("Hidden")] bool Hidden);
+    [property: JsonPropertyName("Hidden")] bool Hidden,
+    [property: JsonPropertyName("Image")] string? Image = null);
 
 /// <summary>
 /// A program on a channel of the guide. <see cref="Time"/> is a Unix time, and the duration is in seconds. The content

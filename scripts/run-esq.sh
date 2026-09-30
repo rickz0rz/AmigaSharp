@@ -22,6 +22,10 @@
 #   CHANNELS_DVR_PREMIUM
 #                 The premium channels: channel numbers or call signs, with commas between them, for example
 #                 222,HBOHD. Their programs have a red background.
+#   CHANNELS_DVR_LOGOS
+#                 1 to make the channel logos from the logo images of the channels of Channels DVR.
+#   ESQ_LOGOS     A directory of PNG files, named by call letters (for example KTIVDT.png), for channel logos. They
+#                 replace the images of Channels DVR with the same names.
 #   ESQ_DATE      The date and the time of the Amiga at the start. Without CHANNELS_DVR, the default is
 #                 2020-11-01T16:00, the date of the saved listings. With CHANNELS_DVR, the listings tool uses it
 #                 too, to choose the current and the next broadcast day.
@@ -57,7 +61,7 @@ if [ -n "${CHANNELS_DVR:-}" ]; then
     dotnet "$ROOT/AmigaSharp.PrevueListings/bin/Release/net10.0/AmigaSharp.PrevueListings.dll" \
         --server "$CHANNELS_DVR" --output "$DRIVE" --ready "$READY" --serve localhost:5400 \
         --interval "${CHANNELS_DVR_INTERVAL:-10}" ${CHANNELS_DVR_PREMIUM:+--premium "$CHANNELS_DVR_PREMIUM"} \
-        ${ESQ_DATE:+--clock $ESQ_DATE} &
+        ${ESQ_DATE:+--clock $ESQ_DATE} ${CHANNELS_DVR_LOGOS:+--channel-logos} ${ESQ_LOGOS:+--logos "$ESQ_LOGOS"} &
     LISTINGS=$!
     trap 'kill $LISTINGS 2>/dev/null' EXIT INT TERM
     while [ ! -f "$READY" ]; do
@@ -72,6 +76,11 @@ if [ -n "${CHANNELS_DVR:-}" ]; then
     EXTRA_OPTIONS="--serial-speed 4 ${ESQ_DATE:+--date $ESQ_DATE}"
 else
     EXTRA_OPTIONS="--date ${ESQ_DATE:-2020-11-01T16:00}"
+    if [ -n "${ESQ_LOGOS:-}" ]; then
+        dotnet build "$ROOT/AmigaSharp.PrevueListings" -c Release -v quiet -nologo >/dev/null
+        dotnet "$ROOT/AmigaSharp.PrevueListings/bin/Release/net10.0/AmigaSharp.PrevueListings.dll" logos \
+            --input "$ESQ_LOGOS" --output "$DRIVE"
+    fi
 fi
 
 # EXTRA_OPTIONS is not in quotes, so that each option is a separate argument.

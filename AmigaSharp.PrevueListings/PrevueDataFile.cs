@@ -11,8 +11,9 @@ public sealed record PrevueProgram(int Slot, string Text, bool Movie = false);
 /// <param name="Number">The channel number, for example "4" or "56.2".</param>
 /// <param name="CallLetters">The name of the channel. Prevue shows a maximum of 6 characters.</param>
 /// <param name="Premium">True for a premium channel. The grid shows its programs on a red background.</param>
+/// <param name="Image">The address of the logo image of the channel, or null.</param>
 public sealed record PrevueChannel(string Number, string CallLetters, IReadOnlyList<PrevueProgram> Programs,
-    bool Premium = false)
+    bool Premium = false, string? Image = null)
 {
     /// <summary>
     /// The source attribute of the channel: bit 0 is always 1, and bit 1 marks a premium channel. ESQ then draws the

@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Net.Sockets;
 using AmigaSharp.PrevueListings;
+using AmigaSharp.PrevueListings.Logos;
 
 const string usage = """
     Usage: AmigaSharp.PrevueListings --server <url> --output <directory> [options]
+           AmigaSharp.PrevueListings logos --input <directory> --output <directory>
 
     Reads the guide of a Channels DVR server and writes the Prevue listing files curday.dat and nxtday.dat. The files
     have the HD channels of the guide, in the order of their numbers, and a maximum of 200 channels.
@@ -26,10 +28,21 @@ const string usage = """
                             changes of the guide as a feed. ESQ then updates the grid while it runs.
       --interval <minutes>  The time between two reads of the guide with --serve. The default is 10.
       --ready <file>        Make this file when curday.dat and nxtday.dat are written. A script can wait for it.
+      --channel-logos       Also make the channel logos of the drive from the logo images of the channels of
+                            Channels DVR (see the logos command). A cache directory in the drive keeps the images.
+      --logos <dir>         Also make channel logos from the PNG files of the directory. They replace the images of
+                            --channel-logos with the same names.
       --clock <date>        The time of the Amiga at the start, for example 2026-09-27T04:50, as the --date option of
                             the launcher. The tool then chooses the broadcast days by the time of the Amiga, not by the
                             time of the host.
+
+    The logos command makes the channel logos of the drive from the PNG files of a directory, without a server. The
+    name of a file is the call letters of its channel, for example KTIVDT.png. The logos go to Logos/Channels in the
+    drive, and their lines to LOGO.LST. ESQ shows a channel logo with the call letters and the channel number.
     """;
+
+if (args.Length > 0 && args[0] == "logos")
+    return MakeLogos(args[1..]);
 
 Uri? server = null;
 string? output = null;
@@ -43,6 +56,8 @@ string? serve = null;
 var interval = TimeSpan.FromMinutes(10);
 string? readyPath = null;
 var clockOffset = TimeSpan.Zero;
+var channelLogos = false;
+string? logoDirectory = null;
 try
 {
     for (var i = 0; i < args.Length; i++)
@@ -61,6 +76,8 @@ try
             case "--serve": serve = Next(); break;
             case "--interval": interval = TimeSpan.FromMinutes(double.Parse(Next(), CultureInfo.InvariantCulture)); break;
             case "--ready": readyPath = Next(); break;
+            case "--channel-logos": channelLogos = true; break;
+            case "--logos": logoDirectory = Next(); break;
             case "--clock": clockOffset = DateTime.Parse(Next(), CultureInfo.InvariantCulture) - DateTime.Now; break;
             case "--help" or "-h":
                 Console.WriteLine(usage);
@@ -93,6 +110,27 @@ if (feedPath != null)
     var feed = PrevueFeed.Listings(selection, days);
     File.WriteAllBytes(feedPath, feed);
     Console.WriteLine($"Wrote the feed to {feedPath} ({feed.Length} bytes, {feed.Length / 240.0 / 60:F1} minutes at 2400 baud).");
+}
+
+// The logos are ready before ESQ starts, because ESQ reads LOGO.LST when it starts.
+if (channelLogos || logoDirectory != null)
+{
+    var logos = new Dictionary<string, byte[]>();
+    if (channelLogos)
+    {
+        var channels = PrevueFeed.SourceNames(days[0].Channels.Take(PrevueDataFile.MaximumChannels));
+        foreach (var (name, png) in await ChannelLogos.DownloadAsync(channels, Path.Combine(output, ".logo-cache"), Console.Out))
+            logos[name] = png;
+    }
+
+    if (logoDirectory != null)
+    {
+        foreach (var (name, png) in ChannelLogos.FromDirectory(logoDirectory))
+            logos[name] = png;
+    }
+
+    var count = ChannelLogos.Write(output, logos.Select(pair => (pair.Key, pair.Value)), Console.Out);
+    Console.WriteLine($"Wrote {count} channel logos to {Path.Combine(output, ChannelLogos.Folder)}.");
 }
 
 if (readyPath != null)
@@ -171,3 +209,30 @@ static (string Host, int Port) ParseEndpoint(string text)
 }
 
 static string Describe(PrevueDay day) => $"{day.Channels.Count} channels, {day.Channels.Sum(c => c.Programs.Count)} programs";
+
+// The logos command: channel logos from the PNG files of a directory.
+static int MakeLogos(string[] arguments)
+{
+    string? input = null, output = null;
+    for (var i = 0; i < arguments.Length; i++)
+    {
+        switch (arguments[i])
+        {
+            case "--input" when i + 1 < arguments.Length: input = arguments[++i]; break;
+            case "--output" when i + 1 < arguments.Length: output = arguments[++i]; break;
+            default:
+                Console.Error.WriteLine($"error: unknown argument {arguments[i]}.");
+                return 2;
+        }
+    }
+
+    if (input == null || output == null || !Directory.Exists(input))
+    {
+        Console.Error.WriteLine("error: logos needs --input <directory of PNG files> and --output <drive>.");
+        return 2;
+    }
+
+    var count = ChannelLogos.Write(output, ChannelLogos.FromDirectory(input), Console.Out);
+    Console.WriteLine($"Wrote {count} channel logos to {Path.Combine(output, ChannelLogos.Folder)}.");
+    return 0;
+}

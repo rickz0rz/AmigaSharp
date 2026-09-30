@@ -13,6 +13,10 @@
 #   --interval <minutes>     The minutes between two reads of the guide. The default is 10.
 #   --premium <list>         The premium channels of the Channels DVR listings: channel numbers or call signs, with
 #                            commas between them, for example 222,HBOHD. Their programs have a red background.
+#   --channel-logos          Make channel logos from the logo images of the channels of Channels DVR. It needs
+#                            --channels-dvr.
+#   --logos <directory>      Make channel logos from PNG files named by call letters, for example KTIVDT.png. They
+#                            replace the images of --channel-logos with the same names.
 #   --date <date>            The date and the time of the Amiga, for example 2020-11-01T16:00. Use it to show the saved
 #                            listings of the drive on their date. The default is the time of this computer.
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
@@ -46,7 +50,7 @@
 $ErrorActionPreference = 'Stop'
 
 function Show-Usage {
-    Get-Content $PSCommandPath | Select-Object -First 42 | ForEach-Object { $_ -replace '^# ?', '' }
+    Get-Content $PSCommandPath | Select-Object -First 46 | ForEach-Object { $_ -replace '^# ?', '' }
 }
 
 function Fail([string]$Message) {
@@ -73,12 +77,12 @@ $Launcher = Join-Path $Here 'AmigaSharp.PrevueLauncher.exe'
 $Listings = Join-Path $Here 'AmigaSharp.PrevueListings.exe'
 
 $Drive = ''; $Esq = ''; $Code = 'GA24005'; $ChannelsDvr = ''; $Interval = '10'; $Premium = ''; $Date = ''
-$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $Schedule = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Restart = $false; $Reset = $false; $GenlockControl = $false
+$Stream = ''; $Audio = ''; $Genlock = ''; $GenlockPlaylist = ''; $Schedule = ''; $CtrlPort = ''; $Name = 'Prevue Guide'; $Headless = $false; $Restart = $false; $ChannelLogos = $false; $Logos = ''; $Reset = $false; $GenlockControl = $false
 $launcherOptions = @()
 for ($i = 0; $i -lt $args.Count; $i++) {
     $option = [string]$args[$i]
     $valueOptions = '--drive', '--esq', '--code', '--channels-dvr', '--interval', '--premium', '--date', '--stream',
-        '--audio', '--genlock', '--genlock-playlist', '--schedule', '--prevue-ctrl-port', '--name'
+        '--audio', '--genlock', '--logos', '--genlock-playlist', '--schedule', '--prevue-ctrl-port', '--name'
     if ($valueOptions -contains $option) {
         if ($i + 1 -ge $args.Count) { Fail "$option needs a value." }
         $i++
@@ -101,6 +105,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--name' { $Name = $value }
         '--headless' { $Headless = $true }
         '--restart' { $Restart = $true }
+        '--channel-logos' { $ChannelLogos = $true }
+        '--logos' { $Logos = $value }
         '--genlock-control' { $GenlockControl = $true }
         '--reset' { $Reset = $true }
         { $_ -in '-h', '--help', '-?' } { Show-Usage; exit 0 }
@@ -119,6 +125,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
 
 if (-not $Drive) { Show-Usage | Write-Host; Fail '--drive is necessary.' }
 if ($Restart -and -not $Headless) { Fail '--restart needs --headless.' }
+if ($ChannelLogos -and -not $ChannelsDvr) { Fail '--channel-logos needs --channels-dvr.' }
+if ($Logos -and -not (Test-Path -PathType Container $Logos)) { Fail "the logo directory $Logos does not exist." }
 if (-not (Test-Path -PathType Container $Drive)) { Fail "the drive $Drive does not exist." }
 if (-not (Test-Path $Launcher)) { Fail "$Launcher is missing. Keep the files of this directory together." }
 if ($Stream -and -not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
@@ -183,11 +191,16 @@ try {
                 '--serve', 'localhost:5400', '--interval', $Interval)
             if ($Premium) { $toolArguments += '--premium', (Quote $Premium) }
             if ($Date) { $toolArguments += '--clock', (Quote $Date) }
+            if ($ChannelLogos) { $toolArguments += '--channel-logos' }
+            if ($Logos) { $toolArguments += '--logos', (Quote $Logos) }
             $tool = Start-Process -FilePath $Listings -ArgumentList $toolArguments -NoNewWindow -PassThru
             while (-not (Test-Path $ready)) {
                 if ($tool.HasExited) { Fail "the listings tool stopped. Is $ChannelsDvr correct?" }
                 Start-Sleep -Seconds 1
             }
+        }
+        elseif ($Logos) {
+            Invoke-Program $Listings logos --input $Logos --output $Work | Out-Null
         }
 
         $started = Get-Date

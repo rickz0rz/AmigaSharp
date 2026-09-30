@@ -52,7 +52,8 @@ public static partial class GuideConverter
             .OrderBy(entry => ChannelKey(entry.Channel.Number))
             .Take(Math.Min(maximumChannels, PrevueDataFile.MaximumChannels))
             .Select(entry => new PrevueChannel(entry.Channel.Number, Label(entry.Channel), Programs(entry.Airings, start, zone),
-                premiumChannels.Contains(entry.Channel.Number) || premiumChannels.Contains(entry.Channel.CallSign ?? "")))
+                premiumChannels.Contains(entry.Channel.Number) || premiumChannels.Contains(entry.Channel.CallSign ?? ""),
+                entry.Channel.Image))
             .ToList();
         return new PrevueDay(date, channels);
     }

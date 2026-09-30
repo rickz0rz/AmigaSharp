@@ -13,6 +13,10 @@
 #   --interval <minutes>     The minutes between two reads of the guide. The default is 10.
 #   --premium <list>         The premium channels of the Channels DVR listings: channel numbers or call signs, with
 #                            commas between them, for example 222,HBOHD. Their programs have a red background.
+#   --channel-logos          Make channel logos from the logo images of the channels of Channels DVR. It needs
+#                            --channels-dvr.
+#   --logos <directory>      Make channel logos from PNG files named by call letters, for example KTIVDT.png. They
+#                            replace the images of --channel-logos with the same names.
 #   --date <date>            The date and the time of the Amiga, for example 2020-11-01T16:00. Use it to show the saved
 #                            listings of the drive on their date. The default is the time of this computer.
 #   --stream <port>          Stream the display as a TV channel on the HTTP port (ffmpeg must be installed). The playlist
@@ -46,7 +50,7 @@ LAUNCHER=$HERE/AmigaSharp.PrevueLauncher
 LISTINGS=$HERE/AmigaSharp.PrevueListings
 
 usage() {
-    sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 fail() {
@@ -55,7 +59,7 @@ fail() {
 }
 
 DRIVE="" ESQ="" CODE=GA24005 CHANNELS_DVR="" INTERVAL=10 PREMIUM="" DATE="" STREAM="" AUDIO="" GENLOCK="" GENLOCK_PLAYLIST="" SCHEDULE="" CTRL_PORT="" NAME="Prevue Guide"
-HEADLESS="" RESTART="" RESET="" GENLOCK_CONTROL=""
+HEADLESS="" RESTART="" CHANNEL_LOGOS="" LOGOS="" RESET="" GENLOCK_CONTROL=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --drive) [ $# -ge 2 ] || fail "$1 needs a value."; DRIVE=$2; shift 2 ;;
@@ -74,6 +78,8 @@ while [ $# -gt 0 ]; do
         --name) [ $# -ge 2 ] || fail "$1 needs a value."; NAME=$2; shift 2 ;;
         --headless) HEADLESS=1; shift ;;
         --restart) RESTART=1; shift ;;
+        --channel-logos) CHANNEL_LOGOS=1; shift ;;
+        --logos) [ $# -ge 2 ] || fail "$1 needs a value."; LOGOS=$2; shift 2 ;;
         --genlock-control) GENLOCK_CONTROL=1; shift ;;
         --reset) RESET=1; shift ;;
         -h|--help) usage; exit 0 ;;
@@ -84,6 +90,8 @@ done
 
 [ -n "$DRIVE" ] || { usage >&2; fail "--drive is necessary."; }
 [ -z "$RESTART" ] || [ -n "$HEADLESS" ] || fail "--restart needs --headless."
+[ -z "$CHANNEL_LOGOS" ] || [ -n "$CHANNELS_DVR" ] || fail "--channel-logos needs --channels-dvr."
+[ -z "$LOGOS" ] || [ -d "$LOGOS" ] || fail "the logo directory $LOGOS does not exist."
 [ -d "$DRIVE" ] || fail "the drive $DRIVE does not exist."
 [ -x "$LAUNCHER" ] || fail "$LAUNCHER is missing. Keep the files of this directory together."
 if [ -n "$STREAM" ] && ! command -v ffmpeg >/dev/null 2>&1; then
@@ -158,7 +166,8 @@ start_listings() {
     READY=$PREVUE_DATA/listings-ready
     rm -f "$READY"
     "$LISTINGS" --server "$CHANNELS_DVR" --output "$WORK" --ready "$READY" --serve localhost:5400 \
-        --interval "$INTERVAL" ${PREMIUM:+--premium "$PREMIUM"} ${DATE:+--clock "$DATE"} &
+        --interval "$INTERVAL" ${PREMIUM:+--premium "$PREMIUM"} ${DATE:+--clock "$DATE"} \
+        ${CHANNEL_LOGOS:+--channel-logos} ${LOGOS:+--logos "$LOGOS"} &
     TOOL=$!
     while [ ! -f "$READY" ]; do
         kill -0 "$TOOL" 2>/dev/null || fail "the listings tool stopped. Is $CHANNELS_DVR correct?"
@@ -172,7 +181,11 @@ start_listings() {
 # starts.
 DELAY=5
 while :; do
-    [ -n "$CHANNELS_DVR" ] && start_listings
+    if [ -n "$CHANNELS_DVR" ]; then
+        start_listings
+    elif [ -n "$LOGOS" ]; then
+        "$LISTINGS" logos --input "$LOGOS" --output "$WORK" >/dev/null
+    fi
     STARTED=$(date +%s)
     "$LAUNCHER" "$@" &
     LAUNCHER_PID=$!
