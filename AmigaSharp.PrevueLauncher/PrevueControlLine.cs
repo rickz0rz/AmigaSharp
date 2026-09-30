@@ -1,7 +1,7 @@
 using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Hardware;
 
-namespace AmigaSharp.Launcher.Prevue;
+namespace AmigaSharp.PrevueLauncher;
 
 /// <summary>
 /// Connects the control line of Prevue (CTRL, see docs/ctrl-line.md) to the CTS line of the chipset. The bytes come

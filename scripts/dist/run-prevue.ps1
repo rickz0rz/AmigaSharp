@@ -65,7 +65,7 @@ function Quote([string]$Text) {
 }
 
 $Here = $PSScriptRoot
-$Launcher = Join-Path $Here 'AmigaSharp.Launcher.exe'
+$Launcher = Join-Path $Here 'AmigaSharp.PrevueLauncher.exe'
 $Listings = Join-Path $Here 'AmigaSharp.PrevueListings.exe'
 
 $Drive = ''; $Esq = ''; $Code = 'GA24005'; $ChannelsDvr = ''; $Interval = '10'; $Premium = ''; $Date = ''
@@ -140,7 +140,7 @@ if (-not $Esq) { $Esq = Join-Path $Work 'ESQ' }
 if (-not (Test-Path -PathType Leaf $Esq)) { Fail "the program $Esq does not exist. Use --esq." }
 
 $arguments = @($Esq, '--drive', $Work, '--volume', "DH1=$Work", '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:',
-    '--arguments', $Code, '--command-name', 'esq', '--prevue', '--turbo', '8', '--deinterlace', 'blend', '--scale', '2')
+    '--arguments', $Code, '--command-name', 'esq', '--turbo', '8', '--deinterlace', 'blend', '--scale', '2')
 $arguments += $launcherOptions
 if ($Date) { $arguments += '--date', $Date }
 if ($Headless) { $arguments += '--headless' }

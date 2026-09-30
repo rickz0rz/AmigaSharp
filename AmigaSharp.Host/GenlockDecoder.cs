@@ -4,7 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using AmigaSharp.Runtime.Hardware;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>The pictures and the sound of one video of the genlock playlist.</summary>
 public interface IGenlockDecoder : IDisposable

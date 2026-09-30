@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using AmigaSharp.Launcher;
+using AmigaSharp.Host;
 using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Hardware;
 

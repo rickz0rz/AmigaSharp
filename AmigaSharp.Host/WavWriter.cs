@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using AmigaSharp.Runtime.Hardware;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Writes the sound of the audio channels to a WAV file: 16-bit stereo PCM at <see cref="AudioOutput.SampleRate"/>. A

@@ -6,9 +6,9 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using AmigaSharp.Runtime.Hardware;
-using static AmigaSharp.Launcher.HttpJson;
+using static AmigaSharp.Host.HttpJson;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Streams the display as a live HLS video over HTTP, for example as a custom channel of Channels DVR. ffmpeg encodes

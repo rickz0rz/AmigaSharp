@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-Build the launcher and the listings tool as native programs (Native AOT). The people who use them do not need .NET.
+Build the launcher for Prevue and the listings tool as native programs (Native AOT). The people who use them do not
+need .NET. The launcher for Prevue also runs other AmigaOS programs.
 
 .DESCRIPTION
 Native AOT compiles only for the operating system of the host, so on Windows, build for win-x64 or win-arm64. It needs
@@ -59,7 +60,7 @@ if ($EmbeddedProgram) {
 }
 
 if (Test-Path $Out) { Remove-Item -Recurse -Force $Out }
-foreach ($project in 'AmigaSharp.Launcher', 'AmigaSharp.PrevueListings') {
+foreach ($project in 'AmigaSharp.PrevueLauncher', 'AmigaSharp.PrevueListings') {
     Write-Host "Publishing $project for $RuntimeIdentifier."
     # The options are strings in an array. PowerShell would split -p:Name=value in two if it passed them to a function
     # as they are.

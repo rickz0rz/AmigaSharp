@@ -16,8 +16,8 @@ Prevue samples the pin 1100 times each second in its AUD1 interrupt, and it deco
 start bit, 8 data bits (the lowest bit first), and a stop bit. One byte takes 91 ms, so the line sends 11 bytes each
 second.
 
-The launcher has the control line only with the option `--prevue`. The scripts for Prevue give it. The options
-`--prevue-ctrl-port` and `--prevue-ctrl-file` turn it on too. The launcher has three sources for the line:
+The launcher for Prevue (`AmigaSharp.PrevueLauncher`) has the control line. The scripts for Prevue use it. The
+generic launcher (`AmigaSharp.Launcher`) does not have it. The launcher for Prevue has three sources for the line:
 
 - With `--stream`, the HTTP server of the stream makes the packets. See [The HTTP server](#the-http-server).
 - `--prevue-ctrl-port <port>` opens a TCP port on localhost. Each byte that a client sends goes on the line.

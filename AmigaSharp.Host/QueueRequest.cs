@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Reads the items of a queue (the genlock or the music), from a request of the HTTP server or from a queue file.

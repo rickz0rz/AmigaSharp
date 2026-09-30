@@ -6,7 +6,7 @@ using AmigaSharp.Translator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Translates an executable and compiles the C# code in memory. The compiled assembly goes to a cache, with the hash

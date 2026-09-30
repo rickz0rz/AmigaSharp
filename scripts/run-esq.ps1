@@ -75,7 +75,7 @@ function Quote([string]$Text) {
 $Root = Split-Path -Parent $PSScriptRoot
 $Drive = Join-Path $Root $(if ($ChannelsDvr) { 'build\drive-channels-dvr' } else { 'build\drive' })
 $Esq = Join-Path $Root 'build\target\ESQ'
-$Launcher = Join-Path $Root 'AmigaSharp.Launcher\bin\Release\net10.0\AmigaSharp.Launcher.dll'
+$Launcher = Join-Path $Root 'AmigaSharp.PrevueLauncher\bin\Release\net10.0\AmigaSharp.PrevueLauncher.dll'
 $ListingsTool = Join-Path $Root 'AmigaSharp.PrevueListings\bin\Release\net10.0\AmigaSharp.PrevueListings.dll'
 
 if (-not (Test-Path $Esq)) {
@@ -85,7 +85,7 @@ if (-not (Test-Path $Esq)) {
 
 # The script runs the programs with dotnet, not with dotnet run, so that the output of the build does not mix with the
 # output of the programs.
-Invoke-Program dotnet build (Join-Path $Root 'AmigaSharp.Launcher') -c Release -v quiet -nologo | Out-Null
+Invoke-Program dotnet build (Join-Path $Root 'AmigaSharp.PrevueLauncher') -c Release -v quiet -nologo | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'the launcher does not build. Run dotnet build to see the errors.' }
 
 if (-not (Test-Path $Drive)) {
@@ -128,7 +128,7 @@ try {
 
     $arguments = @($Esq, '--listing', (Join-Path $Root 'build\target\ESQ.lst'),
         '--drive', $Drive, '--volume', "DH1=$Drive",
-        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq', '--prevue',
+        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq',
         '--turbo-until', '_ESQ_MainLoopUiTickEnabledFlag') + $options + @('--scale', $Scale)
     if ($LauncherArguments) { $arguments += $LauncherArguments }
     Invoke-Program dotnet $Launcher @arguments

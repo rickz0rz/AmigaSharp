@@ -1,5 +1,7 @@
 #!/bin/sh
-# Build the launcher and the listings tool as native programs (Native AOT). The people who use them do not need .NET.
+# Build the launcher for Prevue and the listings tool as native programs (Native AOT). The people who use them do not
+# need .NET. The launcher for Prevue also runs other AmigaOS programs. To build only the generic launcher, run:
+#   dotnet publish AmigaSharp.Launcher -c Release -r <runtime identifier> -p:PublishAot=true
 #
 # Usage: scripts/publish.sh [runtime identifier]
 #
@@ -31,7 +33,7 @@ if [ -n "${EMBEDDED_PROGRAM:-}" ]; then
 fi
 
 rm -rf "$OUT"
-for project in AmigaSharp.Launcher AmigaSharp.PrevueListings; do
+for project in AmigaSharp.PrevueLauncher AmigaSharp.PrevueListings; do
     echo "Publishing $project for $RID."
     # EMBEDDED is not in quotes, so that each property is a separate argument. Paths with spaces are not supported.
     # shellcheck disable=SC2086

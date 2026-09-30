@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using AmigaSharp.Runtime.Hardware;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>A layer of the sound of the stream.</summary>
 public enum MixerLayer

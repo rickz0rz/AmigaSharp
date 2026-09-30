@@ -1,6 +1,6 @@
 using AmigaSharp.Runtime.Input;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>The names of keys for the option --press, and their raw key codes.</summary>
 public static class KeyNames

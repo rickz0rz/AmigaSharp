@@ -23,7 +23,7 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   - `--serial-port <port>`: the default serial bridge port is 5400. Give each parallel run its own port.
 - Put screenshots for the user in `screenshots/` (untracked). Contact sheets:
   `ffmpeg -framerate 1 -pattern_type glob -i 'dir/p-*.png' -vf "scale=384:240,tile=5x2" -frames:v 1 sheet.png`.
-- Stop background launcher runs with `pkill -TERM -f 'AmigaSharp.Launcher .*--stream <port>'`. Background jobs
+- Stop background launcher runs with `pkill -TERM -f 'AmigaSharp\..*Launcher .*--stream <port>'`. Background jobs
   ignore SIGINT, and SIGTERM lets the launcher stop ffmpeg.
 - The stream's HTTP server is .NET HttpListener: a POST without a body needs `curl -d ''`, or it answers 411.
 
@@ -47,11 +47,15 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 - `scripts/dist/run-prevue.sh` and `run-prevue.ps1` must stay in parity (same options, same help text). Both print
   their help from the header comment by line count (`sed -n '2,Np'` and `Select-Object -First N`): update the count
   when the header changes. Keep `scripts/dist/README.txt` in step with user-visible options.
-- Keep the runtime and the launcher generic: they must run any Amiga program. Prevue-specific launcher code lives in
-  `AmigaSharp.Launcher/Prevue/` (namespace `AmigaSharp.Launcher.Prevue`) and is set up only with `--prevue` (or an
-  option that implies it). Plug HTTP routes into the stream through `IStreamRequests`, not by editing
-  `VideoStream`. Prevue is a good example in comments, but name things for the general mechanism (`CtsLine`, not
-  "ControlLine").
+- Keep the runtime and `AmigaSharp.Host` generic: they must run any Amiga program. `AmigaSharp.Host` is the launcher
+  as a library (`Launcher.Run`, `LauncherOptions`, `ILauncherExtension`, `IStreamRequests`). A launcher for one
+  program is a small exe that calls `Launcher.Run` with an extension: `AmigaSharp.Launcher` (none) and
+  `AmigaSharp.PrevueLauncher` (`PrevueExtension`: control line, `/prevue/ctrl`, feed trace, Prevue defaults). Put
+  Prevue code in `AmigaSharp.PrevueLauncher`. Plug HTTP routes into the stream through `IStreamRequests`, not by
+  editing `VideoStream`. Prevue is a good example in comments, but name things for the general mechanism
+  (`CtsLine`, not "ControlLine").
+- Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
+  registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,
   `/prevue/ctrl`, `--prevue-feed-trace`). Generic ones do not (`/genlock`, `/music`, `/mixer`).
 - HTTP API style (see `VideoStream`): JSON via `JsonDocument`/`Utf8JsonWriter` (AOT-safe, no reflection

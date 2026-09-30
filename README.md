@@ -83,10 +83,31 @@ are trademarks of their owners.
 |---|---|
 | `AmigaSharp.Runtime` | The 68000 CPU and its interpreter, the memory, the HLE libraries, and the chipset model. |
 | `AmigaSharp.Translator` | Translates an executable and its vasm listing to a C# class. |
-| `AmigaSharp.Launcher` | Translates, compiles and runs an executable, and shows its display in a window. |
+| `AmigaSharp.Host` | The launcher as a library: the options, the window, the stream, the genlock and the sound. |
+| `AmigaSharp.Launcher` | Translates, compiles and runs any executable, and shows its display in a window. |
+| `AmigaSharp.PrevueLauncher` | The launcher with the parts for Prevue: its control line, `/prevue/ctrl`, and its defaults. |
 | `AmigaSharp.PrevueListings` | Writes Prevue listing files and a Prevue data feed from the guide of a Channels DVR server. |
 | `AmigaSharp` | Runs the translated Hello World sample. |
 | `AmigaSharp.Tests` | The tests. |
+
+The folders of the repository:
+
+```text
+AmigaSharp.Runtime/          The emulated Amiga: CPU, memory, libraries, chipset. No code for one program.
+AmigaSharp.Translator/       The translator from 68000 code to C#.
+AmigaSharp.Host/             The launcher as a library, with its extension points (ILauncherExtension).
+AmigaSharp.Launcher/         The generic launcher program: one file.
+AmigaSharp.PrevueLauncher/   The launcher program for Prevue: the extension and the code for Prevue.
+AmigaSharp.PrevueListings/   The listings tool for Prevue.
+AmigaSharp.Tests/            The tests of all the projects.
+docs/                        The documents: ctrl-line.md and orchestration.md are about Prevue.
+scripts/                     The scripts to build and run. run-esq and scripts/dist/ are for Prevue.
+```
+
+The two launchers use `AmigaSharp.Host`. A launcher for a program is a small project that calls `Launcher.Run` with
+an `ILauncherExtension`. The extension adds the options, the parts and the defaults of the program.
+`AmigaSharp.PrevueLauncher` is the example. `AmigaSharp.Launcher` has no extension, and it runs any program as a plain
+Amiga.
 
 ## Build
 
@@ -137,10 +158,12 @@ This command runs Prevue with a copy of the drive of the original machine. Prevu
 
 ```sh
 cp -R target-source/binaries /tmp/prevue-drive
-dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
-    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq
+dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
+    --drive /tmp/prevue-drive
 ```
+
+The launcher for Prevue sets the defaults of a Prevue machine. The drive is also DH1:, and DF0: and ENV: are DH1:.
+The command name is esq, and the arguments are the selection code GA24005. Use `--help` to see all the defaults.
 
 Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing. `scripts/run-esq.sh` does all of
 these steps.
@@ -165,9 +188,8 @@ packed files. Unpack them in a copy of the drive, and run Prevue on the date of 
 cp -R target-source/binaries /tmp/prevue-drive
 dotnet run --project AmigaSharp.Launcher -c Release -- unpack /tmp/prevue-drive/curday.dat \
     /tmp/prevue-drive/nxtday.dat /tmp/prevue-drive/PWI? --output /tmp/prevue-drive
-dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
-    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --date 2020-11-01T16:00
+dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
+    --drive /tmp/prevue-drive --date 2020-11-01T16:00
 ```
 
 ## Show the listings of a Channels DVR server
@@ -384,16 +406,16 @@ Prevue gets its listings on the serial port. The launcher can replay a captured 
   SERPER. The replay starts when the program enables the RBF interrupt.
 - `--serial-start <seconds>` delays the replay. Prevue empties its receive buffer while it starts, so use 8 or more.
 - `--serial-log <file>` writes each byte in the two directions to the file, with the time of the Amiga clock.
-- `--prevue-feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters. For
-  example, a change of `_DATACErrs` shows a checksum error. This option needs `--listing`.
+- `--prevue-feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters.
+  For example, a change of `_DATACErrs` shows a checksum error. This option needs `--listing`, and the launcher for
+  Prevue.
 
 Use `--virtual-time` with a replay. The run is then the same each time. Run the replay on a copy of the drive,
 because Prevue writes the data that it receives to the drive:
 
 ```sh
-dotnet run --project AmigaSharp.Launcher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive --volume DH1=/tmp/prevue-drive \
-    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --virtual-time \
+dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
+    --drive /tmp/prevue-drive --virtual-time \
     --serial-file feed.bin --serial-start 8 --serial-log serial.log --prevue-feed-trace feed.log
 ```
 
@@ -427,8 +449,8 @@ curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
   to read the line some seconds after the stream starts.
 - `--prevue-ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--prevue-ctrl-file <file>` sends
   the bytes of a file. Do not send raw bytes and HTTP requests at the same time.
-- These requests need the option `--prevue`. The scripts for Prevue (`scripts/run-esq.sh` and `run-prevue.sh`) give
-  it. Without it, the launcher has nothing of Prevue, so it runs other programs as a plain Amiga.
+- These requests and options are in `AmigaSharp.PrevueLauncher`. The scripts for Prevue (`scripts/run-esq.sh` and
+  `run-prevue.sh`) use it. `AmigaSharp.Launcher` has nothing of Prevue.
 
 [docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
 [docs/orchestration.md](docs/orchestration.md) tells how to use the videos, the music, the promos and the logos
@@ -436,8 +458,10 @@ together, with an example coordinator.
 
 ## Build programs for other people
 
-`scripts/publish.sh` builds the launcher and the listings tool as native programs with Native AOT. The people who use
-them do not need .NET:
+`scripts/publish.sh` builds the launcher for Prevue (`AmigaSharp.PrevueLauncher`) and the listings tool as native
+programs with Native AOT. The people who use them do not need .NET. The launcher for Prevue also runs other programs.
+To publish only the generic launcher, use `dotnet publish AmigaSharp.Launcher -c Release -r <runtime identifier>
+-p:PublishAot=true`.
 
 ```sh
 scripts/publish.sh              # For this host, for example osx-arm64.

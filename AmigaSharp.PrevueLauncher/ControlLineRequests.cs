@@ -1,8 +1,9 @@
 using System.Net;
 using System.Text.Json;
-using static AmigaSharp.Launcher.HttpJson;
+using AmigaSharp.Host;
+using static AmigaSharp.Host.HttpJson;
 
-namespace AmigaSharp.Launcher.Prevue;
+namespace AmigaSharp.PrevueLauncher;
 
 /// <summary>The requests of /prevue/ctrl on the port of the stream: they send commands on the control line.</summary>
 public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests

@@ -34,7 +34,7 @@ if [ -n "${CHANNELS_DVR:-}" ]; then
     DRIVE=$ROOT/build/drive-channels-dvr
 fi
 ESQ=$ROOT/build/target/ESQ
-LAUNCHER="dotnet run --project $ROOT/AmigaSharp.Launcher -c Release --"
+LAUNCHER="dotnet run --project $ROOT/AmigaSharp.PrevueLauncher -c Release --"
 
 if [ ! -f "$ESQ" ]; then
     "$ROOT/scripts/build-target.sh"
@@ -78,5 +78,5 @@ fi
 # shellcheck disable=SC2086
 $LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
     --drive "$DRIVE" --volume "DH1=$DRIVE" \
-    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq --prevue \
+    --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq \
     --turbo-until _ESQ_MainLoopUiTickEnabledFlag $EXTRA_OPTIONS --scale "${ESQ_SCALE:-2}" "$@"

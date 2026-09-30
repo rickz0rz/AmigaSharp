@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AmigaSharp.Runtime.Hardware;
 
-namespace AmigaSharp.Launcher.Prevue;
+namespace AmigaSharp.PrevueLauncher;
 
 /// <summary>
 /// The bytes of the control line of Prevue (see docs/ctrl-line.md). The HTTP server adds packets, for example the

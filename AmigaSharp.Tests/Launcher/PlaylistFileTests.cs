@@ -1,4 +1,4 @@
-using AmigaSharp.Launcher;
+using AmigaSharp.Host;
 
 namespace AmigaSharp.Tests.Launcher;
 

@@ -1,7 +1,7 @@
 using AmigaSharp.Runtime;
 using AmigaSharp.Translator;
 
-namespace AmigaSharp.Launcher.Prevue;
+namespace AmigaSharp.PrevueLauncher;
 
 /// <summary>
 /// Reports what the feed parser of ESQ does with the serial bytes. The trace reads the variables of ESQ at each safe

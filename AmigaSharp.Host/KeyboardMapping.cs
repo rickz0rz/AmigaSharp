@@ -1,7 +1,7 @@
 using AmigaSharp.Runtime.Input;
 using Silk.NET.SDL;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>Converts the keys of the host (SDL scancodes) to the raw key codes of the Amiga keyboard, US layout.</summary>
 public static class KeyboardMapping

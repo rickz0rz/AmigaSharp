@@ -1,4 +1,4 @@
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// The decoder of <see cref="GenlockPlaylist.Black"/>: black pictures and silence, with no end. The time limit of its

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// The queue of videos that the genlock shows behind the display. Each item is a file or a URL, with an optional time

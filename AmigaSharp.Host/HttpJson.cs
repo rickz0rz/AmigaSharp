@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Answers a group of requests on the port of the stream, for example the requests of /prevue/ctrl. The stream gives

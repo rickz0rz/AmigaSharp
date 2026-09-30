@@ -2,7 +2,7 @@ using AmigaSharp.Runtime.Hardware;
 using Silk.NET.Maths;
 using Silk.NET.SDL;
 
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Shows the picture of the display in an SDL window. The window must run on the main thread, because macOS requires

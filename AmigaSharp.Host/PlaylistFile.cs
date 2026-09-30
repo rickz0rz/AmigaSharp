@@ -1,4 +1,4 @@
-namespace AmigaSharp.Launcher;
+namespace AmigaSharp.Host;
 
 /// <summary>
 /// Reads a playlist of audio files: an M3U file, a text file with one audio file on each line, or a directory of audio

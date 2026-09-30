@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using AmigaSharp.Launcher.Prevue;
+using AmigaSharp.PrevueLauncher;
 using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Tests.Launcher;

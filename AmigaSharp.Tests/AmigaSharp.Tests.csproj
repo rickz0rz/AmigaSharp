@@ -28,7 +28,8 @@
     <ProjectReference Include="..\AmigaSharp\AmigaSharp.csproj" />
     <ProjectReference Include="..\AmigaSharp.Translator\AmigaSharp.Translator.csproj" />
     <ProjectReference Include="..\AmigaSharp.PrevueListings\AmigaSharp.PrevueListings.csproj" />
-    <ProjectReference Include="..\AmigaSharp.Launcher\AmigaSharp.Launcher.csproj" />
+    <ProjectReference Include="..\AmigaSharp.Host\AmigaSharp.Host.csproj" />
+    <ProjectReference Include="..\AmigaSharp.PrevueLauncher\AmigaSharp.PrevueLauncher.csproj" />
   </ItemGroup>
 
 </Project>
