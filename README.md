@@ -274,8 +274,8 @@ Each video is a file or a URL, with these values in JSON:
 
 | Value | Meaning |
 |---|---|
-| `source` | A file or a URL. This value is necessary. A source with no video, for example a music file, plays over black. |
-| `seconds` | The time that the video plays. Without it, a file plays to its end, and a URL plays until you skip it. |
+| `source` | A file, a URL, or `black`. This value is necessary. A source with no video, for example a music file, plays over black. `black` is black and silence, for a pause. |
+| `seconds` | The time that the video plays. Without it, a file plays to its end, and a URL plays until you skip it. `black` needs it. |
 | `loop` | `true` to play a file in a loop. |
 | `next` | `true` to put the video first in the queue, not last. |
 
@@ -308,6 +308,24 @@ These requests control the queue:
 - The launcher starts the next video 5 seconds before the current video ends, so the next video starts without black.
   A live source without `seconds` has no known end, so the next video starts with black for a few seconds.
 - A file in a request must be on the computer of the launcher.
+
+`--genlock-playlist <file>` starts the stream with the videos of a JSON file, in place of `--genlock` or
+`--genlock-control`. The file has the videos of the queue, and `"loop": "all"` to play them in a loop. A relative
+file is relative to the directory of the JSON file. For example, play a video, then show the grid over black for 3
+minutes, and then start again:
+
+```json
+{
+  "loop": "all",
+  "queue": [
+    {"source": "prevue-1993.mp4"},
+    {"source": "black", "seconds": 180}
+  ]
+}
+```
+
+The HTTP server then controls the queue, as with `--genlock-control`. The file can also be a JSON array of videos,
+with no loop.
 
 Anyone who can connect to the port of the stream can change the queue, and can play any video file that the launcher
 can read. Use the stream only on a network that you trust.

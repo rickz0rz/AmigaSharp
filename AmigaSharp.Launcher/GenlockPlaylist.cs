@@ -10,7 +10,7 @@ namespace AmigaSharp.Launcher;
 /// <para>
 /// A file plays to its end, or in a loop. A URL (a live source) plays until its time ends or until a skip. If a live
 /// source stops before its time ends, the playlist starts it again after 2 seconds. An item without a time limit plays
-/// until it ends or until a skip.
+/// until it ends or until a skip. The source <see cref="Black"/> is black and silence for its time.
 /// </para>
 /// <para>
 /// The time of an item counts the ticks of the stream while the item is current, also the ticks that show black while
@@ -23,6 +23,11 @@ public sealed class GenlockPlaylist : IDisposable
 {
     /// <summary>The stream starts the pictures of a decoder when it has this number, and keeps it near there.</summary>
     public const int TargetFrames = 6;
+
+    /// <summary>
+    /// The source of an item that is black and silence, for example a pause between two videos. It needs a time limit.
+    /// </summary>
+    public const string Black = "black";
 
     private const double FramesPerSecond = 30000 / 1001.0;
     private static readonly TimeSpan PreloadTime = TimeSpan.FromSeconds(5);
@@ -95,7 +100,7 @@ public sealed class GenlockPlaylist : IDisposable
     /// <param name="next">True to put the item first in the queue.</param>
     public Item Add(string source, double? seconds, bool loop, bool next)
     {
-        var item = new Item(0, source, seconds, loop, GenlockDecoder.Duration(source));
+        var item = new Item(0, source, seconds, loop, source == Black ? null : GenlockDecoder.Duration(source));
         lock (_lock)
         {
             item = item with { Id = _nextId++ };
@@ -312,22 +317,24 @@ public sealed class GenlockPlaylist : IDisposable
             _currentFrames = 0;
             _currentPictures = 0;
             _playing = false;
-            _decoder = _preloaded ?? _startDecoder(_current);
+            _decoder = _preloaded ?? StartDecoder(_current);
             _preloaded = null;
             _log.WriteLine($"{_name}: playing {Describe(_current)}.");
         }
 
         if (_current != null && _decoder == null && DateTime.UtcNow >= _restartAt)
         {
-            _decoder = _startDecoder(_current);
+            _decoder = StartDecoder(_current);
             _restartAt = null;
         }
 
         // Start the decoder of the next item a few seconds before the current item ends.
         if (_preloaded == null && _queue.First is { } next && _current?.Frames is { } total
             && total - _currentFrames <= PreloadTime.TotalSeconds * FramesPerSecond)
-            _preloaded = _startDecoder(next.Value);
+            _preloaded = StartDecoder(next.Value);
     }
+
+    private IGenlockDecoder StartDecoder(Item item) => item.Source == Black ? new BlackDecoder() : _startDecoder(item);
 
     private void EndCurrent(string reason, bool requeue = true)
     {

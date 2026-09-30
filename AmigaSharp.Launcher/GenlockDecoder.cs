@@ -109,6 +109,10 @@ public sealed class GenlockDecoder : IGenlockDecoder
         }
     }
 
+    /// <summary>A picture of the size of the display from the pool, or a new picture. Its pixels are not cleared.</summary>
+    public static uint[] Rent() => Pool.TryTake(out var pixels) ? pixels : new uint[Display.Width * Display.Height];
+
+    /// <summary>Gives a picture back to the pool.</summary>
     public static void Return(uint[] pixels)
     {
         if (pixels.Length == Display.Width * Display.Height)

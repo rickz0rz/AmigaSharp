@@ -68,11 +68,12 @@ public sealed class VideoStream : IDisposable
     /// The first video of the genlock playlist: a file (in a loop) or a URL, without a time limit. Null for none.
     /// </param>
     /// <param name="genlock">True for the genlock playlist, also without a first video.</param>
+    /// <param name="genlockQueue">The first videos and the loop setting of the genlock playlist, or null for none.</param>
     /// <param name="amigaSound">The sound of the Amiga, or null for none.</param>
     /// <param name="controlLine">The control line of Prevue for the requests of /prevue/ctrl, or null for none.</param>
     public VideoStream(Display display, int port, bool wide, string channelName, TextWriter log,
         string? audioPlaylist = null, string? genlockSource = null, bool genlock = false, AudioTap? amigaSound = null,
-        ControlLineFeed? controlLine = null)
+        ControlLineFeed? controlLine = null, QueueRequest.QueueFile? genlockQueue = null)
     {
         _display = display;
         _controlLine = controlLine;
@@ -92,11 +93,18 @@ public sealed class VideoStream : IDisposable
         }
 
         _mixer = new StreamMixer(_music, amigaSound);
-        if (genlock || genlockSource != null)
+        if (genlock || genlockSource != null || genlockQueue != null)
         {
             _genlock = new GenlockPlaylist(withAudio: true, log);
             if (genlockSource != null)
                 _genlock.Add(genlockSource, seconds: null, loop: File.Exists(genlockSource), next: false);
+            if (genlockQueue != null)
+            {
+                foreach (var video in genlockQueue.Videos)
+                    _genlock.Add(video.Source, video.Seconds, video.Loop, next: false);
+                if (genlockQueue.LoopAll is { } loopAll)
+                    _genlock.LoopAll = loopAll;
+            }
         }
 
         _audioPort.Start();
@@ -410,16 +418,8 @@ public sealed class VideoStream : IDisposable
                 case ("POST", ""):
                 {
                     using var document = ReadJson(context);
-                    if (document.RootElement.TryGetProperty("loop", out var loop))
-                    {
-                        playlist.LoopAll = loop.GetString() switch
-                        {
-                            "all" => true,
-                            "off" => false,
-                            _ => throw new FormatException("\"loop\" must be \"all\" or \"off\"."),
-                        };
-                    }
-
+                    if (QueueRequest.ReadLoop(document.RootElement) is { } loopAll)
+                        playlist.LoopAll = loopAll;
                     break;
                 }
                 case ("POST", "queue"):
@@ -429,7 +429,7 @@ public sealed class VideoStream : IDisposable
                         ? document.RootElement.EnumerateArray().ToList()
                         : [document.RootElement];
                     // Check all the videos first, so that a request with an error adds none of them.
-                    var videos = items.Select(ReadVideo).ToList();
+                    var videos = items.Select(item => QueueRequest.ReadVideo(item)).ToList();
                     // With "next", the first video of the request must play first.
                     foreach (var video in Enumerable.Reverse(videos).Where(video => video.Next))
                         playlist.Add(video.Source, video.Seconds, video.Loop, next: true);
@@ -681,34 +681,6 @@ public sealed class VideoStream : IDisposable
         if (double.IsNaN(number) || number < minimum || number > maximum)
             throw new FormatException($"\"{name}\" must be a number from {minimum} to {maximum}.");
         return number;
-    }
-
-    private readonly record struct Video(string Source, double? Seconds, bool Loop, bool Next);
-
-    /// <summary>Reads a video of a request. A source without "://" must be a file that exists.</summary>
-    /// <exception cref="FormatException">The video is not correct.</exception>
-    private static Video ReadVideo(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object)
-            throw new FormatException("A video must be a JSON object, for example {\"source\": \"movie.mp4\"}.");
-        var source = element.TryGetProperty("source", out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()!
-            : throw new FormatException("A video needs \"source\": a file or a URL.");
-        if (!source.Contains("://"))
-        {
-            if (!File.Exists(source))
-                throw new FormatException($"The file {source} does not exist.");
-            source = Path.GetFullPath(source);
-        }
-
-        double? seconds = element.TryGetProperty("seconds", out value) && value.ValueKind != JsonValueKind.Null
-            ? value.GetDouble()
-            : null;
-        if (seconds is <= 0)
-            throw new FormatException("\"seconds\" must be more than 0.");
-        var loop = element.TryGetProperty("loop", out value) && value.GetBoolean();
-        var next = element.TryGetProperty("next", out value) && value.GetBoolean();
-        return new Video(source, seconds, loop, next);
     }
 
     private static void SendError(HttpListenerResponse response, int status, string message)

@@ -155,6 +155,29 @@ public sealed class GenlockPlaylistTests : IDisposable
     }
 
     [Fact]
+    public void Black_IsBlackAndSilence_ForItsSeconds_AndLoops()
+    {
+        _playlist.LoopAll = true;
+        _playlist.Add(GenlockPlaylist.Black, seconds: 1, loop: false, next: false);
+        _playlist.Add(Live, seconds: null, loop: false, next: false);
+
+        // One second is 30 ticks. The black item needs no decoder of the factory.
+        for (var tick = 0; tick < 30; tick++)
+        {
+            var frame = _playlist.TakeFrame(TimeSpan.Zero);
+            Assert.NotNull(frame);
+            Assert.False(frame.Value.HasSound);
+            Assert.All(frame.Value.Pixels, pixel => Assert.Equal(0xFF000000u, pixel));
+            GenlockDecoder.Return(frame.Value.Pixels);
+        }
+
+        Assert.Equal([Live], _started.Select(started => started.Item.Source));
+        _playlist.TakeFrame(TimeSpan.Zero);
+        Assert.Equal(Live, Json().GetProperty("current").GetProperty("source").GetString());
+        Assert.Equal([GenlockPlaylist.Black], Queue());
+    }
+
+    [Fact]
     public void LoopAll_DropsAnItemThatGaveNoPicture()
     {
         _playlist.LoopAll = true;

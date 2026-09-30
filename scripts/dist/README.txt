@@ -44,6 +44,13 @@ minutes, then a file to its end:
     curl -X POST http://localhost:8091/genlock/queue \
         -d '[{"source": "http://hdhomerun.local:5004/auto/v2", "seconds": 300}, {"source": "/videos/promo.mp4"}]'
 
+Or start with a queue from a JSON file. For example, this file plays a video, then shows the grid over black for 3
+minutes, and then starts again:
+
+    {"loop": "all", "queue": [{"source": "prevue-1993.mp4"}, {"source": "black", "seconds": 180}]}
+
+    ./run-prevue.sh --drive /path/to/drive --headless --stream 8091 --genlock-playlist /path/to/queue.json
+
 GET /genlock gives the queue, POST /genlock/next skips to the next video, and POST /genlock/stop ends all the videos.
 With curl, a POST without data needs -d '', for example: curl -X POST -d '' http://localhost:8091/genlock/next
 Anyone who can connect to the port of the stream can change the queue, so use it only on a network that you trust.

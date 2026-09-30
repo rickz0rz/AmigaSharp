@@ -69,6 +69,10 @@ const string usage = """
                                 option or --genlock, the HTTP server of the stream controls the queue of videos of
                                 the genlock: GET /genlock, POST /genlock/queue, POST /genlock/next, POST /genlock/stop
                                 and DELETE /genlock/queue. See the README. This option needs --stream.
+      --genlock-playlist <file> Start the genlock with the videos of a JSON file, for example {"loop": "all",
+                                "queue": [{"source": "promo.mp4"}, {"source": "black", "seconds": 180}]}. "black" is
+                                black and silence. The HTTP server controls the queue as with --genlock-control. This
+                                option needs --stream.
       --audio-file <file.wav>   Write the sound of the audio channels to a WAV file. Without this option, the window
                                 plays the sound.
       --screenshot <file.png>   Do not open a window. Save the picture after --seconds, and stop.
@@ -128,6 +132,7 @@ string? streamName = null;
 string? streamAudio = null;
 string? genlock = null;
 var genlockControl = false;
+QueueRequest.QueueFile? genlockQueue = null;
 var fastCpu = false;
 double? turboSeconds = null;
 string? turboLabel = null;
@@ -180,6 +185,7 @@ try
             case "--stream-audio": streamAudio = Next(); break;
             case "--genlock": genlock = Next(); break;
             case "--genlock-control": genlockControl = true; break;
+            case "--genlock-playlist": genlockQueue = QueueRequest.ReadFile(Next()); break;
             case "--fast-cpu": fastCpu = true; break;
             case "--turbo": turboSeconds = double.Parse(Next(), System.Globalization.CultureInfo.InvariantCulture); break;
             case "--turbo-until": turboLabel = Next(); break;
@@ -209,8 +215,8 @@ try
 
     if (executablePath == null)
         throw new ArgumentException("the executable is missing.");
-    if ((genlock != null || genlockControl) && streamPort == null)
-        throw new ArgumentException("--genlock and --genlock-control need --stream.");
+    if ((genlock != null || genlockControl || genlockQueue != null) && streamPort == null)
+        throw new ArgumentException("--genlock, --genlock-control and --genlock-playlist need --stream.");
     if (feedTrace != null && listing == null)
         throw new ArgumentException("--feed-trace needs --listing.");
     if ((turboLabel != null || watches.Count > 0) && listing == null)
@@ -347,7 +353,7 @@ using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.C
 core.Chipset.Display.Deinterlace = deinterlace;
 using var videoStream = streamPort is { } port
     ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-        genlockControl, core.Chipset.Audio.OpenTap(), controlLine)
+        genlockControl, core.Chipset.Audio.OpenTap(), controlLine, genlockQueue)
     : null;
 
 // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
