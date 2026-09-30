@@ -217,9 +217,14 @@ The listings tool makes channel logos from PNG images:
 
 ![Channel logos with the call letters and the channel number of ESQ](prevue-channel-logos.png)
 
-Each logo has the format of the logos of the drive. It is an IFF picture of 320 by 240 low-resolution pixels with 32
-colors. The station image is on a light card at the left, on the navy of Prevue. The right part is empty for the text
-of ESQ. The picture does not use color 0, because the genlock video shows through color 0. The tool writes the logos
+Each logo is an IFF picture of 640 by 240 high-resolution pixels with 16 colors. The station image is on a light card
+at the left, on the navy of Prevue. The right part is empty for the text of ESQ. ESQ shows a logo, and writes its
+text, in the display mode of the picture:
+
+- A low-resolution channel logo (320 by 240 pixels, 32 colors, as the logos of the drive) also works. But ESQ writes
+  its text two times as wide, in a font that is not pleasant to read.
+- The channel logos that Prevue machines showed in the field had high resolution and fewer colors. Their text has the
+  width of the text of the grid. So the tool makes high-resolution channel logos. The picture does not use color 0, because the genlock video shows through color 0. The tool writes the logos
 to `Logos/Channels` in the drive, and their lines to `LOGO.LST` after the other lines. Each run replaces them.
 
 The name of each logo is the source name of its channel. A source name has a maximum of 6 letters and digits, in

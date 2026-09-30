@@ -3,6 +3,19 @@ using System.Text;
 
 namespace AmigaSharp.PrevueListings.Logos;
 
+/// <summary>
+/// The display format of an ILBM picture: the aspect of its pixels, the size of its page and its display mode
+/// (CAMG), as the pictures of the Prevue drive have them.
+/// </summary>
+public sealed record IlbmFormat(byte XAspect, byte YAspect, short PageWidth, short PageHeight, uint DisplayMode)
+{
+    /// <summary>Low resolution, as the logos of the drive (Logos/INSIDER.UV): 320 pixels across.</summary>
+    public static readonly IlbmFormat LowResolution = new(44, 26, 320, 400, 0x11004);
+
+    /// <summary>High resolution, as the brushes of the drive (Brushes/TVGAT.UV): 640 pixels across.</summary>
+    public static readonly IlbmFormat HighResolution = new(22, 26, 640, 400, 0x19004);
+}
+
 /// <summary>A color of the Amiga: 4 bits for red, green and blue (0 to 15).</summary>
 public readonly record struct AmigaColor(byte R, byte G, byte B)
 {
@@ -21,16 +34,14 @@ public readonly record struct AmigaColor(byte R, byte G, byte B)
 /// </summary>
 public static class IlbmImage
 {
-    // The values of the logos of the drive, for example Logos/INSIDER.UV.
-    private const byte XAspect = 44, YAspect = 26;
-    private const short PageWidth = 320, PageHeight = 400;
-    private const uint DisplayMode = 0x11004;
     private const byte MaskTransparentColor = 2, CompressionByteRun1 = 1;
 
     /// <summary>Makes an ILBM file of a picture of palette indexes, with 2 to the power of the planes colors.</summary>
     /// <param name="pixels">The palette index of each pixel, row by row. The width must be a multiple of 16.</param>
-    public static byte[] Write(int width, int height, int planes, IReadOnlyList<AmigaColor> palette, byte[] pixels)
+    public static byte[] Write(int width, int height, int planes, IReadOnlyList<AmigaColor> palette, byte[] pixels,
+        IlbmFormat? format = null)
     {
+        format ??= IlbmFormat.LowResolution;
         if (width % 16 != 0)
             throw new ArgumentException("The width of an ILBM picture here must be a multiple of 16.", nameof(width));
         var colors = 1 << planes;
@@ -59,10 +70,10 @@ public static class IlbmImage
         header[8] = (byte)planes;
         header[9] = MaskTransparentColor;
         header[10] = CompressionByteRun1;
-        header[14] = XAspect;
-        header[15] = YAspect;
-        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(16), PageWidth);
-        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(18), PageHeight);
+        header[14] = format.XAspect;
+        header[15] = format.YAspect;
+        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(16), format.PageWidth);
+        BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(18), format.PageHeight);
         Chunk(form, "BMHD", header);
 
         var map = new byte[colors * 3];
@@ -76,7 +87,7 @@ public static class IlbmImage
         Chunk(form, "GRAB", grab);
 
         var mode = new byte[4];
-        BinaryPrimitives.WriteUInt32BigEndian(mode, DisplayMode);
+        BinaryPrimitives.WriteUInt32BigEndian(mode, format.DisplayMode);
         Chunk(form, "CAMG", mode);
         Chunk(form, "BODY", body.ToArray());
 

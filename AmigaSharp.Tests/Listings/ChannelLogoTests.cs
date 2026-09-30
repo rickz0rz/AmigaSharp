@@ -39,16 +39,15 @@ public sealed class ChannelLogoTests : IDisposable
 
         var (palette, pixels) = ChannelLogo.Render(station);
 
-        Assert.Equal(32, palette.Count);
+        Assert.Equal(ChannelLogo.Colors, palette.Count);
         Assert.DoesNotContain((byte)0, pixels);
         // Color 1 is white, the brightest color, for the text of ESQ.
         Assert.Equal(new AmigaColor(15, 15, 15), palette[1]);
-        Assert.All(palette, color => Assert.True(color.R + color.G + color.B <= 45));
         // The right side is only navy (color 2), and the red of the station is on the card.
         var navy = (byte)2;
         for (var y = 0; y < ChannelLogo.Height; y++)
         {
-            for (var x = 180; x < ChannelLogo.Width; x++)
+            for (var x = 300; x < ChannelLogo.Width; x++)
                 Assert.Equal(navy, pixels[y * ChannelLogo.Width + x]);
         }
 
@@ -70,6 +69,9 @@ public sealed class ChannelLogoTests : IDisposable
         var file = File.ReadAllBytes(Path.Combine(_drive, "Logos", "Channels", "KTIVDT"));
         Assert.Equal("FORM", Encoding.ASCII.GetString(file, 0, 4));
         Assert.Equal("ILBM", Encoding.ASCII.GetString(file, 8, 4));
+        // High resolution (the HIRES bit of the display mode), so ESQ writes its text as a real Prevue machine does.
+        var camg = Encoding.ASCII.GetString(file).IndexOf("CAMG", StringComparison.Ordinal);
+        Assert.Equal(0x8000u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(camg + 8)) & 0x8000);
     }
 
     [Theory]
