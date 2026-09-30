@@ -90,15 +90,17 @@ def play_video(stream, video):
 
 
 def show_logo(stream, logos, cycle):
-    """Shows the loaded logo, and makes the logo of the next cycle the logo that Prevue loads after it.
-
-    Prevue loads the next logo when it shows a logo, so the script chooses the next logo before the show.
-    """
-    if logos:
-        stream.post("/prevue/logos/next", {"name": logos[(cycle + 1) % len(logos)]})
-    loaded = stream.get("/prevue/state")["logos"]["loaded"]
-    print(f"logo: {loaded}", flush=True)
-    stream.ctrl("logo")
+    """Shows the logo of this cycle (POST /prevue/logos/show), or the loaded logo without --logo."""
+    if not logos:
+        print(f'logo: {stream.get("/prevue/state")["logos"]["loaded"]}', flush=True)
+        stream.ctrl("logo")
+        return
+    name = logos[cycle % len(logos)]
+    print(f"logo: {name}", flush=True)
+    stream.post("/prevue/logos/show", {"name": name})
+    # The launcher shows the logo when Prevue loaded it, some seconds later.
+    while stream.get("/prevue/state")["logos"]["pending"]:
+        time.sleep(0.5)
 
 
 def pause(stream, seconds, titles, promo_seconds, logo_seconds, logos, cycle):
@@ -128,8 +130,7 @@ def main():
     parser.add_argument("--promo-seconds", type=float, default=30, help="the seconds of each promo (default 30)")
     parser.add_argument("--logo-seconds", type=float, default=30, help="the seconds of the logo (default 30)")
     parser.add_argument("--logo", action="append", default=[],
-                        help="a logo of LOGO.LST for the pauses, in turn (more than one is OK). Put the first one first "
-                             "in LOGO.LST, because the first pause shows the logo that Prevue loaded at its start.")
+                        help="a logo of LOGO.LST for the pauses, in turn (more than one is OK)")
     parser.add_argument("--cycles", type=int, default=0, help="the number of cycles (default 0: no end)")
     args = parser.parse_args()
 

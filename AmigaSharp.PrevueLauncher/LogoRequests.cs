@@ -14,6 +14,11 @@ namespace AmigaSharp.PrevueLauncher;
 /// <list type="bullet">
 /// <item>GET /prevue/logos: the logos, as in GET /prevue/state.</item>
 /// <item>
+/// POST /prevue/logos/show: shows a logo, as JSON: {"name": "Insider"} or {"line": 3}. If ESQ loaded another logo, the
+/// launcher takes it from ESQ, and ESQ loads this logo. Then the launcher sends the logo command. It needs some seconds:
+/// "pending" in the state is the logo until it shows.
+/// </item>
+/// <item>
 /// POST /prevue/logos/next: makes a logo the next logo that ESQ loads, as JSON: {"name": "Insider"} or {"line": 3}. ESQ
 /// loads it when it shows the loaded logo, so send this request before the logo command. The name is the path of the
 /// line, its file name, or its file name without the extension. Upper case and lower case are the same.
@@ -39,8 +44,14 @@ public sealed class LogoRequests(Core core, PrevueState state, EsqVariables esq)
                     state.SetNextLine(FindLine(document.RootElement));
                     break;
                 }
+                case ("POST", "prevue/logos/show"):
+                {
+                    using var document = ReadJson(context);
+                    state.ShowLogo(FindLine(document.RootElement));
+                    break;
+                }
                 default:
-                    SendError(response, 404, "Use GET /prevue/logos or POST /prevue/logos/next.");
+                    SendError(response, 404, "Use GET /prevue/logos, POST /prevue/logos/show or POST /prevue/logos/next.");
                     return;
             }
 

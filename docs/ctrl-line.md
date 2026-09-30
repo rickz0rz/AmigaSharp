@@ -217,10 +217,17 @@ After the last line, it starts at the first line again.
 - Type 1 with `3` (`POST /prevue/ctrl/clear`) removes the logo at once. The next logo of the rotation shows about 3
   minutes after the command.
 
-To show a specific logo, choose it with `POST /prevue/logos/next` before a logo command. ESQ counts the lines of
-`LOGO.LST` that it read in a variable. The launcher sets this variable, so ESQ loads the chosen line when it shows
-the loaded logo. `GET /prevue/state` gives the loaded logo and the next line. See
-[orchestration.md](orchestration.md#show-a-logo).
+To show a specific logo, use `POST /prevue/logos/show`. The launcher changes the memory of ESQ:
+
+- ESQ counts the lines of `LOGO.LST` that it read in a variable. The launcher sets this variable to the line before
+  the chosen line.
+- The launcher takes the loaded logo from the list of ESQ. It frees the memory of that logo 10 seconds later. ESQ
+  then has no loaded logo, so it loads the chosen line.
+- When ESQ loaded the chosen logo, the launcher sends the logo command.
+
+The launcher changes the list only when no command came for 5 seconds. ESQ draws a logo for about a second after a
+logo command, so it does not use the logo that the launcher takes. `POST /prevue/logos/next` only sets the line that
+ESQ loads after the next logo command. See [orchestration.md](orchestration.md#show-a-logo).
 
 ESQ needs some time to load the next logo. The code shows no logo if the command comes before the logo is loaded. In
 the tests, 10 to 20 seconds between two logo commands was enough. `logos.loaded` in `GET /prevue/state` is not

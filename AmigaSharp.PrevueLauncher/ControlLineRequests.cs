@@ -13,11 +13,15 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
     /// <summary>The last request that sent commands, for example "promo". Null before the first one.</summary>
     public string? LastRequest { get; private set; }
 
+    /// <summary>The time of the last request that sent commands.</summary>
+    public DateTime LastSent { get; private set; } = DateTime.MinValue;
+
     /// <summary>Sends packets on the line as a request, for example of a schedule. The state notes the request.</summary>
     public void SendRequest(string request, IEnumerable<byte[]> packets)
     {
         line.Add(packets);
         LastRequest = request;
+        LastSent = DateTime.UtcNow;
     }
 
     /// <summary>Answers a request for the control line of Prevue (see docs/ctrl-line.md).</summary>
@@ -51,23 +55,19 @@ public sealed class ControlLineRequests(ControlLineFeed line) : IStreamRequests
                 case ("POST", "prevue/ctrl/promo"):
                 {
                     using var document = ReadJson(context);
-                    line.Add(ControlLineFeed.Promo(document.RootElement));
-                    LastRequest = "promo";
+                    SendRequest("promo", ControlLineFeed.Promo(document.RootElement));
                     break;
                 }
                 case ("POST", "prevue/ctrl/clear"):
-                    line.Add([ControlLineFeed.Packet(1, "3")]);
-                    LastRequest = "clear";
+                    SendRequest("clear", [ControlLineFeed.Packet(1, "3")]);
                     break;
                 case ("POST", "prevue/ctrl/logo"):
-                    line.Add([ControlLineFeed.Packet(1, "D")]);
-                    LastRequest = "logo";
+                    SendRequest("logo", [ControlLineFeed.Packet(1, "D")]);
                     break;
                 case ("POST", "prevue/ctrl/packets"):
                 {
                     using var document = ReadJson(context);
-                    line.Add(ControlLineFeed.Packets(document.RootElement));
-                    LastRequest = "packets";
+                    SendRequest("packets", ControlLineFeed.Packets(document.RootElement));
                     break;
                 }
                 default:

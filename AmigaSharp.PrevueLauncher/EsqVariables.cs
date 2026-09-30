@@ -22,6 +22,9 @@ public sealed class EsqVariables
     public const string LogoListLine = "_ESQIFF_LogoListLineIndex";
     public const string LogoListData = "_Global_REF_LONG_DF0_LOGO_LST_DATA";
     public const string LogoListSize = "_Global_REF_LONG_DF0_LOGO_LST_FILESIZE";
+    public const string LoadedLogoCount = "_ESQIFF_LogoBrushListCount";
+    public const string BytesAllocated = "_Global_MEM_BYTES_ALLOCATED";
+    public const string FreeCount = "_Global_MEM_DEALLOC_COUNT";
 
     /// <summary>
     /// The section (hunk) and the offset of each variable in the known build of ESQ. A test compares the table with the
@@ -39,6 +42,9 @@ public sealed class EsqVariables
             [LogoListLine] = (1, 0x0A82A),
             [LogoListData] = (1, 0x05AE8),
             [LogoListSize] = (1, 0x05AE4),
+            [LoadedLogoCount] = (1, 0x001B8),
+            [BytesAllocated] = (1, 0x07B64),
+            [FreeCount] = (1, 0x07B6C),
         };
 
     private readonly Dictionary<string, uint> _addresses;

@@ -32,6 +32,8 @@ public sealed class PrevueState : IStreamRequests
     private readonly ControlLineFeed _line;
     private readonly ControlLineRequests _requests;
     private readonly EsqVariables? _esq;
+    private readonly TextWriter? _log;
+    private readonly Func<DateTime> _now;
 
     // The logo that ESQ loaded, and the last logo that it showed. ESQ shows the loaded logo, and then it loads the
     // next one, so a change of the loaded logo means that the old one showed.
@@ -39,14 +41,38 @@ public sealed class PrevueState : IStreamRequests
     private volatile string? _loadedName;
     private volatile string? _shownName;
 
-    public PrevueState(Core core, ControlLineFeed line, ControlLineRequests requests, EsqVariables? esq)
+    // A logo to load in place of the loaded logo (a line of LOGO.LST and its path), and a logo to show when it is
+    // loaded.
+    private readonly object _swapLock = new();
+    private int? _swapLine;
+    private string? _swapPath;
+    private string? _showName;
+    private int? _nextAfterShow;
+
+    // Logos that the launcher took from ESQ. It frees their memory some seconds later, when ESQ cannot use them.
+    private readonly List<(uint Node, DateTime Time)> _removed = [];
+
+    // The layout of a brush node of ESQ (see BRUSH_FreeBrushList).
+    private const int NodeRasters = 0x90, NodeWidth = 176, NodeHeight = 178, NodeRasterCount = 184;
+    private const int NodeAuxList = 364, NodeNext = 368, NodeSize = 372, AuxNext = 8, AuxSize = 12;
+
+    // A logo command draws the logo for about a second. The launcher changes the loaded logo only when no command came
+    // for this time, so that ESQ does not draw it then.
+    private static readonly TimeSpan QuietTime = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan FreeDelay = TimeSpan.FromSeconds(10);
+
+    /// <param name="now">The time for the waits of the logo changes. The default is the clock of the host.</param>
+    public PrevueState(Core core, ControlLineFeed line, ControlLineRequests requests, EsqVariables? esq,
+        TextWriter? log = null, Func<DateTime>? now = null)
     {
+        _log = log;
+        _now = now ?? (() => DateTime.UtcNow);
         _core = core;
         _line = line;
         _requests = requests;
         _esq = esq;
         if (esq != null)
-            core.AddPollHandler(WatchLogo);
+            core.AddPollHandler(Poll);
     }
 
     public string Prefix => "prevue/state";
@@ -54,16 +80,158 @@ public sealed class PrevueState : IStreamRequests
     /// <summary>The name of the last logo that ESQ showed, or null if it showed none yet.</summary>
     public string? Shown => _shownName;
 
-    /// <summary>Runs at each safe point of the program. It notes the loaded logo, and the logo that showed.</summary>
-    private void WatchLogo()
+    /// <summary>The path of the logo that the launcher shows when ESQ loaded it, or null.</summary>
+    public string? PendingLogo
     {
-        var node = _core.Memory.Read32(_esq![EsqVariables.LoadedLogo]);
-        if (node == _loadedNode)
-            return;
-        if (_loadedNode != 0)
-            _shownName = _loadedName;
-        _loadedNode = node;
-        _loadedName = node == 0 ? null : ReadString(_core.Memory, node, 190);
+        get
+        {
+            lock (_swapLock)
+                return _showName;
+        }
+    }
+
+    /// <summary>
+    /// Shows a line of LOGO.LST now, or as soon as ESQ loaded it. If ESQ loaded another logo, the launcher removes it
+    /// from ESQ, and ESQ loads this line. The other logo does not show.
+    /// </summary>
+    /// <exception cref="FormatException">LOGO.LST does not have the line.</exception>
+    /// <param name="nextLine">The line that ESQ loads after the logo shows, or null for the line after it.</param>
+    public void ShowLogo(int line, int? nextLine = null)
+    {
+        LoadLogo(line);
+        lock (_swapLock)
+        {
+            _showName = _swapPath;
+            _nextAfterShow = nextLine;
+        }
+    }
+
+    /// <summary>
+    /// Makes a line of LOGO.LST the loaded logo, and shows nothing. If ESQ loaded another logo, the launcher removes it
+    /// from ESQ, and ESQ loads this line. The next logo command shows it.
+    /// </summary>
+    /// <exception cref="FormatException">LOGO.LST does not have the line.</exception>
+    public void LoadLogo(int line)
+    {
+        var entry = LogoList(_core.Memory, _esq!).FirstOrDefault(candidate => candidate.Line == line);
+        if (entry.Path == null)
+            throw new FormatException($"LOGO.LST has no logo on line {line}.");
+        lock (_swapLock)
+        {
+            _swapLine = line;
+            _swapPath = entry.Path;
+        }
+    }
+
+    /// <summary>
+    /// Runs at each safe point of the program, between two instructions of ESQ. It notes the loaded logo and the logo
+    /// that showed, changes the loaded logo for <see cref="ShowLogo"/>, and frees the logos that it removed.
+    /// </summary>
+    private void Poll()
+    {
+        var memory = _core.Memory;
+        var esq = _esq!;
+        var node = memory.Read32(esq[EsqVariables.LoadedLogo]);
+        if (node != _loadedNode)
+        {
+            if (_loadedNode != 0)
+                _shownName = _loadedName;
+            _loadedNode = node;
+            _loadedName = node == 0 ? null : ReadString(memory, node, 190);
+        }
+
+        // ESQ counts its loaded logos. If it drew a logo when the launcher removed it, the count is one too low.
+        if ((int)memory.Read32(esq[EsqVariables.LoadedLogoCount]) < 0)
+            memory.Write32(esq[EsqVariables.LoadedLogoCount], 0);
+
+        lock (_swapLock)
+        {
+            if (_swapLine is { } line && node != 0)
+            {
+                if (_loadedName != null && IsLogo(_swapPath!, _loadedName))
+                    _swapLine = null;
+                else if (Quiet())
+                    RemoveLoadedLogo(node, line);
+            }
+
+            // The queue of the line keeps the order of the commands, so the logo command can go at once.
+            if (_showName is { } show && _loadedName != null && IsLogo(show, _loadedName) && _swapLine == null)
+            {
+                _showName = null;
+                // ESQ loads the next line when it shows the logo, after it reads the command.
+                if (_nextAfterShow is { } next)
+                    SetNextLine(next);
+                _nextAfterShow = null;
+                _requests.SendRequest("logo", [ControlLineFeed.Packet(1, "D")]);
+            }
+        }
+
+        for (var i = _removed.Count - 1; i >= 0; i--)
+        {
+            if (_now() - _removed[i].Time < FreeDelay)
+                continue;
+            FreeLogo(_removed[i].Node);
+            _removed.RemoveAt(i);
+        }
+    }
+
+    /// <summary>True if ESQ read all the commands, and no command came for <see cref="QuietTime"/>.</summary>
+    private bool Quiet()
+    {
+        var memory = _core.Memory;
+        var esq = _esq!;
+        var inEsq = (memory.Read16(esq[EsqVariables.BufferHead]) - memory.Read16(esq[EsqVariables.BufferTail]) +
+                     BufferSize) % BufferSize;
+        return _line.Queued == 0 && inEsq == 0 && memory.Read16(esq[EsqVariables.ParserState]) == 0 &&
+               _now() - _requests.LastSent >= QuietTime;
+    }
+
+    /// <summary>Takes the loaded logo from ESQ, so that ESQ loads the line. The launcher frees the logo later.</summary>
+    private void RemoveLoadedLogo(uint node, int line)
+    {
+        var memory = _core.Memory;
+        var esq = _esq!;
+        memory.Write32(esq[EsqVariables.LoadedLogo], memory.Read32(node + NodeNext));
+        memory.Write32(esq[EsqVariables.LoadedLogoCount], memory.Read32(esq[EsqVariables.LoadedLogoCount]) - 1);
+        SetNextLine(line);
+        _removed.Add((node, _now()));
+        _log?.WriteLine($"Prevue: ESQ loads {_swapPath} in place of {_loadedName}.");
+        // The logo did not show, so it is not the shown logo.
+        _loadedNode = memory.Read32(esq[EsqVariables.LoadedLogo]);
+        _loadedName = _loadedNode == 0 ? null : ReadString(memory, _loadedNode, 190);
+        _swapLine = null;
+    }
+
+    /// <summary>Frees a brush node of ESQ, its rasters and its other nodes, as BRUSH_FreeBrushList of ESQ does.</summary>
+    private void FreeLogo(uint node)
+    {
+        var memory = _core.Memory;
+        var esq = _esq!;
+        var width = memory.Read16(node + NodeWidth);
+        var height = memory.Read16(node + NodeHeight);
+        int count = memory.Read8(node + NodeRasterCount), frees = 1;
+        uint bytes = NodeSize;
+        for (var i = 0u; i < count && i < 8; i++)
+        {
+            var raster = memory.Read32(node + NodeRasters + 4 * i);
+            if (raster != 0)
+                _core.Allocator.Free(raster, AmigaSharp.Runtime.Libraries.Native.GraphicsLibrary.RasterSize(width, height));
+        }
+
+        var aux = memory.Read32(node + NodeAuxList);
+        while (aux != 0)
+        {
+            var next = memory.Read32(aux + AuxNext);
+            _core.Allocator.Free(aux, AuxSize);
+            bytes += AuxSize;
+            frees++;
+            aux = next;
+        }
+
+        _core.Allocator.Free(node, NodeSize);
+        // ESQ counts its memory for its status screen.
+        memory.Write32(esq[EsqVariables.BytesAllocated], memory.Read32(esq[EsqVariables.BytesAllocated]) - bytes);
+        memory.Write32(esq[EsqVariables.FreeCount], memory.Read32(esq[EsqVariables.FreeCount]) + (uint)frees);
     }
 
     public void Answer(HttpListenerContext context, string name)
@@ -185,6 +353,10 @@ public sealed class PrevueState : IStreamRequests
             json.WriteString("shown", _shownName);
         else
             json.WriteNull("shown");
+        if (PendingLogo is { } pending)
+            json.WriteString("pending", pending);
+        else
+            json.WriteNull("pending");
         json.WriteStartArray("list");
         foreach (var (number, path, channel) in lines)
         {

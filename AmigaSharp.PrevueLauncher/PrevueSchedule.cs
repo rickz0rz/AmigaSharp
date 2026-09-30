@@ -18,9 +18,9 @@ namespace AmigaSharp.PrevueLauncher;
 /// </item>
 /// </list>
 /// A clear top half gets a clear command each minute, so the logo rotation of ESQ does not start. The schedule
-/// chooses each named logo before the logo before it shows (see <see cref="PrevueState.SetNextLine"/>). If the first
-/// named logo is not the loaded logo when the schedule starts, the schedule shows the loaded logo for a moment and
-/// removes it, so that ESQ loads the first named logo.
+/// chooses each named logo before the logo before it shows (see <see cref="PrevueState.SetNextLine"/>), so the named
+/// logo is ready. When the schedule starts, and when a named logo is not ready, the launcher changes the loaded logo of
+/// ESQ (see <see cref="PrevueState.LoadLogo"/>). No other logo shows.
 /// </remarks>
 public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? state, TextWriter log)
     : IScheduleExtension
@@ -30,10 +30,8 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
     private readonly object _lock = new();
     private List<string> _logoPlan = [];
     private int _logoIndex;
-    private Priming _priming = Priming.NotStarted;
+    private bool _primed;
     private DateTime _lastCommand = DateTime.MinValue;
-
-    private enum Priming { NotStarted, Waiting, Done }
 
     public IReadOnlyCollection<string> Keys { get; } = ["top"];
 
@@ -56,7 +54,7 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
         if (plan.Count > 0 && state == null)
             log.WriteLine("Schedule: the launcher does not know this ESQ, so it cannot choose the logos by name.");
         _logoPlan = plan;
-        _priming = plan.Count > 0 && state != null ? Priming.NotStarted : Priming.Done;
+        _primed = plan.Count == 0 || state == null;
     }
 
     public IScheduleCue? Start(ScheduleSegment segment) =>
@@ -152,58 +150,55 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
     }
 
     /// <summary>
-    /// Makes the first named logo the loaded logo, if it is not. Returns true when the logos are ready for the plan.
+    /// Makes the first named logo the loaded logo, one time when ESQ loaded its first logo. If ESQ loaded another logo,
+    /// the launcher changes it, and nothing shows (see <see cref="PrevueState.LoadLogo"/>).
     /// </summary>
-    private bool Prime()
+    private void Prime()
     {
-        if (_priming == Priming.Done)
-            return true;
-        var loaded = state!.LoadedLogo;
-        if (loaded == null)
-            return false;
+        if (_primed || state!.LoadedLogo is not { } loaded)
+            return;
+        _primed = true;
         var first = _logoPlan[0];
-        if (_priming == Priming.NotStarted)
-        {
-            if (PrevueState.IsLogo(loaded, first))
-            {
-                _priming = Priming.Done;
-                return true;
-            }
-
-            if (state.FindLogoLine(first) is not { } line)
-            {
-                log.WriteLine($"Schedule: LOGO.LST has no logo {first}. The logos show in the order of the file.");
-                _priming = Priming.Done;
-                return true;
-            }
-
-            log.WriteLine($"Schedule: the loaded logo is {loaded}, so the schedule shows it for a moment to load {first}.");
-            state.SetNextLine(line);
-            Send("logo", [ControlLineFeed.Packet(1, "D")]);
-            Send("clear", [ControlLineFeed.Packet(1, "3")]);
-            _priming = Priming.Waiting;
-            return false;
-        }
-
         if (PrevueState.IsLogo(loaded, first))
-            _priming = Priming.Done;
-        return _priming == Priming.Done;
+            return;
+        if (state.FindLogoLine(first) is { } line)
+            state.LoadLogo(line);
+        else
+            log.WriteLine($"Schedule: LOGO.LST has no logo {first}.");
     }
 
-    /// <summary>Shows a logo cue: it chooses the logo of the next named cue, and then it shows the loaded logo.</summary>
+    /// <summary>
+    /// Shows a logo cue. For a named logo, it also chooses the logo of the next named cue, which ESQ loads when this
+    /// logo shows. If ESQ did not load the named logo, the launcher changes the loaded logo first, and the logo shows
+    /// some seconds later.
+    /// </summary>
     private void ShowLogo(string? name)
     {
-        if (name != null && state != null && _logoPlan.Count > 0)
+        if (name == null || state == null || _logoPlan.Count == 0)
         {
-            var loaded = state.LoadedLogo;
-            if (loaded != null && !PrevueState.IsLogo(loaded, name))
-                log.WriteLine($"Schedule: the loaded logo is {loaded}, not {name}.");
-            _logoIndex = (_logoIndex + 1) % _logoPlan.Count;
-            if (state.FindLogoLine(_logoPlan[_logoIndex]) is { } next)
-                state.SetNextLine(next);
+            Send("logo", [ControlLineFeed.Packet(1, "D")]);
+            return;
         }
 
-        Send("logo", [ControlLineFeed.Packet(1, "D")]);
+        _logoIndex = (_logoIndex + 1) % _logoPlan.Count;
+        var next = state.FindLogoLine(_logoPlan[_logoIndex]);
+        if (state.FindLogoLine(name) is not { } line)
+        {
+            log.WriteLine($"Schedule: LOGO.LST has no logo {name}.");
+            return;
+        }
+
+        if (state.LoadedLogo is { } loaded && PrevueState.IsLogo(loaded, name))
+        {
+            if (next is { } nextLine)
+                state.SetNextLine(nextLine);
+            Send("logo", [ControlLineFeed.Packet(1, "D")]);
+        }
+        else
+        {
+            state.ShowLogo(line, next);
+            _lastCommand = DateTime.UtcNow;
+        }
     }
 
     /// <summary>The cues of the top half of one segment.</summary>
@@ -219,8 +214,7 @@ public sealed class PrevueSchedule(ControlLineRequests requests, PrevueState? st
             {
                 if (top.Rotation)
                     return;
-                if (!schedule.Prime())
-                    return;
+                schedule.Prime();
                 while (_next < top.Cues.Count && elapsed.TotalSeconds >= _nextStart)
                 {
                     var cue = top.Cues[_next++];

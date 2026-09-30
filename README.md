@@ -433,6 +433,7 @@ genlock video. With `--stream`, the HTTP server sends commands on the line:
 | `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
 | `GET /prevue/state` | Gives what the top half shows, if Prevue read the commands, and the logos. |
 | `GET /prevue/logos` | Gives the logos of `LOGO.LST`, the loaded logo, and the next line. |
+| `POST /prevue/logos/show` | Shows a logo of `LOGO.LST` in about 5 seconds, and no other logo: `{"name": "Insider"}`. |
 | `POST /prevue/logos/next` | Chooses the logo that Prevue loads at the next logo command: `{"name": "Insider"}`. |
 
 `--schedule <file>` plays a schedule: segments of videos and pauses, with the settings of the music and, for Prevue,

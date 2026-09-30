@@ -504,7 +504,8 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
     }
 
     /// <summary>RASSIZE: the bytes of a plane. Each row is a whole number of words.</summary>
-    private static uint RasterSize(int width, int height) => (uint)(height * (((width + 15) >> 3) & ~1));
+    /// <summary>The bytes of a bit plane of AllocRaster: each row is a whole number of words.</summary>
+    public static uint RasterSize(int width, int height) => (uint)(height * (((width + 15) >> 3) & ~1));
 
     private void ChangeAccessors(uint font, int change)
     {

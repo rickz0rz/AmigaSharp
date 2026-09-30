@@ -117,28 +117,27 @@ curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "
 
 ### Show a logo
 
+Show a specific logo of `LOGO.LST`:
+
 ```sh
-curl -X POST -d '' http://localhost:8091/prevue/ctrl/logo
+curl -X POST http://localhost:8091/prevue/logos/show -d '{"name": "Insider"}'
 ```
 
-- Each request shows the loaded logo (`logos.loaded` in `GET /prevue/state`). Then Prevue loads the next line of
-  `LOGO.LST`.
-- To choose the logo after the loaded one, send `POST /prevue/logos/next` before the logo command:
+- The name is the path of the line, its file name, or its file name without the extension. `{"line": 3}` chooses a
+  line by its number.
+- If Prevue loaded another logo, the launcher takes that logo from the memory of Prevue, and Prevue loads Insider.
+  The other logo does not show. Then the launcher sends the logo command.
+- The logo shows about 5 seconds after the request. The launcher waits until no command came for 5 seconds, so that
+  Prevue does not draw the logo that the launcher takes. `logos.pending` in `GET /prevue/state` is the logo until it
+  shows.
+- If Prevue loaded the logo already, it shows at once.
 
-  ```sh
-  curl -X POST http://localhost:8091/prevue/logos/next -d '{"name": "Insider"}'
-  curl -X POST -d '' http://localhost:8091/prevue/ctrl/logo
-  ```
+`POST /prevue/ctrl/logo` shows the loaded logo (`logos.loaded` in `GET /prevue/state`), and Prevue loads the next line
+of `LOGO.LST`. `POST /prevue/logos/next` with a name chooses the line that Prevue loads then. Send it before the logo
+command. With these two requests, a planned sequence of logos shows at once, without the wait of 5 seconds.
 
-  The second request shows the loaded logo, and Prevue loads Insider. The next logo command shows Insider. The name
-  is the path of the line, its file name, or its file name without the extension. `{"line": 3}` chooses a line by
-  its number.
-- To show a planned sequence of logos, choose the next logo before each logo command. The first logo is the first line
-  of `LOGO.LST`. The rotation of ESQ also shows the loaded logo. Send a command more often than each 3 minutes, and
-  the rotation does not start.
-- A channel logo (a line without a comma) shows the call letters and the channel number on the picture.
-
-See [Logos](ctrl-line.md#logos) for the format of `LOGO.LST`.
+A channel logo (a line without a comma) shows the call letters and the channel number on the picture. See
+[Logos](ctrl-line.md#logos) for the format of `LOGO.LST`.
 
 ### Music under the videos
 
@@ -206,9 +205,9 @@ About the top half:
   rotation of ESQ does not start.
 - The last cue without `seconds` stays until the end of the segment. A segment without `top` does not change the top
   half.
-- The schedule chooses each named logo before the logo before it shows. Thus the logos show in the order of the
-  schedule. The first named logo must be the loaded logo when the schedule starts. If it is not, the schedule shows
-  the loaded logo for a moment to load it. Put the first logo of the schedule first in `LOGO.LST` to prevent this.
+- The schedule chooses each named logo before the logo before it shows, so each named logo shows at once. When the
+  schedule starts, it makes the first named logo the loaded logo. When a named logo is not loaded, it shows about 5
+  seconds late (see [Show a logo](#show-a-logo)). No other logo shows.
 - Keep each promo and logo cue shorter than 3 minutes. Else the logo rotation of ESQ can replace it.
 
 `GET /schedule` gives the state of the schedule: the current segment, the seconds since its start, and the number of
@@ -233,7 +232,7 @@ python3 scripts/examples/prevue-coordinator.py --url http://localhost:8091 \
 ```
 
 The script waits until Prevue read each command (`GET /prevue/state`). With `--logo <name>` (more than one), it
-shows these logos in turn: before each logo command, it chooses the logo of the next pause.
+shows these logos in turn with `POST /prevue/logos/show`.
 
 The script needs only Python 3. The video path is a path on the computer of the launcher. Use `--help` to see the
 options. Change the script to make your own schedule.

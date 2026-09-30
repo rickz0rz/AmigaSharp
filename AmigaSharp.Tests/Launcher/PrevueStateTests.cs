@@ -1,5 +1,6 @@
 using AmigaSharp.PrevueLauncher;
 using AmigaSharp.Runtime;
+using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Hardware;
 using AmigaSharp.Translator;
 
@@ -47,6 +48,57 @@ public class PrevueStateTests
         var list = PrevueState.LogoList(memory, esq);
 
         Assert.Equal([(1, "Logos/tvgsport.uv", false), (3, "Logos/KSIN!", true)], list);
+    }
+
+    [Fact]
+    public void LoadLogo_TakesTheLoadedLogoFromEsq_AndFreesItLater()
+    {
+        var core = new Core(new MemoryStream()) { Log = TextWriter.Null };
+        var allocator = core.Allocator;
+        var memory = core.Memory;
+        // The variables of ESQ are in a block of memory, so that the logo does not use the same memory.
+        var block = allocator.Allocate(0x10000, MemoryFlags.Any | MemoryFlags.Clear);
+        var esq = EsqVariables.FromBases([block, block])!;
+        var list = allocator.Allocate(0x100, MemoryFlags.Any);
+        var bytes = System.Text.Encoding.Latin1.GetBytes("Logos/KTIVDT\r\nLogos/Enews.uv,\r\nLogos/Insider.uv,\r\n");
+        for (var i = 0; i < bytes.Length; i++)
+            memory.Write8(list + (uint)i, bytes[i]);
+        memory.Write32(esq[EsqVariables.LogoListData], list);
+        memory.Write32(esq[EsqVariables.LogoListSize], (uint)bytes.Length);
+        memory.Write32(esq[EsqVariables.BytesAllocated], 1000);
+        memory.Write32(esq[EsqVariables.FreeCount], 5);
+        var free = allocator.Available(MemoryFlags.Any);
+
+        // A loaded logo as ESQ makes it: a node with its name, two rasters of 64 by 10 pixels, and one other node.
+        var node = allocator.Allocate(372, MemoryFlags.Any | MemoryFlags.Clear);
+        foreach (var (value, i) in "KTIVDT".Select((value, i) => (value, i)))
+            memory.Write8(node + (uint)i, (byte)value);
+        memory.Write16(node + 176, 64);
+        memory.Write16(node + 178, 10);
+        memory.Write8(node + 184, 2);
+        for (var i = 0u; i < 2; i++)
+            memory.Write32(node + 0x90 + 4 * i, allocator.Allocate(8 * 10, MemoryFlags.Chip));
+        memory.Write32(node + 364, allocator.Allocate(12, MemoryFlags.Any | MemoryFlags.Clear));
+        memory.Write32(esq[EsqVariables.LoadedLogo], node);
+        memory.Write32(esq[EsqVariables.LoadedLogoCount], 1);
+
+        var now = DateTime.UtcNow;
+        var state = new PrevueState(core, new ControlLineFeed(), new ControlLineRequests(new ControlLineFeed()), esq,
+            now: () => now);
+        state.LoadLogo(3);
+        core.PollNow();
+
+        Assert.Equal(0u, memory.Read32(esq[EsqVariables.LoadedLogo]));
+        Assert.Equal(0u, memory.Read32(esq[EsqVariables.LoadedLogoCount]));
+        Assert.Equal(2, memory.Read16(esq[EsqVariables.LogoListLine]));
+        Assert.True(allocator.Available(MemoryFlags.Any) < free);
+
+        now += TimeSpan.FromSeconds(11);
+        core.PollNow();
+
+        Assert.Equal(free, allocator.Available(MemoryFlags.Any));
+        Assert.Equal(1000u - 372 - 12, memory.Read32(esq[EsqVariables.BytesAllocated]));
+        Assert.Equal(7u, memory.Read32(esq[EsqVariables.FreeCount]));
     }
 
     [Fact]

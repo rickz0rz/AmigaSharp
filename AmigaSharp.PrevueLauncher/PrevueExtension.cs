@@ -95,7 +95,7 @@ public sealed class PrevueExtension : ILauncherExtension
         var esq = EsqVariables.Find(context.Executable, context.Options.Listing);
         if (esq == null)
             context.Log.WriteLine("The state of Prevue has only the top half: the launcher does not know this ESQ.");
-        var state = new PrevueState(context.Core, line.Feed, requests, esq);
+        var state = new PrevueState(context.Core, line.Feed, requests, esq, context.Log);
         context.StreamRequests.Add(state);
         if (esq != null)
             context.StreamRequests.Add(new LogoRequests(context.Core, state, esq));
