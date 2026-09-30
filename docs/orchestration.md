@@ -82,7 +82,9 @@ To send control commands in sequence, wait until `lastRequest.read` in `GET /pre
 ```
 
 - `topHalf` is what the top half shows: `video`, `promo-right`, `promo-left`, `logo`, or `other`. The launcher reads
-  it from the picture, so it is always correct.
+  it from the picture, so it is always correct. Other screens of Prevue cover the top half too, for example the
+  version information when Prevue starts, and the ESC menu of the operator. Then `topHalf` is `logo` or `other`, and
+  `logos.shown` does not change.
 - `line` is the state of the control line. `queued` is the bytes in the queue of the launcher, and `inEsq` is the
   bytes that Prevue received and did not read. `idle` is `true` when Prevue read all the commands.
 - `lastRequest` is the last request of `/prevue/ctrl`, and `read` is `true` when Prevue read it. For example, after a
