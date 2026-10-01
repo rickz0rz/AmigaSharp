@@ -578,6 +578,11 @@ function. The interpreter runs this code one instruction at a time. At each call
 method at the address. If there is no method, the interpreter runs the code. So translated code and interpreted code
 can call each other.
 
+A program can write new code over its own code, for example the decruncher of a packed program. The runtime keeps the
+first 8 bytes of each translated method. If these bytes change, the runtime removes the method, and the interpreter
+runs the new code. Some code jumps with an RTS: it puts the address on the stack, and does RTS. If the return address
+of the call is still on the stack after the RTS, the runtime continues at the address of the RTS.
+
 The tests compare the translated code with the interpreter. The SingleStepTests 68000 test vectors check the
 interpreter. A native launcher cannot compile C# code while it runs, so it uses only the interpreter.
 
@@ -642,10 +647,11 @@ The addresses where an A2000 has nothing are an open bus: a write does nothing, 
 The Amiga Test Kit is on an ADF disk image. Run it from the disk:
 
 ```sh
-dotnet run --project AmigaSharp.Launcher -c Release -- AmigaTestKit.adf:AmigaTestKit --interpret
+dotnet run --project AmigaSharp.Launcher -c Release -- AmigaTestKit.adf:AmigaTestKit
 ```
 
-The program unpacks itself into memory when it starts, so the translator cannot see its code. Use `--interpret`.
+The program unpacks itself into memory when it starts, so the translator sees only the code that unpacks it. The
+interpreter runs the unpacked code. `--interpret` gives the same result.
 
 ## Tests
 

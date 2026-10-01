@@ -101,6 +101,50 @@ public class CoreTests
         Assert.Equal(("exec.library", -6), (exception.Library, exception.Offset));
     }
 
+    [Fact]
+    public void Call_ContinuesAfterAnRtsThatIsAJump()
+    {
+        // The code at "jump" removes a saved long from the stack, and jumps to "answer" with MOVE.L #answer,-(SP) and
+        // RTS, as a decruncher does. The RTS leaves the return address of the call on the stack.
+        var answer = _core.AllocateSystem([0x70, 0x2A, 0x4E, 0x75]); // MOVEQ #42,D0; RTS
+        var jump = _core.AllocateSystem([0x58, 0x8F, 0x2F, 0x3C, .. BigEndian(answer), 0x4E, 0x75]); // ADDQ.L #4,SP
+        var start = _core.AllocateSystem([0x4E, 0x71]);
+        // A translated function saves a long, and jumps to the code.
+        _core.RegisterFunction(start, () =>
+        {
+            _core.Cpu.Push32(0x1234_5678);
+            _core.Dispatch(jump);
+        });
+        var stackPointer = _core.Cpu.Sp;
+
+        _core.CallAddress(Core.ExitAddress, start);
+
+        Assert.Equal(42u, _core.Cpu.D[0]);
+        Assert.Equal(stackPointer, _core.Cpu.Sp);
+    }
+
+    [Fact]
+    public void Dispatch_InterpretsNewCodeOverATranslatedFunction()
+    {
+        var code = _core.AllocateSystem([0x70, 0x01, 0x4E, 0x75, 0x4E, 0x71, 0x4E, 0x71]); // MOVEQ #1,D0; RTS
+        _core.RegisterFunction(code, () =>
+        {
+            _core.Cpu.D[0] = 7;
+            _core.ReturnTo(_core.Cpu.Pop32());
+        });
+
+        _core.CallAddress(Core.ExitAddress, code);
+        Assert.Equal(7u, _core.Cpu.D[0]);
+
+        // The program writes new code, for example a decruncher. The old translation must not run.
+        _core.Memory.WriteBytes(code, [0x70, 0x02, 0x4E, 0x75]); // MOVEQ #2,D0; RTS
+        _core.CallAddress(Core.ExitAddress, code);
+        Assert.Equal(2u, _core.Cpu.D[0]);
+    }
+
+    private static byte[] BigEndian(uint value) =>
+        [(byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value];
+
     private uint CallOpenLibrary(string name, uint version)
     {
         _core.Cpu.A[1] = _core.AllocateSystem(Encoding.Latin1.GetBytes(name + "\0"));

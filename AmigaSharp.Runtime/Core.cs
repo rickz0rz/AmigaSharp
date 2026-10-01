@@ -45,7 +45,8 @@ public sealed class Core
     // Poll checks the interrupts after this number of calls, so that a call at each backward branch costs little.
     private const int PollInterval = 64;
 
-    private readonly Dictionary<uint, Action> _functions = new();
+    // The translated functions by address, with the first 8 bytes of their code when they were registered.
+    private readonly Dictionary<uint, (Action Function, uint First, uint Second)> _functions = new();
     private readonly Dictionary<uint, ProcessMemory> _processMemory = new();
     private readonly List<Func<bool>> _idleHandlers = [];
     private readonly List<Action> _pollHandlers = [];
@@ -201,10 +202,36 @@ public sealed class Core
         CallAddress(ExitAddress, libraryBase + (uint)offset);
     }
 
-    /// <summary>Makes a translated function the code at the address.</summary>
+    /// <summary>
+    /// Makes a translated function the code at the address. The code must be in memory: the function is used only
+    /// while the first bytes of the code stay the same.
+    /// </summary>
     public void RegisterFunction(uint address, Action function)
     {
-        _functions[address & Memory.AddressMask] = function;
+        address &= Memory.AddressMask;
+        _functions[address] = (function, Memory.Read32(address), Memory.Read32(address + 4));
+    }
+
+    /// <summary>
+    /// Gets the translated function at the address. A program can write new code over its code, for example the
+    /// decruncher of a packed program. If the first bytes changed, the translation is old: the method removes it, and
+    /// the interpreter then runs the new code.
+    /// </summary>
+    private bool TryGetFunction(uint address, out Action function)
+    {
+        if (_functions.TryGetValue(address, out var entry))
+        {
+            if (Memory.Read32(address) == entry.First && Memory.Read32(address + 4) == entry.Second)
+            {
+                function = entry.Function;
+                return true;
+            }
+
+            _functions.Remove(address);
+        }
+
+        function = null!;
+        return false;
     }
 
     /// <summary>
@@ -216,9 +243,11 @@ public sealed class Core
     public void Call(uint returnAddress, Action function)
     {
         Cpu.Push32(returnAddress);
+        var slot = Cpu.Sp;
         try
         {
             function();
+            ContinueAfterJumpReturns(returnAddress, slot);
         }
         catch (StackUnwindException unwind) when (unwind.ReturnAddress == returnAddress)
         {
@@ -227,6 +256,19 @@ public sealed class Core
 
         if (LastReturnAddress != returnAddress)
             throw new StackUnwindException(LastReturnAddress);
+    }
+
+    /// <summary>
+    /// Continues the code after an RTS that is a jump, until the code returns from the call. Some code jumps with
+    /// <c>PEA target</c> and <c>RTS</c>, for example the decruncher of a packed program. The RTS then does not remove
+    /// the return address of the call from the stack. If the stack still has the return address at its slot, the call
+    /// did not return: the code continues at the address of the RTS. Else the code returned to a different call, and
+    /// the caller unwinds the stack.
+    /// </summary>
+    private void ContinueAfterJumpReturns(uint returnAddress, uint slot)
+    {
+        while (LastReturnAddress != returnAddress && Cpu.Sp <= slot)
+            Dispatch(LastReturnAddress);
     }
 
     /// <summary>Does <c>JSR</c> to an address that is known only at run time, for example <c>JSR -552(A6)</c>.</summary>
@@ -255,7 +297,7 @@ public sealed class Core
             return;
         }
 
-        if (_functions.TryGetValue(target, out var function))
+        if (TryGetFunction(target, out var function))
         {
             function();
             return;
@@ -287,9 +329,11 @@ public sealed class Core
                 Cpu.Push32(returnAddress);
             }
 
+            var slot = Cpu.Sp + (supervisorFrame ? 2u : 0u);
             try
             {
                 Dispatch(address);
+                ContinueAfterJumpReturns(returnAddress, slot);
             }
             catch (StackUnwindException unwind) when (unwind.ReturnAddress == returnAddress)
             {
@@ -548,7 +592,7 @@ public sealed class Core
                 RunNative(pc, native);
                 Cpu.Pc = Cpu.Pop32();
             }
-            else if (_functions.TryGetValue(pc, out var function))
+            else if (TryGetFunction(pc, out var function))
             {
                 function();
                 Cpu.Pc = LastReturnAddress;
