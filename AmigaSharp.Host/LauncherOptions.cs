@@ -1,4 +1,5 @@
 using System.Globalization;
+using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Host;
@@ -56,6 +57,10 @@ public sealed class LauncherOptions
 
     /// <summary>The speed of the CPU in MHz, or null for the 7.16 MHz of the 68000.</summary>
     public double? CpuMhz { get; set; }
+
+    /// <summary>The Amiga of --pal, --chipset, --unaligned-access and --cpu-mhz.</summary>
+    public MachineConfig Machine => new(Pal ? VideoStandard.Pal : VideoStandard.Ntsc, Aga, UnalignedAccess,
+        CpuMhz is { } mhz ? mhz * 1_000_000 : MachineConfig.Default.CpuClockHz);
 
     /// <summary>False to not read or write the map of the code that ran (see <see cref="CodeMap"/>).</summary>
     public bool CodeMap { get; set; } = true;

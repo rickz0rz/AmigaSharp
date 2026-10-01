@@ -1,5 +1,7 @@
 using AmigaSharp.Host;
 using AmigaSharp.PrevueLauncher;
+using AmigaSharp.Runtime;
+using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Tests.Launcher;
 
@@ -17,6 +19,8 @@ public sealed class LauncherOptionsTests : IDisposable
 
         Assert.True(options.Pal && options.Aga && options.UnalignedAccess);
         Assert.Equal(56, options.CpuMhz);
+        Assert.Equal(new MachineConfig(VideoStandard.Pal, true, true, 56_000_000), options.Machine);
+        Assert.Equal(MachineConfig.Default, LauncherOptions.Parse(["program"], []).Machine);
         Assert.Throws<ArgumentException>(() => LauncherOptions.Parse(["program", "--chipset", "ocs"], []));
     }
 

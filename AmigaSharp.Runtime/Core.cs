@@ -114,12 +114,14 @@ public sealed class Core
     /// <param name="input">The console input. The default is the standard input of the host.</param>
     /// <param name="rootDirectory">The host directory of the volume SYS:. The default is the current directory.</param>
     /// <param name="clock">The time of the hardware. The default is real time.</param>
-    /// <param name="video">The video standard of the Amiga. The default is NTSC.</param>
-    /// <param name="aga">True for the AGA chipset (A1200, A4000). The default is ECS.</param>
+    /// <param name="machine">The Amiga to emulate. The default is <see cref="MachineConfig.Default"/>.</param>
     public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null,
-        VideoStandard? video = null, bool aga = false)
+        MachineConfig? machine = null)
     {
-        Chipset = new Chipset(clock ?? new RealTimeClock(), Memory, video, aga);
+        Machine = machine ?? MachineConfig.Default;
+        Chipset = new Chipset(clock ?? new RealTimeClock(), Memory, Machine.Video, Machine.Aga);
+        Memory.AllowUnaligned = Machine.UnalignedAccess;
+        CpuClockHz = Machine.CpuClockHz;
         KeyboardInput.RawKeyPosted = Chipset.Keyboard.Post;
         Chipset.Now = () => Now;
         // Kickstart makes the drive lines of CIA-B port B outputs, with all motors off and no drive selected, and it
@@ -462,6 +464,9 @@ public sealed class Core
     /// 68000 of an NTSC Amiga. A larger value runs the program faster, for example for a program of the A1200.
     /// </summary>
     public double CpuClockHz { get; set; } = CycleEstimate.ClockHz;
+
+    /// <summary>The Amiga that the runtime emulates.</summary>
+    public MachineConfig Machine { get; }
     private static readonly TimeSpan PaceStep = TimeSpan.FromMicroseconds(250);
     private bool _pacing;
     private long _paceOffset;

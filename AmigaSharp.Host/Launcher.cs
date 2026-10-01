@@ -392,11 +392,11 @@ public static class Launcher
     private static Core CreateCore(LauncherOptions options, string drive, IClock clock, Disks disks)
     {
         var turbo = options.TurboSeconds != null || options.TurboLabel != null;
-        var core = new Core(rootDirectory: drive, clock: clock, video: options.Pal ? VideoStandard.Pal : null,
-            aga: options.Aga) { TraceLibraryCalls = options.Trace, PaceCpu = !options.FastCpu && !turbo };
-        core.Memory.AllowUnaligned = options.UnalignedAccess;
-        if (options.CpuMhz is { } cpuMhz)
-            core.CpuClockHz = cpuMhz * 1_000_000;
+        var core = new Core(rootDirectory: drive, clock: clock, machine: options.Machine)
+        {
+            TraceLibraryCalls = options.Trace,
+            PaceCpu = !options.FastCpu && !turbo,
+        };
         // The drives also have the disks, for a program that reads a disk with the hardware. DF1 to DF3 are not connected
         // without a disk.
         foreach (var (number, image) in disks.Images)
