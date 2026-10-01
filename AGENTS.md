@@ -85,6 +85,12 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 
 ## Traps
 
+- AGA (`--chipset aga`) is only what Aonic (the Sonic port, `target-source/Aonic-TheGreenHillZoneDemo.adf`) needed:
+  FMODE fetch, 8 planes, the 256-color palette in `CustomChips.Palette` (the display keeps a per-frame copy so copper
+  color writes land in order), BPLCON1 high scroll bits, wide sprites, SPRxPOS writes that move/arm sprites. A 64-pixel
+  sprite also shows again 256 pixels later: inferred from Aonic's layout, not from a hardware document. Run it with
+  `--pal --chipset aga --unaligned-access`. ECS output must not change: check ESQ with several runs per build.
+
 - Performance: every library call runs `Core.UpdateHardware` (all devices). New per-update work in a device costs
   throughput everywhere. `docs/performance.md` has the measurements, the profile method and the deferred
   optimizations; re-measure there if you touch `UpdateHardware`, `RunNative` or a device `Update`.

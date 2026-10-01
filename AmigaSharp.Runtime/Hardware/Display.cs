@@ -65,9 +65,13 @@ public sealed class Display
     private const int KeyColorTableEnable = 0x0400;
     private const int Bplcon3 = 0x106;
     private const int BorderNotTransparent = 0x0010;
+    private const int BorderBlank = 0x0020;
+    private const int Bplcon4 = 0x10C;
+    private const int Fmode = 0x1FC;
 
     // Sprite registers.
     private const int Spr0pt = 0x120;
+    private const int Spr0pos = 0x140;
 
     /// <summary>The first line where sprite DMA fetches: the end of the vertical blank.</summary>
     private const int FirstSpriteLine = 20;
@@ -77,7 +81,7 @@ public sealed class Display
     private readonly Copper _copper;
     private readonly List<CopperWrite> _writes = [];
     private readonly ushort[] _state = new ushort[0x100];
-    private readonly byte[][] _planeData = new byte[6][];
+    private readonly byte[][] _planeData = new byte[8][];
     private readonly object _frameLock = new();
     // The display draws into the canvas. With interlace, a frame changes only its rows, and the rows of the other
     // frame stay. The host reads the last complete picture from _front.
@@ -110,7 +114,21 @@ public sealed class Display
     private bool _runningCopper;
     private readonly Beam? _beam;
     private readonly VideoStandard _standard;
+
+    // With AGA, the colors come from the palette of 256 colors, in the order of the register writes of the frame.
+    private readonly bool _aga;
+    private readonly uint[] _palette = new uint[256];
     private readonly Sprite[] _sprites = new Sprite[8];
+
+    // The width of the sprites in pixels: 16, or 32 and 64 with the sprite bits of FMODE (AGA).
+    private int _spriteWidth = 16;
+
+    // The line that the display makes now, and true when its sprite DMA ran.
+    private int _line;
+    private bool _spritesFetched;
+
+    // True when a sprite can show on the line that the display draws now.
+    private bool _spritesOnLine;
 
     /// <summary>The state of a sprite DMA channel in the current frame.</summary>
     private struct Sprite
@@ -121,8 +139,9 @@ public sealed class Display
         public int VerticalStop;
         public int HorizontalStart;
         public bool Attached;
-        public ushort DataA;
-        public ushort DataB;
+        // The data of the line, as many bits as the sprite width, with the first pixel in the high bit.
+        public ulong DataA;
+        public ulong DataB;
     }
 
     /// <param name="beam">The beam position. Without it, the display makes each frame at its end.</param>
@@ -132,6 +151,7 @@ public sealed class Display
         _custom = custom;
         _beam = beam;
         _standard = beam?.Standard ?? VideoStandard.Ntsc;
+        _aga = custom.Aga;
         Height = HeightOf(_standard);
         FirstLine = _standard.FirstLine;
         _canvas = new uint[Width * Height];
@@ -223,7 +243,7 @@ public sealed class Display
         if (_runningCopper || !_frameActive)
             return;
         CatchUp();
-        _state[offset >> 1] = value;
+        SetRegister(offset, value);
     }
 
     /// <summary>Makes the lines of the current frame up to the line of the beam.</summary>
@@ -284,6 +304,8 @@ public sealed class Display
         // position in the line.
         for (var i = 0; i < _state.Length; i++)
             _state[i] = _custom[i * 2];
+        if (_aga)
+            Array.Copy(_custom.Palette, _palette, _palette.Length);
 
         var dmacon = _custom.Dmacon;
         _copperOn = (dmacon & (DmaEnable | CopperDma)) == (DmaEnable | CopperDma);
@@ -298,7 +320,7 @@ public sealed class Display
         _dump?.WriteLine($"frame {FrameNumber + 1}, {(longFrame ? "long" : "short")}, copper at ${(_frameStart ?? Location(CustomRegister.Cop1lc)):X6}");
         if (_dump != null)
         {
-            for (var offset = 0x080; offset < 0x1C0; offset += 2)
+            for (var offset = 0x080; offset < 0x200; offset += 2)
                 _dump.WriteLine($"  start {offset:X3} = {_state[offset >> 1]:X4}");
         }
 
@@ -369,6 +391,8 @@ public sealed class Display
     private void RenderLine(int line, bool render, bool longFrame)
     {
         var next = 0;
+        _line = line;
+        _spritesFetched = false;
 
         // The writes before the data fetch starts change the fetch of this line.
         ApplyWrites(ref next, 0x18);
@@ -377,6 +401,9 @@ public sealed class Display
         var bplcon0 = State(CustomRegister.Bplcon0);
         var highResolution = (bplcon0 & HighResolution) != 0;
         var planes = Math.Min((bplcon0 >> 12) & 7, 6);
+        // AGA has up to 8 planes: BPU3 (bit 4) adds 8 to the number of planes.
+        if (_aga)
+            planes = Math.Min(((bplcon0 >> 12) & 7) | ((bplcon0 & 0x0010) != 0 ? 8 : 0), 8);
         var diwStart = State(CustomRegister.Diwstrt);
         var diwStop = State(CustomRegister.Diwstop);
         var verticalStart = diwStart >> 8;
@@ -390,10 +417,29 @@ public sealed class Display
                      && (dmacon & (DmaEnable | BitplaneDma)) == (DmaEnable | BitplaneDma);
 
         var fetchStart = State(CustomRegister.Ddfstrt) & 0xFC;
-        var fetchStop = FetchStop(fetchStart, State(CustomRegister.Ddfstop) & 0xFE, highResolution ? 4 : 8);
-        var words = highResolution
-            ? Math.Max((fetchStop - fetchStart) / 4 + 2, 0)
-            : Math.Max((fetchStop - fetchStart) / 8 + 1, 0);
+        int fetchStop, words, latency;
+        var fetchFactor = _aga ? FetchFactor(State(Fmode)) : 1;
+        if (fetchFactor == 1)
+        {
+            fetchStop = FetchStop(fetchStart, State(CustomRegister.Ddfstop) & 0xFE, highResolution ? 4 : 8);
+            words = highResolution
+                ? Math.Max((fetchStop - fetchStart) / 4 + 2, 0)
+                : Math.Max((fetchStop - fetchStart) / 8 + 1, 0);
+            latency = highResolution ? 9 : 17;
+        }
+        else
+        {
+            // The fetch modes of AGA fetch 2 or 4 words of each plane in a unit that is 2 or 4 times as long. The units
+            // start at DDFSTRT, and the last unit starts at DDFSTOP or before it.
+            var unit = (highResolution ? 4 : 8) * fetchFactor;
+            var stop = Math.Min(State(CustomRegister.Ddfstop) & 0xFE, HardwareFetchStop);
+            var units = stop >= fetchStart ? (stop - fetchStart) / unit + 1 : 0;
+            fetchStop = fetchStart + Math.Max(units - 1, 0) * unit;
+            words = units * fetchFactor;
+            // The data of a unit shows after the unit, as with one word: 17 pixels for low resolution.
+            latency = unit * 2 + 1;
+        }
+
         words = Math.Min(words, 128);
         if (active)
         {
@@ -406,7 +452,7 @@ public sealed class Display
         }
 
         if (render && line >= FirstLine && line < FirstLine + Height / 2)
-            DrawPixels(line, longFrame, ref next, active, planes, highResolution, fetchStart, words,
+            DrawPixels(line, longFrame, ref next, active, planes, highResolution, fetchStart, words, latency,
                 horizontalStart, horizontalStop);
 
         ApplyWrites(ref next, int.MaxValue);
@@ -426,6 +472,14 @@ public sealed class Display
         }
     }
 
+    /// <summary>The words of each plane in a fetch unit, from the bitplane bits of FMODE: 1, 2, 2 or 4.</summary>
+    private static int FetchFactor(ushort fmode) => (fmode & 3) switch
+    {
+        0 => 1,
+        3 => 4,
+        _ => 2,
+    };
+
     /// <summary>The last position where Agnus can start a fetch unit.</summary>
     private const int HardwareFetchStop = 0xD8;
 
@@ -442,24 +496,26 @@ public sealed class Display
         return start + Math.Max(HardwareFetchStop - start, 0) / unit * unit;
     }
 
+    /// <param name="latency">The low-resolution pixels from twice the start of a fetch unit to its first pixel.</param>
     private void DrawPixels(int line, bool longFrame, ref int next, bool active, int planes, bool highResolution,
-        int fetchStart, int words, int horizontalStart, int horizontalStop)
+        int fetchStart, int words, int latency, int horizontalStart, int horizontalStop)
     {
         var row = (line - FirstLine) * 2;
         var interlaced = (State(CustomRegister.Bplcon0) & Interlace) != 0;
         if (interlaced && !longFrame)
             row++;
 
-        // The first fetched pixel appears 17 low-resolution pixels (9 in high resolution) after twice DDFSTRT.
-        var firstDataPixel = (fetchStart * 2 + (highResolution ? 9 : 17) - FirstLowResolutionPixel) * 2;
+        // The first fetched pixel appears 17 low-resolution pixels (9 in high resolution) after twice DDFSTRT, or later
+        // with the fetch modes of AGA.
+        var firstDataPixel = (fetchStart * 2 + latency - FirstLowResolutionPixel) * 2;
         var dataPixels = words * 16 * (highResolution ? 1 : 2);
         var bplcon0 = State(CustomRegister.Bplcon0);
         var dualPlayfield = (bplcon0 & DualPlayfield) != 0;
         var extraHalfBrite = planes == 6 && (bplcon0 & (HoldAndModify | DualPlayfield)) == 0;
         var target = _canvas.AsSpan(row * Width, Width);
-        var spritesOnLine = false;
+        _spritesOnLine = false;
         foreach (var sprite in _sprites)
-            spritesOnLine |= sprite.Armed && (sprite.DataA | sprite.DataB) != 0;
+            _spritesOnLine |= sprite.Armed && (sprite.DataA | sprite.DataB) != 0;
         var insideVertically = line >= (State(CustomRegister.Diwstrt) >> 8)
                                && line < ((State(CustomRegister.Diwstop) >> 8) | ((State(CustomRegister.Diwstop) & 0x8000) == 0 ? 0x100 : 0));
 
@@ -476,6 +532,9 @@ public sealed class Display
                 {
                     // The scroll delay is in low-resolution pixels: odd planes use bits 3 to 0, even planes bits 7 to 4.
                     var delay = (plane % 2 == 0 ? bplcon1 : bplcon1 >> 4) & 0xF;
+                    // AGA adds PF1H6-7 (bits 10 and 11) and PF2H6-7 (bits 14 and 15): 16 to 48 more pixels.
+                    if (_aga)
+                        delay |= ((plane % 2 == 0 ? bplcon1 >> 10 : bplcon1 >> 14) & 3) << 4;
                     var pixel = x - firstDataPixel - delay * 2;
                     if (pixel < 0 || pixel >= dataPixels)
                         continue;
@@ -485,12 +544,12 @@ public sealed class Display
                 }
             }
 
-            var sprite = spritesOnLine && insideVertically && lowResolution >= horizontalStart && lowResolution < horizontalStop
+            var sprite = _spritesOnLine && insideVertically && lowResolution >= horizontalStart && lowResolution < horizontalStop
                 ? SpritePixel(lowResolution, index, dualPlayfield)
                 : 0;
             var border = !insideVertically || lowResolution < horizontalStart || lowResolution >= horizontalStop;
             target[x] = sprite != 0
-                ? Rgb(State(CustomRegister.Color00 + sprite * 2), false)
+                ? SpriteColor(sprite)
                 : PlayfieldPixel(index, dualPlayfield, extraHalfBrite, border);
         }
 
@@ -498,7 +557,18 @@ public sealed class Display
             target.CopyTo(_canvas.AsSpan((row + 1) * Width, Width));
     }
 
-    /// <summary>The color of a pixel from the bits of its planes.</summary>
+    /// <summary>
+    /// The color of a sprite pixel from its color register (17 to 31). With AGA, the sprites use the bank of 16 colors
+    /// that ESPRM (BPLCON4 bits 7 to 4) gives. OSPRM of the odd sprites is not emulated: they use ESPRM too.
+    /// </summary>
+    private uint SpriteColor(int register)
+    {
+        if (!_aga)
+            return Rgb(State(CustomRegister.Color00 + register * 2), false);
+        var bank = (State(Bplcon4) >> 4) & 0xF;
+        return 0xFF00_0000 | _palette[bank * 16 + register - 16];
+    }
+
     /// <summary>
     /// The color of a playfield pixel. A pixel that is the genlock key has alpha 0: a genlock shows its video there. The
     /// other pixels have alpha $FF.
@@ -506,7 +576,14 @@ public sealed class Display
     private uint PlayfieldPixel(int planes, bool dualPlayfield, bool extraHalfBrite, bool border)
     {
         var register = ColorRegister(planes, dualPlayfield);
-        var color = Rgb(State(CustomRegister.Color00 + (register & 31) * 2), extraHalfBrite && register >= 32);
+        uint color;
+        if (border && (State(CustomRegister.Bplcon0) & EcsEnable) != 0 && (State(Bplcon3) & BorderBlank) != 0)
+            color = 0xFF00_0000;
+        else if (_aga)
+            // BPLAM (BPLCON4 bits 15 to 8) changes the color number of each playfield pixel.
+            color = 0xFF00_0000 | _palette[(register ^ (State(Bplcon4) >> 8)) & 0xFF];
+        else
+            color = Rgb(State(CustomRegister.Color00 + (register & 31) * 2), extraHalfBrite && register >= 32);
         return IsGenlockKey(planes, register, border) ? color & 0x00FF_FFFF : color;
     }
 
@@ -573,6 +650,8 @@ public sealed class Display
         if (line < FirstSpriteLine || (_custom.Dmacon & enabled) != enabled)
             return;
 
+        _spritesFetched = true;
+        _spriteWidth = _aga ? SpriteWidth(State(Fmode)) : 16;
         for (var number = 0; number < _sprites.Length; number++)
         {
             ref var sprite = ref _sprites[number];
@@ -584,22 +663,46 @@ public sealed class Display
 
             if (!sprite.Armed && line == sprite.VerticalStart && sprite.VerticalStop > sprite.VerticalStart)
                 sprite.Armed = true;
-            if (!sprite.Armed)
-                continue;
-
-            var pointer = SpritePointer(number);
-            sprite.DataA = _memory.Read16(pointer);
-            sprite.DataB = _memory.Read16(pointer + 2);
-            SetSpritePointer(number, pointer + 4);
+            if (sprite.Armed)
+                FetchSpriteData(number, ref sprite);
         }
     }
 
-    private void LoadSpriteControl(int number, ref Sprite sprite)
+    /// <summary>Fetches the data of a line of a sprite: DATA and then DATB, each as wide as the sprite.</summary>
+    private void FetchSpriteData(int number, ref Sprite sprite)
     {
         var pointer = SpritePointer(number);
+        var bytes = (uint)_spriteWidth / 8;
+        sprite.DataA = ReadSpriteData(pointer, bytes);
+        sprite.DataB = ReadSpriteData(pointer + bytes, bytes);
+        SetSpritePointer(number, pointer + bytes * 2);
+    }
+
+    private ulong ReadSpriteData(uint address, uint bytes)
+    {
+        ulong data = 0;
+        for (uint i = 0; i < bytes; i += 2)
+            data = data << 16 | _memory.Read16(address + i);
+        return data;
+    }
+
+    /// <summary>The width of the sprites from the sprite bits of FMODE (bits 3 and 2): 16, 32, 32 or 64 pixels.</summary>
+    private static int SpriteWidth(ushort fmode) => ((fmode >> 2) & 3) switch
+    {
+        0 => 16,
+        3 => 64,
+        _ => 32,
+    };
+
+    private void LoadSpriteControl(int number, ref Sprite sprite)
+    {
+        // SPRxPOS is the first word of the first fetch, and SPRxCTL the first word of the second fetch. A fetch is as
+        // wide as the sprite: 2, 4 or 8 bytes.
+        var pointer = SpritePointer(number);
+        var bytes = (uint)_spriteWidth / 8;
         var position = _memory.Read16(pointer);
-        var control = _memory.Read16(pointer + 2);
-        SetSpritePointer(number, pointer + 4);
+        var control = _memory.Read16(pointer + bytes);
+        SetSpritePointer(number, pointer + bytes * 2);
 
         // SPRxPOS: VSTART bits 7-0 and HSTART bits 8-1. SPRxCTL: VSTOP bits 7-0, ATTACH, VSTART bit 8, VSTOP bit 8 and
         // HSTART bit 0.
@@ -636,8 +739,8 @@ public sealed class Display
         {
             ref var even = ref _sprites[pair * 2];
             ref var odd = ref _sprites[pair * 2 + 1];
-            var evenBits = SpriteBits(ref even, lowResolution);
-            var oddBits = SpriteBits(ref odd, lowResolution);
+            var evenBits = SpriteBits(ref even, lowResolution, _spriteWidth);
+            var oddBits = SpriteBits(ref odd, lowResolution, _spriteWidth);
             int color;
             if (odd.Attached)
                 color = (oddBits << 2 | evenBits) is var attached and not 0 ? 16 + attached : 0;
@@ -657,14 +760,19 @@ public sealed class Display
     }
 
     /// <summary>The two bits of a sprite at the position: bit 0 from DATA and bit 1 from DATB.</summary>
-    private static int SpriteBits(ref Sprite sprite, int lowResolution)
+    private static int SpriteBits(ref Sprite sprite, int lowResolution, int width)
     {
         if (!sprite.Armed)
             return 0;
         var bit = lowResolution - (sprite.HorizontalStart + 1);
-        if (bit is < 0 or > 15)
+        // A sprite of 64 pixels shows again 256 pixels to the right. The AGA port of Sonic the Hedgehog (Aonic) needs
+        // this: it puts its four pairs of background sprites over 256 pixels, and its display window is 288 pixels
+        // wide. The rule comes from the behavior of that program, not from a document of the hardware.
+        if ((bit < 0 || bit >= width) && width == 64)
+            bit = lowResolution - (sprite.HorizontalStart + 1 + 256);
+        if (bit < 0 || bit >= width)
             return 0;
-        var mask = 0x8000 >> bit;
+        var mask = 1UL << (width - 1 - bit);
         return ((sprite.DataA & mask) != 0 ? 1 : 0) | ((sprite.DataB & mask) != 0 ? 2 : 0);
     }
 
@@ -687,7 +795,7 @@ public sealed class Display
             var write = _writes[next++];
             if (_moduloPending && write.Horizontal >= _moduloPosition)
                 AddModulo();
-            _state[write.Offset >> 1] = write.Value;
+            SetRegister(write.Offset, write.Value);
         }
 
         if (_moduloPending && horizontal >= _moduloPosition)
@@ -695,6 +803,35 @@ public sealed class Display
     }
 
     private ushort State(int offset) => _state[offset >> 1];
+
+    /// <summary>Sets a register of the display. With AGA, a color write also changes the palette.</summary>
+    private void SetRegister(int offset, ushort value)
+    {
+        _state[offset >> 1] = value;
+        if (_aga && CustomChips.IsColor(offset))
+            CustomChips.WriteColor(_palette, offset, value, State(Bplcon3), aga: true);
+        // A write of SPRxPOS moves the sprite at once, also while its DMA runs: a program can show a sprite again
+        // further right on the same line. It also sets the start line. If that is the current line, the sprite DMA
+        // starts on this line: at once if the sprite DMA of the line ran already, else with it.
+        if (offset is >= Spr0pos and < Spr0pos + 64 && (offset & 7) == 0)
+        {
+            var number = (offset - Spr0pos) >> 3;
+            ref var sprite = ref _sprites[number];
+            sprite.HorizontalStart = ((value & 0xFF) << 1) | (sprite.HorizontalStart & 1);
+            sprite.VerticalStart = (value >> 8) | (sprite.VerticalStart & 0x100);
+            const int enabled = DmaEnable | SpriteDma;
+            if (sprite.Loaded && !sprite.Armed && sprite.VerticalStart == _line && sprite.VerticalStop > _line
+                && (_custom.Dmacon & enabled) == enabled)
+            {
+                sprite.Armed = true;
+                if (_spritesFetched)
+                {
+                    FetchSpriteData(number, ref sprite);
+                    _spritesOnLine = true;
+                }
+            }
+        }
+    }
 
     private uint PlanePointer(int plane)
     {

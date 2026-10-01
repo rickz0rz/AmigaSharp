@@ -34,6 +34,7 @@ public sealed class Chipset : IHardware
             // Agnus: ECS $20 and AGA (Alice) $22, with $10 for NTSC. Denise: ECS $FC and AGA (Lisa) $F8.
             AgnusId = (aga ? 0x22 : 0x20) | Beam.Standard.AgnusIdBit,
             DeniseId = aga ? 0xF8 : 0xFC,
+            Aga = aga,
         };
         long EClock() => (long)(Beam.Clock.Elapsed.TotalSeconds * Beam.Standard.EClockHz);
         CiaA = new Cia(() => Beam.Frame, EClock, () => Custom.RequestInterrupt(InterruptBit.Ports));

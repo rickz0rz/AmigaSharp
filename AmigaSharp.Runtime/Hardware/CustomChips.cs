@@ -110,6 +110,49 @@ public sealed class CustomChips
     /// <summary>The Denise ID in the low byte of DENISEID. $FC is the ECS Denise (8373), and $F8 is Lisa (AGA).</summary>
     public int DeniseId { get; set; } = 0xFC;
 
+    /// <summary>
+    /// True for the AGA chipset: the palette has 256 colors of 24 bits, in banks of 32. Lisa starts with BPLCON4 $0011,
+    /// so the sprites use colors 16 to 31, as on ECS.
+    /// </summary>
+    public bool Aga
+    {
+        get => _aga;
+        init
+        {
+            _aga = value;
+            if (value)
+                _registers[Bplcon4 >> 1] = 0x0011;
+        }
+    }
+
+    private readonly bool _aga;
+    private const int Bplcon4 = 0x10C;
+
+    /// <summary>
+    /// The colors as $RRGGBB. With AGA, a write of COLORxx goes to the bank of BPLCON3 (bits 15 to 13), and with LOCT
+    /// (bit 9) it sets the low 4 bits of each part. Without LOCT, a write sets the high 4 bits and copies them to the low
+    /// 4 bits, as ECS shows a color. Without AGA, only the first 32 colors change.
+    /// </summary>
+    public uint[] Palette { get; } = new uint[256];
+
+    private const int Bplcon3 = 0x106;
+    private const int ColorEnd = CustomRegister.Color00 + 64;
+
+    /// <summary>Writes a color register into a palette, with the bank and LOCT of BPLCON3 for AGA.</summary>
+    public static void WriteColor(uint[] palette, int offset, ushort value, ushort bplcon3, bool aga)
+    {
+        var register = (offset - CustomRegister.Color00) >> 1;
+        var index = aga ? ((bplcon3 >> 13) & 7) * 32 + register : register;
+        uint red = (uint)(value >> 8) & 0xF, green = (uint)(value >> 4) & 0xF, blue = (uint)value & 0xF;
+        if (aga && (bplcon3 & 0x0200) != 0)
+            palette[index] = (palette[index] & 0xF0F0F0) | red << 16 | green << 8 | blue;
+        else
+            palette[index] = red * 0x11 << 16 | green * 0x11 << 8 | blue * 0x11;
+    }
+
+    /// <summary>True if the offset is a color register (COLOR00 to COLOR31).</summary>
+    public static bool IsColor(int offset) => offset >= CustomRegister.Color00 && offset < ColorEnd;
+
     public SerialPort Serial { get; }
 
     /// <summary>The controller ports: a mouse in port 1 and a joystick in port 2, as usual.</summary>
@@ -217,6 +260,8 @@ public sealed class CustomChips
     {
         RegisterWritten?.Invoke(offset, value);
         _registers[offset >> 1] = value;
+        if (IsColor(offset))
+            WriteColor(Palette, offset, value, _registers[Bplcon3 >> 1], Aga);
         switch (offset)
         {
             case CustomRegister.Dmacon:

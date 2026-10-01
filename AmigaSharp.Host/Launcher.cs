@@ -50,8 +50,9 @@ public static class Launcher
           --pal                     Make a PAL Amiga: 312 lines and about 50 frames each second, with the clocks of PAL.
                                     The picture is then 768 by 572 pixels. The default is NTSC.
           --chipset <name>          ecs (the default, as an A2000) or aga (Alice and Lisa, as an A1200). With aga, the
-                                    chip IDs and graphics.library tell a program that the chipset is AGA. The display
-                                    does not show the AGA features yet.
+                                    chip IDs and graphics.library tell a program that the chipset is AGA, and the
+                                    display has the fetch modes, 8 planes, the palette of 256 colors, and sprites of 32
+                                    and 64 pixels. See the README for the parts that it does not have.
           --unaligned-access        Let the program read and write words and longs at odd addresses, as a 68020 does,
                                     for example a program for the A1200. On a 68000, this is an address error.
           --serial-port <port>      The TCP port of the serial bridge. The default is 5400. 0 turns the bridge off.

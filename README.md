@@ -21,7 +21,7 @@ emulates:
 
 - It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs. `--unaligned-access` adds one
   behavior of the 68020: words and longs at odd addresses.
-- It emulates an NTSC Amiga with the ECS chipset. `--pal` makes a PAL Amiga, and `--chipset aga` gives the chip IDs of
+- It emulates an NTSC Amiga with the ECS chipset. `--pal` makes a PAL Amiga, and `--chipset aga` adds a part of
   AGA.
 - It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
   of each library call.
@@ -154,8 +154,11 @@ Use `--help` to see all the options. These options are the most important:
   the same each time, and it is as fast as the host can run it. A screenshot can still come from a frame or two
   earlier or later, because the launcher takes it while the program runs.
 - `--pal` makes a PAL Amiga: 312 lines and 50 frames each second. The default is NTSC.
-- `--chipset aga` makes the chip IDs and graphics.library tell the program that the chipset is AGA (A1200, A4000).
-  The display does not show the AGA features yet.
+- `--chipset aga` makes an AGA Amiga (A1200, A4000): the chip IDs, graphics.library, and the display parts of AGA
+  that the A1200 port of Sonic the Hedgehog uses. These are the fetch modes of the bitplanes (FMODE), up to 8 planes,
+  the palette of 256 colors with its banks (BPLCON3, BPLCON4), the scroll of up to 64 pixels, and sprites of 32 and 64
+  pixels. HAM8, the second palette of dual playfield, other resolutions of the sprites and scan doubling are not
+  emulated.
 - `--unaligned-access` lets the program read and write words and longs at odd addresses, as a 68020 does. Programs
   for the A1200 can need it.
 - `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
