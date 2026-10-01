@@ -10,20 +10,27 @@ because the Prevue Channel showed a video in that area.
 
 ## Status
 
-AmigaSharp is a hobby project. Its main target is Prevue Guide (ESQ), the Amiga program of the Prevue Channel. It also
-runs the Amiga Test Kit, a program that takes over the machine and tests the hardware directly.
+AmigaSharp is a hobby project. It runs AmigaOS executables for the 68000. Two programs have been tested:
+
+- Prevue Guide (ESQ), the Amiga program of the Prevue Channel. It is the main target, so this document has many
+  examples for it.
+- The Amiga Test Kit, a program that takes over the machine and tests the hardware directly.
+
+Other programs can also run. A program runs if it uses only the library calls and the hardware that the runtime
+emulates:
 
 - It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs.
 - It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
   of each library call.
 - It emulates only the parts of the chipset that ESQ, the Amiga Test Kit and the samples use.
 
-Other programs can use library calls or hardware that the runtime does not emulate.
+A program needs only its executable. Its assembly source is optional. See
+[The listing of a program](#the-listing-of-a-program).
 
 ## Requirements
 
 - The .NET 10 SDK.
-- vasm (`vasmm68k_mot`), only to rebuild the samples or to assemble the target program.
+- vasm (`vasmm68k_mot`), only to rebuild the samples or to make the listing of a program from its assembly source.
 - ffmpeg on the PATH, only for `--stream`.
 
 The launcher gets SDL2 from the Silk.NET.SDL package. You do not install SDL2.
@@ -63,16 +70,20 @@ The other arguments of `run-esq.ps1` go to the launcher, as with `run-esq.sh`. F
 
 ## Files that the repository does not contain
 
-This repository does not contain Prevue Guide or its data. The ESQ steps in this document need two directories that
+This repository does not contain Prevue Guide or its data. The ESQ steps in this document use two directories that
 are not public:
 
-- `target-source/asm/` contains the assembly source of ESQ. `scripts/build-target.sh` assembles it to
-  `build/target/ESQ` and its listing, and compares the result with a SHA-256 hash.
-- `target-source/binaries/` contains a copy of the drive of a Prevue machine, with the fonts and the listing files.
+- `target-source/binaries/` contains a copy of the drive of a Prevue machine: ESQ, the fonts, and the listing files.
+  The ESQ steps need it.
+- `target-source/asm/` contains the assembly source of ESQ. It is optional. `scripts/build-target.sh` assembles it to
+  `build/target/ESQ` and its listing, and compares the result with a SHA-256 hash. The result is the same file as ESQ
+  of the drive, so Prevue runs the same. The listing adds the development features of
+  [The listing of a program](#the-listing-of-a-program). Without the assembly source, `scripts/run-esq.sh` runs ESQ of
+  the drive without a listing.
 
-Without these directories, the ESQ scripts stop with an error, and the tests of the target program skip. The samples,
-the translator, the runtime and the other tests do not need them. If you have a copy of ESQ and its drive, give their
-paths to the launcher or to `run-prevue.sh` (`run-prevue.ps1` on Windows).
+Without these directories, the tests of the target program skip. The samples, the translator, the runtime and the
+other tests do not need them. If you have a copy of ESQ and its drive, give their paths to the launcher or to
+`run-prevue.sh` (`run-prevue.ps1` on Windows).
 
 This project is not related to the owners of Amiga, Prevue or Channels DVR, and they do not support it. These names
 are trademarks of their owners.
@@ -127,7 +138,7 @@ it. To make native programs that do not need .NET, see
 The launcher translates the program, compiles it, and keeps the result in a cache. The next start uses the cache.
 
 ```sh
-dotnet run --project AmigaSharp.Launcher -c Release -- <executable> --listing <file.lst>
+dotnet run --project AmigaSharp.Launcher -c Release -- <executable> [--listing <file.lst>]
 ```
 
 Use `--help` to see all the options. These options are the most important:
@@ -143,8 +154,9 @@ Use `--help` to see all the options. These options are the most important:
   (7.16 MHz) with a real-time clock. It sleeps when it is ahead, so a program that polls in a loop does not use a full
   host core.
 - `--turbo <seconds>` and `--turbo-until <label>` run the 68000 as fast as the host can at the start, and then at
-  its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0. The script uses
-  `--turbo-until _ESQ_MainLoopUiTickEnabledFlag`, so ESQ starts as fast as with `--fast-cpu`.
+  its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0. With the listing,
+  the script uses `--turbo-until _ESQ_MainLoopUiTickEnabledFlag`, so ESQ starts as fast as with `--fast-cpu`. Without
+  the listing, it uses `--turbo 3`.
 - `--watch <label>` writes each change of the word at a label of the listing, for example
   `--watch _Global_RefreshTickCounter`.
 - `--stats` writes the speed each second: the frames made and dropped, the time to make a frame, the time that the
@@ -166,8 +178,30 @@ dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --
 The launcher for Prevue sets the defaults of a Prevue machine. The drive is also DH1:, and DF0: and ENV: are DH1:.
 The command name is esq, and the arguments are the selection code GA24005. Use `--help` to see all the defaults.
 
-Run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing. `scripts/run-esq.sh` does all of
-these steps.
+With the assembly source of ESQ, run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing.
+Without it, use ESQ of the drive (`/tmp/prevue-drive/ESQ`), leave out `--listing`, and use `--turbo 3`.
+`scripts/run-esq.sh` does all of these steps.
+
+### The listing of a program
+
+A program runs from its executable only. If you have the assembly source of a program, you can also give the launcher
+the vasm listing of the program with `--listing`. This is true for each program, not only for ESQ. Make the listing
+when you assemble the program:
+
+```sh
+vasmm68k_mot -Fhunkexe -nosym -L program.lst -o program program.s
+```
+
+The program runs the same with and without the listing. The listing adds these features for development:
+
+- The translator knows which bytes are code. It translates more of the program, and the interpreter runs less of it.
+  The translation has the names of the labels and the source lines in its comments.
+- `--turbo-until <label>` and `--watch <label>` use the labels of the listing.
+- The launcher for Prevue reads the variables of ESQ by their labels. Without the listing, it uses a table of the
+  addresses of the known build of ESQ.
+
+The executable must be the same file that vasm made with the listing. The translator does not check all of it, and
+with another file the translation is wrong.
 
 ## Show the saved listings
 

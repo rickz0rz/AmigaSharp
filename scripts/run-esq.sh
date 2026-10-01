@@ -5,8 +5,13 @@
 # drive, so the script never uses target-source/binaries directly. Delete build/drive/ to start again from the
 # original drive. With CHANNELS_DVR, the script uses a separate copy in build/drive-channels-dvr/.
 #
-# The 68000 runs as fast as the host can until the main loop of ESQ starts, and then at its real speed. Add
-# --fast-cpu to run as fast as the host can all the time.
+# The script runs build/target/ESQ with its listing. If that file does not exist, the script assembles it from the
+# assembly source (scripts/build-target.sh). Without the assembly source, the script runs ESQ of the drive without a
+# listing. Prevue runs the same, because the two files are the same. The listing only adds the names of the code and
+# the data, for --watch and for a better translation.
+#
+# The 68000 runs as fast as the host can until the main loop of ESQ starts (for 3 seconds without the listing), and
+# then at its real speed. Add --fast-cpu to run as fast as the host can all the time.
 #
 # Arguments after the script name go to the launcher. For example:
 #   scripts/run-esq.sh --scale 1
@@ -40,7 +45,7 @@ fi
 ESQ=$ROOT/build/target/ESQ
 LAUNCHER="dotnet run --project $ROOT/AmigaSharp.PrevueLauncher -c Release --"
 
-if [ ! -f "$ESQ" ]; then
+if [ ! -f "$ESQ" ] && [ -f "${TARGET_SOURCE:-$ROOT/target-source}/asm/Prevue.asm" ]; then
     "$ROOT/scripts/build-target.sh"
 fi
 
@@ -83,9 +88,17 @@ else
     fi
 fi
 
+# The options for the program go before the arguments of the script.
+if [ -f "$ESQ" ]; then
+    set -- --listing "$ROOT/build/target/ESQ.lst" --turbo-until _ESQ_MainLoopUiTickEnabledFlag "$@"
+else
+    echo "There is no assembly source of ESQ. The script runs ESQ of the drive, without a listing."
+    ESQ=$DRIVE/ESQ
+    set -- --turbo 3 "$@"
+fi
+
 # EXTRA_OPTIONS is not in quotes, so that each option is a separate argument.
 # shellcheck disable=SC2086
-$LAUNCHER "$ESQ" --listing "$ROOT/build/target/ESQ.lst" \
-    --drive "$DRIVE" --volume "DH1=$DRIVE" \
+$LAUNCHER "$ESQ" --drive "$DRIVE" --volume "DH1=$DRIVE" \
     --assign DF0=DH1: --assign ENV=DH1: --arguments GA24005 --command-name esq \
-    --turbo-until _ESQ_MainLoopUiTickEnabledFlag $EXTRA_OPTIONS --scale "${ESQ_SCALE:-2}" "$@"
+    $EXTRA_OPTIONS --scale "${ESQ_SCALE:-2}" "$@"

@@ -7,8 +7,13 @@ The first run copies the drive to build\drive\ and unpacks the saved 2020 listin
 drive, so the script never uses target-source\binaries directly. Delete build\drive\ to start again from the original
 drive. With -ChannelsDvr, the script uses a separate copy in build\drive-channels-dvr\.
 
-The 68000 runs as fast as the host can until the main loop of ESQ starts, and then at its real speed. Add --fast-cpu
-to run as fast as the host can all the time.
+The script runs build\target\ESQ with its listing. If that file does not exist, the script assembles it from the
+assembly source (scripts\build-target.ps1). Without the assembly source, the script runs ESQ of the drive without a
+listing. Prevue runs the same, because the two files are the same. The listing only adds the names of the code and the
+data, for --watch and for a better translation.
+
+The 68000 runs as fast as the host can until the main loop of ESQ starts (for 3 seconds without the listing), and then
+at its real speed. Add --fast-cpu to run as fast as the host can all the time.
 
 Arguments that are not parameters of the script go to the launcher. It is the PowerShell version of run-esq.sh. Each
 parameter has a default from the environment variable of run-esq.sh.
@@ -87,7 +92,8 @@ $Esq = Join-Path $Root 'build\target\ESQ'
 $Launcher = Join-Path $Root 'AmigaSharp.PrevueLauncher\bin\Release\net10.0\AmigaSharp.PrevueLauncher.dll'
 $ListingsTool = Join-Path $Root 'AmigaSharp.PrevueListings\bin\Release\net10.0\AmigaSharp.PrevueListings.dll'
 
-if (-not (Test-Path $Esq)) {
+$TargetSource = if ($env:TARGET_SOURCE) { $env:TARGET_SOURCE } else { Join-Path $Root 'target-source' }
+if (-not (Test-Path $Esq) -and (Test-Path (Join-Path $TargetSource 'asm\Prevue.asm'))) {
     & (Join-Path $PSScriptRoot 'build-target.ps1')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
@@ -142,10 +148,17 @@ try {
         }
     }
 
-    $arguments = @($Esq, '--listing', (Join-Path $Root 'build\target\ESQ.lst'),
-        '--drive', $Drive, '--volume', "DH1=$Drive",
-        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq',
-        '--turbo-until', '_ESQ_MainLoopUiTickEnabledFlag') + $options + @('--scale', $Scale)
+    if (Test-Path $Esq) {
+        $program = @($Esq, '--listing', (Join-Path $Root 'build\target\ESQ.lst'),
+            '--turbo-until', '_ESQ_MainLoopUiTickEnabledFlag')
+    }
+    else {
+        Write-Host 'There is no assembly source of ESQ. The script runs ESQ of the drive, without a listing.'
+        $program = @((Join-Path $Drive 'ESQ'), '--turbo', '3')
+    }
+    $arguments = $program + @('--drive', $Drive, '--volume', "DH1=$Drive",
+        '--assign', 'DF0=DH1:', '--assign', 'ENV=DH1:', '--arguments', 'GA24005', '--command-name', 'esq') +
+        $options + @('--scale', $Scale)
     if ($LauncherArguments) { $arguments += $LauncherArguments }
     Invoke-Program dotnet $Launcher @arguments
     $exitCode = $LASTEXITCODE

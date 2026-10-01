@@ -15,7 +15,9 @@ tests; read it first. This file covers what the README does not: how to check yo
 Most display, genlock and Prevue work can only be verified by looking at the screen.
 
 - `scripts/run-esq.sh [launcher options]` runs Prevue on a copy of the drive in `build/drive/` with the saved
-  2020-11-01 listings. Useful launcher options:
+  2020-11-01 listings. Without `target-source/asm` (and no `build/target/ESQ`), it runs the drive's ESQ (byte-identical)
+  without a listing and with `--turbo 3`. Keep docs generic: any 68000 AmigaOS executable can run, a vasm listing is
+  an optional development aid, and ESQ and ATK are only the tested programs. Useful launcher options:
   - `--virtual-time`: the run is deterministic and repeatable. Prefer it for comparisons.
   - `--screenshot <file.png> --seconds <n>` and `--screenshot-every <n>`: pictures without a window.
   - `--watch <label>`: logs each change of a 16-bit word at a listing label (needs the listing, which run-esq.sh
