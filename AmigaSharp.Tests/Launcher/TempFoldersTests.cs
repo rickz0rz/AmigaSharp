@@ -33,14 +33,15 @@ public sealed class TempFoldersTests : IDisposable
     [Fact]
     public void Create_WritesTheOwner_AndDeleteRemovesTheTwo()
     {
-        var folder = TempFolders.Create("AmigaSharp-RAM-");
+        // The test uses its own directory. In the temporary directory of the system, RemoveOld would remove the folders
+        // of the launchers that run now, because the test tells that only this process runs.
+        var folder = TempFolders.Create("AmigaSharp-RAM-", _root);
         try
         {
             var owner = File.ReadAllLines(folder + ".owner");
             Assert.Equal(Environment.ProcessId.ToString(), owner[0]);
             // This process runs, so its folder is not old.
-            Assert.Equal(0, TempFolders.RemoveOld(TextWriter.Null, Path.GetDirectoryName(folder),
-                (id, _) => id == Environment.ProcessId));
+            Assert.Equal(0, TempFolders.RemoveOld(TextWriter.Null, _root, (id, _) => id == Environment.ProcessId));
         }
         finally
         {

@@ -24,9 +24,12 @@ public static class TempFolders
     private static readonly TimeSpan OrphanAge = TimeSpan.FromHours(1);
 
     /// <summary>Makes a new temporary folder with the prefix, and its owner file.</summary>
-    public static string Create(string prefix)
+    /// <param name="root">The directory of the folder. The default is the temporary directory of the system.</param>
+    public static string Create(string prefix, string? root = null)
     {
-        var folder = Directory.CreateTempSubdirectory(prefix).FullName;
+        var folder = root == null
+            ? Directory.CreateTempSubdirectory(prefix).FullName
+            : Directory.CreateDirectory(Path.Combine(root, prefix + Path.GetRandomFileName().Replace(".", ""))).FullName;
         using var process = Process.GetCurrentProcess();
         File.WriteAllText(folder + OwnerExtension,
             $"{process.Id}\n{process.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture)}\n");
