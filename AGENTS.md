@@ -83,6 +83,9 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   `--no-code-map` or delete the `.code` file. The file format (hex per line) is `AmigaSharp.Translator/KnownCodeFile`;
   `--code-map <file>` picks another file, `<launcher> merge-code-maps <out> <in>...` unions maps, the translator CLI
   takes `--known-code`, and `EmbeddedKnownCode` / `EMBEDDED_KNOWN_CODE` feed it to an embedded (AOT) build.
+  Sources: `Core.InterpreterEntries` (entries into the interpreter) plus, when `Core.RecordJumpTargets` is on (the
+  launcher sets it only when a map is in use), `Core.InterpretedJumpTargets` (JSR/BSR/JMP targets inside the
+  interpreter). Without the latter, a pure `--interpret`/native run learns almost nothing (3 addresses for Aonic).
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
   registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,

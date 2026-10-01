@@ -142,6 +142,21 @@ public class CoreTests
         Assert.Equal(2u, _core.Cpu.D[0]);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Interpreter_KeepsTheTargetsOfItsCalls_OnlyWhenAsked(bool record)
+    {
+        var target = _core.AllocateSystem([0x70, 0x03, 0x4E, 0x75]); // MOVEQ #3,D0; RTS
+        var caller = _core.AllocateSystem([0x4E, 0xB9, .. BigEndian(target), 0x4E, 0x75]); // JSR target; RTS
+        _core.RecordJumpTargets = record;
+
+        _core.CallAddress(Core.ExitAddress, caller);
+
+        Assert.Equal(3u, _core.Cpu.D[0]);
+        Assert.Equal(record ? [target] : [], _core.InterpretedJumpTargets);
+    }
+
     private static byte[] BigEndian(uint value) =>
         [(byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value];
 

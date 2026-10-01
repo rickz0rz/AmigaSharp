@@ -588,6 +588,17 @@ public sealed class Core
     /// <summary>For each address where the code went into the interpreter, the number of times.</summary>
     public Dictionary<uint, long> InterpreterEntries { get; } = new();
 
+    /// <summary>
+    /// True to keep the targets of the JSR, BSR and JMP instructions that the interpreter runs, in
+    /// <see cref="InterpretedJumpTargets"/>. In the interpreter, a call does not enter the interpreter again, so without
+    /// them a run in the interpreter shows only a few addresses of code. The default is false: the check costs a little
+    /// time at each instruction.
+    /// </summary>
+    public bool RecordJumpTargets { get; set; }
+
+    /// <summary>The targets of the JSR, BSR and JMP instructions of the interpreter, with <see cref="RecordJumpTargets"/>.</summary>
+    public HashSet<uint> InterpretedJumpTargets { get; } = [];
+
     private void RunInterpreted(uint address)
     {
         InterpreterEntries[address] = InterpreterEntries.GetValueOrDefault(address) + 1;
@@ -612,6 +623,9 @@ public sealed class Core
                 var opcode = Memory.Read16(pc);
                 Interpreter.Step();
                 InterpretedInstructions++;
+                // JSR and JMP ($4E80 to $4EFF), and BSR ($61xx): the target is the start of code.
+                if (RecordJumpTargets && ((opcode & 0xFF80) == 0x4E80 || (opcode & 0xFF00) == 0x6100))
+                    InterpretedJumpTargets.Add(Cpu.Pc & Memory.AddressMask);
                 // RTS, RTE and RTR are the only instructions that can return from the frame.
                 if (opcode is not (0x4E75 or 0x4E73 or 0x4E77))
                     continue;

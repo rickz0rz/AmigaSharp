@@ -651,6 +651,11 @@ Each run then translates more of the program. For the Sonic demo, the interprete
 seconds in the first run, and 0.6 million in the fifth run. The map keeps only code of the file: code that a program
 unpacks or writes while it runs stays in the interpreter. `--no-code-map` turns the map off.
 
+A run in the interpreter only (`--interpret`, or a native launcher) also makes a map: the interpreter keeps the
+target of each JSR, BSR and JMP that it runs. One such run of the Sonic demo found 441 addresses. A translation with
+that map then interpreted 62 thousand instructions in 30 seconds. The map costs no measurable time: the interpreter
+ran at about 275 MHz with and without it. A larger map makes the next start translate and compile again, once.
+
 A map is a text file with one hexadecimal address on each line. The launcher writes its path after a run that adds to
 it. To keep the map with the program, give the file with `--code-map <file>`. To merge the maps of runs on other
 computers:

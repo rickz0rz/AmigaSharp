@@ -325,6 +325,7 @@ public static class Launcher
         var codeMap = listing == null && options.CodeMap
             ? options.CodeMapFile != null ? CodeMap.Open(options.CodeMapFile) : CodeMap.Load(executable)
             : null;
+        core.RecordJumpTargets = codeMap != null;
 
         // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
         // a constant in such a build, so the trimmer removes the compiler from it.
@@ -578,7 +579,8 @@ public static class Launcher
 
         if (codeMap != null)
         {
-            var added = codeMap.Add(executable, core.Memory, core.InterpreterEntries.Keys.ToList());
+            var added = codeMap.Add(executable, core.Memory,
+                core.InterpreterEntries.Keys.Concat(core.InterpretedJumpTargets).ToList());
             if (added > 0)
                 log.WriteLine($"The map of the code that ran has {codeMap.Addresses.Count} addresses ({added} new). " +
                               $"The next start also translates them. The map is {codeMap.Path}.");
