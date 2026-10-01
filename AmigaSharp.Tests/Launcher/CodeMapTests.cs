@@ -35,6 +35,34 @@ public sealed class CodeMapTests : IDisposable
     }
 
     [Fact]
+    public void Merge_WritesAllTheAddressesOfTheMaps_AndReadSkipsOtherLines()
+    {
+        var first = Path.Combine(_directory, "first.code");
+        var second = Path.Combine(_directory, "second.code");
+        var merged = Path.Combine(_directory, "merged.code");
+        File.WriteAllLines(first, ["# The map of the first computer.", "200010", "$22DC06"]);
+        File.WriteAllLines(second, ["200010", "2628AC"]);
+
+        var count = KnownCodeFile.Merge(merged, [first, second]);
+
+        Assert.Equal(3, count);
+        Assert.Equal(["200010", "22DC06", "2628AC"], File.ReadAllLines(merged));
+        Assert.Throws<FileNotFoundException>(() => KnownCodeFile.Merge(merged, [Path.Combine(_directory, "none.code")]));
+    }
+
+    [Fact]
+    public void Open_UsesTheGivenFile()
+    {
+        var path = Path.Combine(_directory, "program.code");
+        File.WriteAllLines(path, ["200008"]);
+
+        var map = CodeMap.Open(path);
+
+        Assert.Equal(path, map.Path);
+        Assert.Equal([0x200008u], map.Addresses);
+    }
+
+    [Fact]
     public void Analysis_TranslatesKnownCode_AlsoInADataHunk()
     {
         // Hunk 0 is code that ends at once. Hunk 1 is data with code that only an address in a table can reach.

@@ -60,7 +60,7 @@ they also read the same environment variables:
 | `CHANNELS_DVR_INTERVAL`, `CHANNELS_DVR_PREMIUM` | `-Interval`, `-Premium` |
 | `ESQ_DATE`, `ESQ_SCALE` | `-Date`, `-Scale` |
 | `VASM`, `TARGET_SOURCE` of `build-target.sh` | `-Vasm`, `-TargetSource` |
-| `EMBEDDED_PROGRAM`, `EMBEDDED_LISTING` of `publish.sh` | `-EmbeddedProgram`, `-EmbeddedListing` |
+| `EMBEDDED_PROGRAM`, `EMBEDDED_LISTING`, `EMBEDDED_KNOWN_CODE` of `publish.sh` | `-EmbeddedProgram`, `-EmbeddedListing`, `-EmbeddedKnownCode` |
 
 The other arguments of `run-esq.ps1` go to the launcher, as with `run-esq.sh`. For example, use
 `scripts\run-esq.ps1 --scale 1`. Use `Get-Help scripts\run-esq.ps1 -Detailed` to see the parameters of a script.
@@ -573,6 +573,10 @@ The build can also translate one program and compile the translation into the la
 EMBEDDED_PROGRAM=build/target/ESQ EMBEDDED_LISTING=build/target/ESQ.lst scripts/publish.sh
 ```
 
+For a program without a listing, give a map of the code that ran in place of the listing, for example
+`EMBEDDED_PROGRAM=aonic EMBEDDED_KNOWN_CODE=aonic.code scripts/publish.sh`. A native launcher with the Sonic demo and
+its map interpreted 84 thousand instructions in 30 seconds.
+
 The launcher then runs that program (found by its SHA-256) from the translation, and other programs in the
 interpreter. The launcher is then 19 MB, not 7 MB. It contains the code of the program, so give it only to people
 who can have that program. The speed of the emulated 68000 at full speed (`--fast-cpu`) for ESQ, measured at commit
@@ -646,6 +650,18 @@ the addresses where the interpreter started, in the translation cache, and the n
 Each run then translates more of the program. For the Sonic demo, the interpreter ran 115 million instructions in 30
 seconds in the first run, and 0.6 million in the fifth run. The map keeps only code of the file: code that a program
 unpacks or writes while it runs stays in the interpreter. `--no-code-map` turns the map off.
+
+A map is a text file with one hexadecimal address on each line. The launcher writes its path after a run that adds to
+it. To keep the map with the program, give the file with `--code-map <file>`. To merge the maps of runs on other
+computers:
+
+```sh
+dotnet run --project AmigaSharp.Launcher -c Release -- merge-code-maps aonic.code computer1.code computer2.code
+```
+
+The translator reads a map with `--known-code <file>`, and a build that compiles a translation into the launcher reads
+it from `EMBEDDED_KNOWN_CODE` (see [Build programs for other people](#build-programs-for-other-people)). A native
+launcher then runs the translated code from its first start, also without a listing.
 
 A program can write new code over its own code, for example the decruncher of a packed program. The runtime keeps the
 first 8 bytes of each translated method. If these bytes change, the runtime removes the method, and the interpreter

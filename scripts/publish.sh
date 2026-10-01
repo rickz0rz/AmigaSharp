@@ -20,6 +20,9 @@
 #                     launcher then runs this program from its translation, and other programs in the interpreter.
 #                     The launcher contains the code of the program, so give it only to people who can have it.
 #   EMBEDDED_LISTING  The vasm listing of EMBEDDED_PROGRAM (optional, but it gives a better translation).
+#   EMBEDDED_KNOWN_CODE
+#                     A map of the code that ran (the launcher option --code-map writes one), for an EMBEDDED_PROGRAM
+#                     without a listing. The translation then has the code that the map gives.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -42,6 +45,9 @@ if [ -n "${EMBEDDED_PROGRAM:-}" ]; then
     EMBEDDED="-p:EmbeddedProgram=$(cd "$(dirname "$EMBEDDED_PROGRAM")" && pwd)/$(basename "$EMBEDDED_PROGRAM")"
     if [ -n "${EMBEDDED_LISTING:-}" ]; then
         EMBEDDED="$EMBEDDED -p:EmbeddedListing=$(cd "$(dirname "$EMBEDDED_LISTING")" && pwd)/$(basename "$EMBEDDED_LISTING")"
+    fi
+    if [ -n "${EMBEDDED_KNOWN_CODE:-}" ]; then
+        EMBEDDED="$EMBEDDED -p:EmbeddedKnownCode=$(cd "$(dirname "$EMBEDDED_KNOWN_CODE")" && pwd)/$(basename "$EMBEDDED_KNOWN_CODE")"
     fi
     echo "The launcher gets the translation of $EMBEDDED_PROGRAM."
 fi

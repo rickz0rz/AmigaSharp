@@ -1,8 +1,8 @@
 <Project>
   <!--
-    Build-time translation for a launcher program. With the properties EmbeddedProgram (an executable) and
-    EmbeddedListing (its vasm listing, optional), the build runs the translator and compiles the translation into the
-    program. A module initializer adds it to AmigaSharp.Host.EmbeddedPrograms. The project of the program imports this
+    Build-time translation for a launcher program. With the properties EmbeddedProgram (an executable),
+    EmbeddedListing (its vasm listing, optional) and EmbeddedKnownCode (a map of the code that ran, optional, for a
+    program without a listing), the build runs the translator and compiles the translation into the program. A module initializer adds it to AmigaSharp.Host.EmbeddedPrograms. The project of the program imports this
     file and references AmigaSharp.Translator.
   -->
 
@@ -16,15 +16,16 @@
 
   <Target Name="TranslateEmbeddedProgram" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
           DependsOnTargets="SetEmbeddedProgramPaths" Condition="'$(EmbeddedProgram)' != ''"
-          Inputs="$(EmbeddedProgram);$(EmbeddedListing)" Outputs="$(EmbeddedProgramSource)">
+          Inputs="$(EmbeddedProgram);$(EmbeddedListing);$(EmbeddedKnownCode)" Outputs="$(EmbeddedProgramSource)">
     <ItemGroup>
       <_Translator Include="@(_ResolvedProjectReferencePaths)" Condition="'%(Filename)' == 'AmigaSharp.Translator'" />
     </ItemGroup>
     <PropertyGroup>
       <_ListingOption Condition="'$(EmbeddedListing)' != ''">--listing &quot;$(EmbeddedListing)&quot;</_ListingOption>
+      <_KnownCodeOption Condition="'$(EmbeddedKnownCode)' != ''">--known-code &quot;$(EmbeddedKnownCode)&quot;</_KnownCodeOption>
     </PropertyGroup>
     <Error Condition="'@(_Translator)' == ''" Text="The build did not find the translator." />
-    <Exec Command="dotnet &quot;@(_Translator)&quot; &quot;$(EmbeddedProgram)&quot; $(_ListingOption) --namespace AmigaSharp.Embedded --class EmbeddedProgram --output &quot;$(EmbeddedProgramSource)&quot;" />
+    <Exec Command="dotnet &quot;@(_Translator)&quot; &quot;$(EmbeddedProgram)&quot; $(_ListingOption) $(_KnownCodeOption) --namespace AmigaSharp.Embedded --class EmbeddedProgram --output &quot;$(EmbeddedProgramSource)&quot;" />
   </Target>
 
   <Target Name="AddEmbeddedProgram" AfterTargets="TranslateEmbeddedProgram" BeforeTargets="CoreCompile"

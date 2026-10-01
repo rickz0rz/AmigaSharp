@@ -1,7 +1,7 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Loader;
+using AmigaSharp.Translator;
 
 namespace AmigaSharp.Host;
 
@@ -20,38 +20,35 @@ namespace AmigaSharp.Host;
 /// The map keeps only addresses in the contents of a hunk of the file, where the memory still has the bytes of the
 /// file. Code that the program unpacks or writes at run time is not in the file, so it stays in the interpreter.
 /// </para>
+/// <para>
+/// The file has one hexadecimal address on each line (see <see cref="KnownCodeFile"/>). The maps of runs on other
+/// computers can be merged into one file, and the translator reads a map with --known-code.
+/// </para>
 /// </remarks>
 public sealed class CodeMap
 {
-    private readonly string _path;
-
-    private CodeMap(string path, SortedSet<uint> addresses)
+    private CodeMap(string path)
     {
-        _path = path;
-        Addresses = addresses;
+        Path = path;
+        Addresses = KnownCodeFile.Read(path);
     }
+
+    /// <summary>The file of the map.</summary>
+    public string Path { get; }
 
     /// <summary>The addresses of code that ran.</summary>
     public SortedSet<uint> Addresses { get; }
 
-    /// <summary>Reads the map of a program, or makes an empty one.</summary>
+    /// <summary>Reads the map of a program in the cache of the translations, or makes an empty one.</summary>
     public static CodeMap Load(byte[] executable, string? directory = null)
     {
         directory ??= ProgramCompiler.CacheDirectory;
         var name = Convert.ToHexString(SHA256.HashData(executable))[..24] + ".code";
-        var path = Path.Combine(directory, name);
-        var addresses = new SortedSet<uint>();
-        if (File.Exists(path))
-        {
-            foreach (var line in File.ReadLines(path))
-            {
-                if (uint.TryParse(line.Trim().TrimStart('$'), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var address))
-                    addresses.Add(address);
-            }
-        }
-
-        return new CodeMap(path, addresses);
+        return new CodeMap(System.IO.Path.Combine(directory, name));
     }
+
+    /// <summary>Reads a map file, or makes an empty map that writes to that file.</summary>
+    public static CodeMap Open(string path) => new(path);
 
     /// <summary>
     /// Adds the addresses that are code of the file: in the contents of a hunk, with the bytes of the file in memory.
@@ -69,10 +66,7 @@ public sealed class CodeMap
         }
 
         if (added > 0)
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
-            File.WriteAllLines(_path, Addresses.Select(address => address.ToString("X6", CultureInfo.InvariantCulture)));
-        }
+            KnownCodeFile.Write(Path, Addresses);
 
         return added;
     }

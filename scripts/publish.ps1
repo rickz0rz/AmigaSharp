@@ -24,11 +24,16 @@ the program, so give it only to people who can have it.
 
 .PARAMETER EmbeddedListing
 The vasm listing of the embedded program (EMBEDDED_LISTING). It is optional, but it gives a better translation.
+
+.PARAMETER EmbeddedKnownCode
+A map of the code that ran (EMBEDDED_KNOWN_CODE), for an embedded program without a listing. The launcher option
+--code-map writes one. The translation then has the code that the map gives.
 #>
 param(
     [string]$RuntimeIdentifier,
     [string]$EmbeddedProgram = $env:EMBEDDED_PROGRAM,
-    [string]$EmbeddedListing = $env:EMBEDDED_LISTING
+    [string]$EmbeddedListing = $env:EMBEDDED_LISTING,
+    [string]$EmbeddedKnownCode = $env:EMBEDDED_KNOWN_CODE
 )
 $ErrorActionPreference = 'Stop'
 
@@ -69,6 +74,9 @@ if ($EmbeddedProgram) {
     $embedded += "-p:EmbeddedProgram=$((Resolve-Path $EmbeddedProgram).Path)"
     if ($EmbeddedListing) {
         $embedded += "-p:EmbeddedListing=$((Resolve-Path $EmbeddedListing).Path)"
+    }
+    if ($EmbeddedKnownCode) {
+        $embedded += "-p:EmbeddedKnownCode=$((Resolve-Path $EmbeddedKnownCode).Path)"
     }
     Write-Host "The launcher gets the translation of $EmbeddedProgram."
 }

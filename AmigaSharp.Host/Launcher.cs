@@ -2,6 +2,7 @@ using AmigaSharp.Runtime;
 using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Graphics;
 using AmigaSharp.Runtime.Hardware;
+using AmigaSharp.Translator;
 
 namespace AmigaSharp.Host;
 
@@ -33,6 +34,11 @@ public static class Launcher
 
         Writes the files of an ADF disk image to the directory.
 
+        Usage: @NAME@ merge-code-maps <output> <map>...
+
+        Writes all the addresses of the maps of the code that ran (see --code-map) to one map. For example, merge the
+        maps of the runs on other computers, and give the result to --code-map or to the translator.
+
         The executable can be a file on a disk image: <disk.adf>:<path>, for example AmigaTestKit.adf:AmigaTestKit. The
         launcher copies the files of the disk to a new temporary directory. That directory is SYS:, DF0: and the volume
         name of the disk. The program can change these files, but not the disk image. The disk is also in the drive DF0
@@ -45,6 +51,8 @@ public static class Launcher
           --no-code-map             Without --listing, the launcher keeps a map of the code that ran in the interpreter,
                                     and the next translation also translates that code. So each run translates more of
                                     the program. This option does not read or write the map.
+          --code-map <file>         Read and update this map, in place of the map of the program in the cache of the
+                                    translations. The map can then go with the program to another computer.
           --drive <directory>       The host directory of SYS:. The default is the directory of the executable.
           --volume <NAME>=<dir>     A volume on a host directory, for example DH1=/path/to/drive.
           --assign <NAME>=<path>    An assign to an AmigaDOS directory, for example DF0=DH1: or FONTS=SYS:fonts.
@@ -144,6 +152,8 @@ public static class Launcher
             return Unpack(args[1..]);
         if (args.Length > 0 && args[0] == "extract")
             return Extract(args[1..]);
+        if (args.Length > 0 && args[0] == "merge-code-maps")
+            return MergeCodeMaps(args[1..]);
 
         LauncherOptions options;
         try
@@ -312,7 +322,9 @@ public static class Launcher
         scheduleRequests.Runner = scheduleRunner;
 
         // Without a listing, the map of the code that ran in earlier runs tells the translator where more code is.
-        var codeMap = listing == null && options.CodeMap ? CodeMap.Load(executable) : null;
+        var codeMap = listing == null && options.CodeMap
+            ? options.CodeMapFile != null ? CodeMap.Open(options.CodeMapFile) : CodeMap.Load(executable)
+            : null;
 
         // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
         // a constant in such a build, so the trimmer removes the compiler from it.
@@ -569,7 +581,7 @@ public static class Launcher
             var added = codeMap.Add(executable, core.Memory, core.InterpreterEntries.Keys.ToList());
             if (added > 0)
                 log.WriteLine($"The map of the code that ran has {codeMap.Addresses.Count} addresses ({added} new). " +
-                              "The next start also translates them.");
+                              $"The next start also translates them. The map is {codeMap.Path}.");
         }
 
         if (stats && core.InterpreterEntries.Count > 0)
@@ -587,6 +599,27 @@ public static class Launcher
     private static TranslatedProgram CompileProgram(byte[] executable, string? listing, Core core, TextWriter log,
         IReadOnlyCollection<uint>? knownCode) =>
         (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log, knownCode), core)!;
+
+    private static int MergeCodeMaps(string[] arguments)
+    {
+        if (arguments.Length < 2)
+        {
+            Console.Error.WriteLine("error: merge-code-maps needs an output file and one or more maps.");
+            return 2;
+        }
+
+        try
+        {
+            var count = KnownCodeFile.Merge(arguments[0], arguments[1..]);
+            Console.WriteLine($"Wrote {count} addresses to {arguments[0]}.");
+            return 0;
+        }
+        catch (IOException e)
+        {
+            Console.Error.WriteLine($"error: {e.Message}");
+            return 1;
+        }
+    }
 
     private static int Extract(string[] arguments)
     {

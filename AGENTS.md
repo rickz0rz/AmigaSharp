@@ -80,7 +80,9 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   (`<translations cache>/<sha256[..24]>.code`) and passed to `ProgramAnalysis.Analyze(..., knownCode)` as extra roots
   (also in data hunks); they are part of the translation cache key. Only addresses inside hunk file data whose opcode
   bytes still match the file are kept. With a listing the map is ignored. To reproduce a first-run translation, use
-  `--no-code-map` or delete the `.code` file.
+  `--no-code-map` or delete the `.code` file. The file format (hex per line) is `AmigaSharp.Translator/KnownCodeFile`;
+  `--code-map <file>` picks another file, `<launcher> merge-code-maps <out> <in>...` unions maps, the translator CLI
+  takes `--known-code`, and `EmbeddedKnownCode` / `EMBEDDED_KNOWN_CODE` feed it to an embedded (AOT) build.
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
   registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,

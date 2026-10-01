@@ -21,6 +21,13 @@ public sealed class LauncherOptionsTests : IDisposable
     }
 
     [Fact]
+    public void CodeMapOptions_TurnTheMapOffOrGiveItsFile()
+    {
+        Assert.False(LauncherOptions.Parse(["program", "--no-code-map"], []).CodeMap);
+        Assert.Equal("aonic.code", LauncherOptions.Parse(["program", "--code-map", "aonic.code"], []).CodeMapFile);
+    }
+
+    [Fact]
     public void GenericLauncher_RefusesAnOptionForPrevue()
     {
         var error = Assert.Throws<ArgumentException>(() =>

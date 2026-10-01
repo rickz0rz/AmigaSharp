@@ -11,9 +11,11 @@ const string usage = """
                              the instructions and the labels, and it copies the source lines into the comments.
       --namespace <name>     The namespace of the class. The default is AmigaSharp.Generated.
       --class <name>         The name of the class. The default is the name of the executable.
+      --known-code <file>    A map of the code that ran (the launcher writes it, see --code-map of the launcher).
+                             Without a listing, the translator also translates the code at its addresses.
     """;
 
-string? executable = null, output = null, listingPath = null;
+string? executable = null, output = null, listingPath = null, knownCodePath = null;
 var namespaceName = "AmigaSharp.Generated";
 string? className = null;
 for (var i = 0; i < args.Length; i++)
@@ -24,6 +26,7 @@ for (var i = 0; i < args.Length; i++)
         case "--listing" when i + 1 < args.Length: listingPath = args[++i]; break;
         case "--namespace" when i + 1 < args.Length: namespaceName = args[++i]; break;
         case "--class" when i + 1 < args.Length: className = args[++i]; break;
+        case "--known-code" when i + 1 < args.Length: knownCodePath = args[++i]; break;
         case var value when !value.StartsWith("--") && executable == null: executable = value; break;
         default:
             Console.Error.WriteLine($"error: unknown argument {args[i]}.");
@@ -40,7 +43,16 @@ if (executable == null || output == null)
 
 var file = HunkFile.Read(executable);
 var listing = listingPath == null ? null : VasmListing.Read(listingPath);
-var analysis = ProgramAnalysis.Analyze(file, listing);
+if (knownCodePath != null && !File.Exists(knownCodePath))
+{
+    Console.Error.WriteLine($"error: the map {knownCodePath} does not exist.");
+    return 1;
+}
+
+var knownCode = knownCodePath == null ? null : KnownCodeFile.Read(knownCodePath);
+if (knownCode != null && listing != null)
+    Console.Error.WriteLine("warning: the listing tells which bytes are code, so the translator does not use --known-code.");
+var analysis = ProgramAnalysis.Analyze(file, listing, knownCode);
 foreach (var warning in analysis.Warnings)
     Console.Error.WriteLine($"warning: {warning}");
 

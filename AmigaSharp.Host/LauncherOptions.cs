@@ -56,6 +56,9 @@ public sealed class LauncherOptions
 
     /// <summary>False to not read or write the map of the code that ran (see <see cref="CodeMap"/>).</summary>
     public bool CodeMap { get; set; } = true;
+
+    /// <summary>The file of the map of the code that ran, or null for the map in the cache of the translations.</summary>
+    public string? CodeMapFile { get; set; }
     public List<(double Seconds, byte RawKey)> Presses { get; } = [];
     public (double Seconds, string Path)? CopperDump { get; set; }
     public bool FastCpu { get; set; }
@@ -133,6 +136,7 @@ public sealed class LauncherOptions
                 case "--pal": options.Pal = true; break;
                 case "--unaligned-access": options.UnalignedAccess = true; break;
                 case "--no-code-map": options.CodeMap = false; break;
+                case "--code-map": options.CodeMapFile = Next(); break;
                 case "--cpu-mhz":
                     options.CpuMhz = double.Parse(Next(), CultureInfo.InvariantCulture);
                     if (options.CpuMhz is < 1 or > 1000)
