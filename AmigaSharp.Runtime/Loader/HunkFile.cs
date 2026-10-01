@@ -246,10 +246,31 @@ public static class HunkLayout
     /// <summary>The size of the segment header before each hunk: the size of the segment and the BPTR to the next.</summary>
     public const uint SegmentHeaderSize = 8;
 
+    // The chip hunks end below this address. The runtime allocates its own chip memory, for example the data of the
+    // fonts, from the end of chip RAM.
+    private const uint ChipHunksEnd = Core.ChipEnd - 0x1_0000;
+
+    // The lowest address for the chip hunks: the runtime and the program allocate chip memory below them too.
+    private const uint LowestChipBase = 0x1_0000;
+
+    /// <exception cref="InvalidDataException">The chip hunks are larger than the chip memory.</exception>
     public static uint[] Assign(HunkFile file)
     {
         var bases = new uint[file.Hunks.Count];
         var chip = ChipBase;
+        // Most programs have small chip hunks, and they load at ChipBase. Larger chip hunks, for example the graphics
+        // of a game, start lower, so that they end below ChipHunksEnd.
+        var chipSize = file.Hunks.Where(hunk => hunk.Memory == HunkMemory.Chip)
+            .Aggregate(0u, (size, hunk) => (size + SegmentHeaderSize + hunk.Size + 7) & ~7u);
+        if (chip + chipSize > ChipHunksEnd)
+        {
+            chip = (ChipHunksEnd - Math.Min(chipSize, ChipHunksEnd)) & ~0xFFFu;
+            if (chip < LowestChipBase)
+                throw new InvalidDataException(
+                    $"The chip hunks of the program need {chipSize / 1024} KB. The chip memory has room for " +
+                    $"{(ChipHunksEnd - LowestChipBase) / 1024} KB.");
+        }
+
         var fast = FastBase;
         foreach (var hunk in file.Hunks)
         {

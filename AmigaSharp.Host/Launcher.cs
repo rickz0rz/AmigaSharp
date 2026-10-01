@@ -217,6 +217,8 @@ public static class Launcher
             core.Chipset.Disks.Drives[0].Insert(diskImage);
         if (date != null)
             core.SetDate(date.Value);
+        // PROGDIR: is the directory of the program, as in AmigaDOS 2.0 and later. An option can replace it.
+        core.FileSystem.AddVolume("PROGDIR", Path.GetDirectoryName(Path.GetFullPath(executablePath))!);
         foreach (var (name, path) in volumes)
             core.FileSystem.AddVolume(name, path);
         foreach (var (name, path) in assigns)

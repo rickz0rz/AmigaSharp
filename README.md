@@ -648,7 +648,7 @@ The runtime has these libraries, devices and resources:
 
 Each library has only the functions that ESQ and the samples use. A call to another function stops the program. The
 error message gives the name of the library and the offset of the function. `dos.library` maps the AmigaDOS volumes
-and assigns to host directories.
+and assigns to host directories. `PROGDIR:` is the directory of the program, as in AmigaDOS 2.0 and later.
 
 ### Tasks and interrupts
 

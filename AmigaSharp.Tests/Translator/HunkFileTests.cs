@@ -89,4 +89,38 @@ public class HunkFileTests
         Assert.Equal(8791, file.Hunks[0].Relocations.Count);
         Assert.Equal(261, file.Hunks[1].Relocations.Count);
     }
+
+    [Fact]
+    public void Layout_PutsSmallChipHunksAtTheChipBase()
+    {
+        var bases = HunkLayout.Assign(Hunks((HunkMemory.Any, 100), (HunkMemory.Chip, 0x1000)));
+
+        Assert.Equal([HunkLayout.FastBase + 8, HunkLayout.ChipBase + 8], bases);
+    }
+
+    [Fact]
+    public void Layout_PutsLargeChipHunksLower_SoThatTheyFitInChipMemory()
+    {
+        // A game with 1.2 MB of chip hunks: from the chip base, they would go past the end of chip memory.
+        var bases = HunkLayout.Assign(Hunks((HunkMemory.Any, 100), (HunkMemory.Chip, 770912), (HunkMemory.Chip, 450000)));
+
+        Assert.True(bases[1] < HunkLayout.ChipBase);
+        Assert.Equal(bases[1] + 770912 + 8, bases[2]);
+        Assert.True(bases[2] + 450000 <= Core.ChipEnd - 0x1_0000);
+        Assert.Equal(HunkLayout.FastBase + 8, bases[0]);
+    }
+
+    [Fact]
+    public void Layout_WithChipHunksLargerThanChipMemory_Throws()
+    {
+        Assert.Throws<InvalidDataException>(() => HunkLayout.Assign(Hunks((HunkMemory.Chip, 0x20_0000))));
+    }
+
+    private static HunkFile Hunks(params (HunkMemory Memory, uint Size)[] hunks) => new()
+    {
+        Hunks = hunks.Select((hunk, index) => new Hunk
+        {
+            Index = index, Type = HunkType.Bss, Memory = hunk.Memory, Size = hunk.Size, Data = [], Relocations = [],
+        }).ToList(),
+    };
 }

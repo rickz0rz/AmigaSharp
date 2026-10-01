@@ -22,6 +22,12 @@ public class ChipsetTests
     }
 
     [Fact]
+    public void Dmacon_HasTheMasterBitOfKickstart_AndNoChannels()
+    {
+        Assert.Equal(0x0200, _memory.Read16(0xDFF002) & 0x03FF);
+    }
+
+    [Fact]
     public void BeamPosition_FollowsTheClock()
     {
         // 100 lines and 50 color clocks. Half a color clock more keeps the time inside that color clock.
@@ -50,7 +56,8 @@ public class ChipsetTests
         _memory.Write16(0xDFF096, 0x8000 | 0x0180);
         _memory.Write16(0xDFF096, 0x0080);
 
-        Assert.Equal(0x0100, _memory.Read16(0xDFF002));
+        // DMAEN (bit 9) is on from the start.
+        Assert.Equal(0x0300, _memory.Read16(0xDFF002));
     }
 
     [Fact]

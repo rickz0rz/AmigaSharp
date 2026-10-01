@@ -171,7 +171,11 @@ public sealed class CustomChips
     /// <summary>BZERO of DMACONR: the last blit made only zero words.</summary>
     public bool BlitterZero { get; set; }
 
-    public ushort Dmacon { get; private set; }
+    /// <summary>
+    /// The DMA control. Kickstart leaves DMAEN (bit 9) on when it starts a program, so a program can switch on its DMA
+    /// channels without it. The channels are off.
+    /// </summary>
+    public ushort Dmacon { get; private set; } = DmaEnable;
     public ushort Intena { get; private set; }
     public ushort Intreq { get; private set; }
     public ushort Adkcon { get; private set; }
