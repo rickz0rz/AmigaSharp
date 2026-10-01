@@ -73,6 +73,10 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
 
 ## Traps
 
+- Performance: every library call runs `Core.UpdateHardware` (all devices). New per-update work in a device costs
+  throughput everywhere. `docs/performance.md` has the measurements, the profile method and the deferred
+  optimizations; re-measure there if you touch `UpdateHardware`, `RunNative` or a device `Update`.
+
 - Timing: in real-time mode the runtime jumps the emulation clock forward when the host falls behind, and interrupts
   can then come in a burst. Anything a program samples per interrupt must follow the interrupt's due time, not the
   wall clock. See `CustomChips.AudioSampleTime` and `BitBangedLine.Time` for the control line.

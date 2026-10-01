@@ -100,7 +100,8 @@ AmigaSharp.Launcher/         The generic launcher program: one file.
 AmigaSharp.PrevueLauncher/   The launcher program for Prevue: the extension and the code for Prevue.
 AmigaSharp.PrevueListings/   The listings tool for Prevue.
 AmigaSharp.Tests/            The tests of all the projects.
-docs/                        The documents: ctrl-line.md and orchestration.md are about Prevue.
+docs/                        The documents: ctrl-line.md and orchestration.md are about Prevue. performance.md
+                             gives the speed of the emulation.
 scripts/                     The scripts to build and run. run-esq and scripts/dist/ are for Prevue.
 ```
 
@@ -519,7 +520,8 @@ EMBEDDED_PROGRAM=build/target/ESQ EMBEDDED_LISTING=build/target/ESQ.lst scripts/
 
 The launcher then runs that program (found by its SHA-256) from the translation, and other programs in the
 interpreter. The launcher is then 19 MB, not 7 MB. It contains the code of the program, so give it only to people
-who can have that program. The speed of the emulated 68000 at full speed (`--fast-cpu`) for ESQ:
+who can have that program. The speed of the emulated 68000 at full speed (`--fast-cpu`) for ESQ, measured at commit
+1840165:
 
 | Launcher | Speed |
 |---|---|
@@ -530,6 +532,11 @@ who can have that program. The speed of the emulated 68000 at full speed (`--fas
 
 A real 68000 runs at 7.16 MHz. At the real speed, all four use about a third of a host core, most of it for the
 display and the pacing. The translation saves about 5% of a core.
+
+The hardware parts that came after commit 1840165 made the emulation slower. On 2026-09-30, the .NET launcher with
+translation ran ESQ at about 2,770 MHz at `--fast-cpu`, and ESQ used about 27% of a core at the real speed. Prevue
+still runs at its real speed. [docs/performance.md](docs/performance.md) gives the measurements, the cause, and work
+that can make the emulation faster.
 
 macOS stops programs from the internet that Apple did not check. A user can remove the mark with
 `xattr -dr com.apple.quarantine <directory>`, or the programs can be signed and notarized with an Apple developer
