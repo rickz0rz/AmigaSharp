@@ -28,15 +28,28 @@ public class PrevueStateTests
         Assert.Equal(expected, PrevueState.ClassifyTopHalf(pixels));
     }
 
-    [Fact]
-    public void TopHalf_WithAMixOfBoth_IsOther()
+    [Theory]
+    // A channel logo of the listings tool: a card on the left, and text on the right, on the genlock key.
+    [InlineData(0.30, 0.94, "logo")]
+    // A logo of the drive with no genlock key.
+    [InlineData(0.02, 0.02, "logo")]
+    // One half is clear, and the other half has only some content: not a promo.
+    [InlineData(1.0, 0.5, "other")]
+    [InlineData(0.5, 1.0, "other")]
+    public void TopHalf_WithSomeKeyInTheHalves(double leftKey, double rightKey, string expected)
     {
         var pixels = new uint[Display.Width * Display.Height];
-        // Stripes of 8 rows: half of each area is transparent.
-        for (var i = 0; i < pixels.Length; i++)
-            pixels[i] = i / Display.Width / 8 % 2 == 0 ? Transparent : Opaque;
+        for (var y = 0; y < Display.Height / 2; y++)
+        {
+            for (var x = 0; x < Display.Width; x++)
+            {
+                // The key is spread evenly over each half, in a pattern of 100 pixels.
+                var part = (x * 7 + y * 13) % 100 / 100.0;
+                pixels[y * Display.Width + x] = part < (x < Display.Width / 2 ? leftKey : rightKey) ? Transparent : Opaque;
+            }
+        }
 
-        Assert.Equal("other", PrevueState.ClassifyTopHalf(pixels));
+        Assert.Equal(expected, PrevueState.ClassifyTopHalf(pixels));
     }
 
     [Fact]

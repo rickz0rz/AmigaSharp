@@ -14,7 +14,8 @@ namespace AmigaSharp.PrevueLauncher;
 /// </summary>
 /// <remarks>
 /// The top half comes from the picture of the display: the genlock key (color 0) is transparent, and the video of the
-/// genlock shows there. A promo covers one half of the top of the screen, and a logo covers all of it. The other
+/// genlock shows there. A promo covers one half of the top of the screen, and a logo has content in the two halves.
+/// The background of a logo can be the genlock key, so a logo does not cover all of the top half. The other
 /// values come from variables of ESQ (see <see cref="EsqVariables"/>). Without them, the state has the top half and
 /// the queue of the launcher only.
 /// </remarks>
@@ -24,9 +25,13 @@ public sealed class PrevueState : IStreamRequests
     private const int BufferSize = 500;
 
     // The areas of the top half that the state tests. A promo on the right covers the right area only, a promo on the
-    // left covers the left area only, and a logo covers the two.
+    // left covers the left area only, and a logo has content in the two.
     private const int Top = 20, Bottom = 220;
     private const int LeftStart = 100, LeftEnd = 380, RightStart = 420, RightEnd = 720;
+
+    // An area is clear when almost all of it is the genlock key, and covered when almost none of it is. For example, a
+    // channel logo of the listings tool had 31% of the key on its left, and 94% on its right. A promo had 0% and 100%.
+    private const double Clear = 0.99, Covered = 0.2;
 
     private readonly Core _core;
     private readonly ControlLineFeed _line;
@@ -246,19 +251,19 @@ public sealed class PrevueState : IStreamRequests
     }
 
     /// <summary>
-    /// Tells what the top half shows: "video" (the genlock key), "promo-right", "promo-left", "logo", or "other".
+    /// Tells what the top half shows: "video" (all of it is the genlock key), "promo-right", "promo-left", "logo" (the
+    /// two halves have content), or "other" (one half is clear, and the other is not a promo).
     /// </summary>
     public static string ClassifyTopHalf(uint[] pixels)
     {
         var left = TransparentPart(pixels, LeftStart, LeftEnd);
         var right = TransparentPart(pixels, RightStart, RightEnd);
-        return (left, right) switch
+        return (left >= Clear, right >= Clear) switch
         {
-            ( > 0.8, > 0.8) => "video",
-            ( > 0.8, < 0.2) => "promo-right",
-            ( < 0.2, > 0.8) => "promo-left",
-            ( < 0.2, < 0.2) => "logo",
-            _ => "other",
+            (true, true) => "video",
+            (true, false) => right <= Covered ? "promo-right" : "other",
+            (false, true) => left <= Covered ? "promo-left" : "other",
+            (false, false) => "logo",
         };
     }
 
