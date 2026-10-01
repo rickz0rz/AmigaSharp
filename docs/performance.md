@@ -66,13 +66,28 @@ ESQ has a listing, so it does not use the map.
    example less than one line of the display. The interrupts then still come at the correct time.
 2. Make `DiskController.Update` return at once when no motor is on and no disk DMA runs.
 3. Make `BitBangedLine.Update` read the state of its queue without the lock when the queue is empty.
+4. Do not set the condition codes when no instruction reads them. The translation sets them after almost each
+   instruction, for example after `MOVE.W (A1)+,D0`, also when the next instruction sets them again. The translator
+   can find the instructions whose condition codes the next instructions of the function always set again before
+   a read. A branch, a call, a return, a jump to an address that is known only at run time, and an interrupt can read
+   them, so the translator must keep them at those points.
+5. Make a call of translated code cheaper. Each `core.Call` pushes the return address, runs the function in a `try`
+   block for `StackUnwindException`, and checks the return address. A call from translated code to a translated
+   function with a normal return could skip the `try` block, if the unwind can find its frame in another way.
+
+Items 4 and 5 make all the translated code faster. They do not need a profile of the hot functions: the JIT of .NET
+already compiles the hot methods of a translation again with its own profile (tiered compilation and Dynamic PGO).
+A profile of the program would help only the native (AOT) build, which has no JIT. .NET can give a recorded profile
+to such a build.
 
 Make sure that each change keeps the behavior:
 
-- Run `dotnet test`.
-- Compare a picture of `scripts/run-esq.sh --virtual-time --screenshot <file> --seconds 200` before and after the
-  change. The pictures must be the same.
+- Run `dotnet test`. The CPU tests compare the translated code with the interpreter.
+- Compare pictures of `scripts/run-esq.sh --virtual-time --screenshot <file> --seconds 60` before and after the
+  change. Make several pictures with each build: the launcher takes a picture while the 68000 runs, so two runs can
+  give frames that are a few frames apart. The new build must give the same pictures as the old build.
 - Run the Amiga Test Kit. It uses the CIA timers, the blitter, the keyboard and the floppy drive.
+- Run the Sonic demo (see the README). It uses the AGA display, a fast CPU, and the map of the code that ran.
 
 ## How to measure
 
