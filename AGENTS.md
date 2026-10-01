@@ -82,7 +82,8 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   `LauncherOptions.Machine` builds it from `--pal`, `--chipset`, `--unaligned-access` and `--cpu-mhz`; `Core` applies
   it. Add new machine-level switches there, not as loose `Core` properties.
 - Code map (`AmigaSharp.Host/CodeMap.cs`): without `--listing`, interpreter entry addresses are saved per executable
-  (`<translations cache>/<sha256[..24]>.code`) and passed to `ProgramAnalysis.Analyze(..., knownCode)` as extra roots
+  (`<cache>/translations/<sha256[..24]>.code`, cache = `CacheFolder`: ~/Library/Caches/AmigaSharp, %LOCALAPPDATA%,
+  XDG, or `AMIGASHARP_CACHE`; a map in the pre-2026-10-01 `$TMPDIR/AmigaSharp/translations` is copied on first load) and passed to `ProgramAnalysis.Analyze(..., knownCode)` as extra roots
   (also in data hunks); they are part of the translation cache key. Only addresses inside hunk file data whose opcode
   bytes still match the file are kept. With a listing the map is ignored. To reproduce a first-run translation, use
   `--no-code-map` or delete the `.code` file. The file format (hex per line) is `AmigaSharp.Translator/KnownCodeFile`;

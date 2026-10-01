@@ -137,6 +137,9 @@ it. To make native programs that do not need .NET, see
 ## Run a program
 
 The launcher translates the program, compiles it, and keeps the result in a cache. The next start uses the cache.
+The cache is in `~/Library/Caches/AmigaSharp` on macOS, `%LOCALAPPDATA%\AmigaSharp` on Windows and
+`~/.cache/amigasharp` on Linux (or `$XDG_CACHE_HOME/amigasharp`). The environment variable `AMIGASHARP_CACHE` sets
+another folder.
 
 ```sh
 dotnet run --project AmigaSharp.Launcher -c Release -- <executable> [--listing <file.lst>]

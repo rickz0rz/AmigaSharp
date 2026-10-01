@@ -35,6 +35,34 @@ public sealed class CodeMapTests : IDisposable
     }
 
     [Fact]
+    public void Load_CopiesTheMapOfTheOldCache()
+    {
+        var oldDirectory = Path.Combine(_directory, "old");
+        var newDirectory = Path.Combine(_directory, "new");
+        KnownCodeFile.Write(CodeMap.Load(Executable, oldDirectory).Path, [0x1000, 0x2000]);
+
+        var map = CodeMap.Load(Executable, newDirectory, oldDirectory);
+
+        Assert.StartsWith(newDirectory, map.Path);
+        Assert.Equal([0x1000u, 0x2000u], map.Addresses);
+        Assert.True(File.Exists(map.Path));
+    }
+
+    [Theory]
+    [InlineData("macos", null, null, "/Users/a/Library/Caches/AmigaSharp")]
+    [InlineData("linux", null, null, "/Users/a/.cache/amigasharp")]
+    [InlineData("linux", "XDG_CACHE_HOME", "/x", "/x/amigasharp")]
+    [InlineData("windows", "LOCALAPPDATA", "/l", "/l/AmigaSharp")]
+    [InlineData("macos", CacheFolder.Variable, "/c", "/c")]
+    public void CacheFolder_IsAFolderOfTheUser(string system, string? variable, string? value, string expected)
+    {
+        var folder = CacheFolder.Find(system, name => name == variable ? value : null, "/Users/a");
+
+        Assert.Equal(expected.Replace('/', Path.DirectorySeparatorChar),
+            folder.Replace('/', Path.DirectorySeparatorChar));
+    }
+
+    [Fact]
     public void Merge_WritesAllTheAddressesOfTheMaps_AndReadSkipsOtherLines()
     {
         var first = Path.Combine(_directory, "first.code");

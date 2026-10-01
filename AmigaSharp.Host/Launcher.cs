@@ -290,6 +290,8 @@ public static class Launcher
             ? options.CodeMapFile != null ? CodeMap.Open(options.CodeMapFile) : CodeMap.Load(executable)
             : null;
         core.RecordJumpTargets = codeMap != null;
+        if (codeMap != null)
+            log.WriteLine($"The map of the code that ran is {codeMap.Path} ({codeMap.Addresses.Count} addresses).");
 
         var program = ChooseProgram(options, executable, core, log, codeMap);
         if (!AddWatches(options, executable, core, clock, log) || !AddTurbo(options, executable, core, clock, log))

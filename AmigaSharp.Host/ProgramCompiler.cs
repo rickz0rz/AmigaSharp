@@ -17,7 +17,7 @@ public static class ProgramCompiler
     private const string Namespace = "AmigaSharp.Launched";
     private const string ClassName = "TranslatedMain";
 
-    public static string CacheDirectory { get; } = Path.Combine(Path.GetTempPath(), "AmigaSharp", "translations");
+    public static string CacheDirectory { get; } = Path.Combine(CacheFolder.Default, "translations");
 
     /// <summary>Returns the type of the translated program. It is a subclass of <see cref="TranslatedProgram"/>.</summary>
     /// <param name="knownCode">Addresses where code ran in earlier runs (see <see cref="CodeMap"/>).</param>

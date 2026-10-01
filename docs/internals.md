@@ -47,7 +47,7 @@ can call each other.
 Without a listing, the translator finds only the code that it can reach from the entry point: code that the program
 reaches through a table of addresses or an interrupt vector runs in the interpreter. So the launcher keeps a map of
 the addresses where the interpreter started, in the translation cache, and the next translation also starts there.
-Each run then translates more of the program. For the Sonic demo, the interpreter ran 115 million instructions in 30
+The launcher writes the path of the map when it starts. Each run then translates more of the program. For the Sonic demo, the interpreter ran 115 million instructions in 30
 seconds in the first run, and 0.6 million in the fifth run. The map keeps only code of the file: code that a program
 unpacks or writes while it runs stays in the interpreter. `--no-code-map` turns the map off.
 

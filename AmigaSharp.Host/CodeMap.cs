@@ -39,12 +39,28 @@ public sealed class CodeMap
     /// <summary>The addresses of code that ran.</summary>
     public SortedSet<uint> Addresses { get; }
 
-    /// <summary>Reads the map of a program in the cache of the translations, or makes an empty one.</summary>
-    public static CodeMap Load(byte[] executable, string? directory = null)
+    /// <summary>
+    /// Reads the map of a program in the cache of the translations, or makes an empty one. If the cache has no map of
+    /// the program, the map in the old cache (see <see cref="CacheFolder.OldTranslations"/>) is copied first.
+    /// </summary>
+    public static CodeMap Load(byte[] executable, string? directory = null, string? oldDirectory = null)
     {
-        directory ??= ProgramCompiler.CacheDirectory;
+        if (directory == null)
+        {
+            directory = ProgramCompiler.CacheDirectory;
+            oldDirectory ??= CacheFolder.OldTranslations;
+        }
+
         var name = Convert.ToHexString(SHA256.HashData(executable))[..24] + ".code";
-        return new CodeMap(System.IO.Path.Combine(directory, name));
+        var path = System.IO.Path.Combine(directory, name);
+        var oldPath = oldDirectory == null ? null : System.IO.Path.Combine(oldDirectory, name);
+        if (!File.Exists(path) && oldPath != null && File.Exists(oldPath))
+        {
+            Directory.CreateDirectory(directory);
+            File.Copy(oldPath, path);
+        }
+
+        return new CodeMap(path);
     }
 
     /// <summary>Reads a map file, or makes an empty map that writes to that file.</summary>
