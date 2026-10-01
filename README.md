@@ -153,9 +153,9 @@ Use `--help` to see all the options. These options are the most important:
   example because of a damaged block, is left out with a warning.
 - `--serial-port <port>` sets the TCP port of the serial port. Connect to it with `nc localhost <port>`.
 - `--screenshot <file.png>` saves the display after `--seconds` and does not open a window.
-- `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So the emulation is
-  the same each time, and it is as fast as the host can run it. A screenshot can still come from a frame or two
-  earlier or later, because the launcher takes it while the program runs.
+- `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
+  each time, and it is as fast as the host can run it. The screenshots, the key presses of `--press` and the copper
+  dump happen at their Amiga time, so they are the same in each run too.
 - `--pal` makes a PAL Amiga: 312 lines and 50 frames each second. The default is NTSC.
 - `--chipset aga` makes an AGA Amiga (A1200, A4000): the chip IDs, graphics.library, and the display parts of AGA
   that the A1200 port of Sonic the Hedgehog uses. These are the fetch modes of the bitplanes (FMODE), up to 8 planes,

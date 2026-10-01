@@ -83,9 +83,8 @@ to such a build.
 Make sure that each change keeps the behavior:
 
 - Run `dotnet test`. The CPU tests compare the translated code with the interpreter.
-- Compare pictures of `scripts/run-esq.sh --virtual-time --screenshot <file> --seconds 60` before and after the
-  change. Make several pictures with each build: the launcher takes a picture while the 68000 runs, so two runs can
-  give frames that are a few frames apart. The new build must give the same pictures as the old build.
+- Compare pictures of `scripts/run-esq.sh --virtual-time --screenshot <file> --seconds 200` before and after the
+  change. The pictures must be the same.
 - Run the Amiga Test Kit. It uses the CIA timers, the blitter, the keyboard and the floppy drive.
 - Run the Sonic demo (see the README). It uses the AGA display, a fast CPU, and the map of the code that ran.
 

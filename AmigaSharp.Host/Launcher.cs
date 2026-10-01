@@ -481,29 +481,49 @@ public static class Launcher
             }, height: core.Chipset.Display.Height)
             : null;
 
+        // The key presses, the copper dump and the screenshots happen on the 68000 thread at their Amiga time. So with
+        // --virtual-time, they are at the same point of the program in each run.
+        var timed = new TimedActions(core);
+
         // The scripted key presses: each key goes down, and up again 0.1 second later.
-        if (presses.Count > 0)
+        foreach (var (time, rawKey) in presses)
         {
-            new Thread(() =>
-            {
-                foreach (var (time, rawKey) in presses.OrderBy(press => press.Seconds))
-                {
-                    WaitForTime(time);
-                    core.KeyboardInput.PostRawKey(rawKey, up: false);
-                    WaitForTime(time + 0.1);
-                    core.KeyboardInput.PostRawKey(rawKey, up: true);
-                }
-            }) { IsBackground = true, Name = "Key presses" }.Start();
+            timed.Add(time, () => core.KeyboardInput.PostRawKey(rawKey, up: false));
+            timed.Add(time + 0.1, () => core.KeyboardInput.PostRawKey(rawKey, up: true));
         }
 
         if (copperDump is var (dumpTime, dumpPath))
         {
-            new Thread(() =>
+            timed.Add(dumpTime, () =>
             {
-                WaitForTime(dumpTime);
                 core.Chipset.Display.CopperDump = new StreamWriter(dumpPath);
                 File.WriteAllBytes(dumpPath + ".chip", core.Memory.Ram(0, 0x20_0000).ToArray());
-            }) { IsBackground = true, Name = "Copper dump" }.Start();
+            });
+        }
+
+        // The 68000 thread copies the picture of each screenshot, and this thread writes the files.
+        var shots = new System.Collections.Concurrent.BlockingCollection<(string Path, uint[] Pixels, long Frame)>();
+        var shotPaths = new List<(double Seconds, string Path)>();
+        if (screenshot != null)
+        {
+            if (screenshotEvery is { } every)
+            {
+                var directory = Path.GetDirectoryName(Path.GetFullPath(screenshot))!;
+                var name = Path.GetFileNameWithoutExtension(screenshot);
+                for (var time = every; time < seconds; time += every)
+                    shotPaths.Add((time, Path.Combine(directory, $"{name}-{(int)time:D6}.png")));
+            }
+
+            shotPaths.Add((seconds, screenshot));
+            foreach (var (time, path) in shotPaths)
+                timed.Add(time, () => shots.Add((path, CopyPicture(), core.Chipset.Display.FrameNumber)));
+        }
+
+        uint[] CopyPicture()
+        {
+            var pixels = new uint[Display.Width * core.Chipset.Display.Height];
+            core.Chipset.Display.CopyFrame(pixels);
+            return pixels;
         }
 
         if (measuringClock != null)
@@ -544,37 +564,34 @@ public static class Launcher
             }) { IsBackground = true, Name = "Stats" }.Start();
         }
 
-        void WaitForTime(double time)
-        {
-            while (!finished && !terminated && clock.Elapsed.TotalSeconds < time)
-                Thread.Sleep(5);
-        }
-
         try
         {
             if (screenshot != null)
             {
-                void Save(string path)
+                void Save(string path, uint[] pixels, long frame)
                 {
-                    var pixels = new uint[Display.Width * core.Chipset.Display.Height];
-                    core.Chipset.Display.CopyFrame(pixels);
                     File.WriteAllBytes(path, Png.Encode(Display.Width, core.Chipset.Display.Height, pixels));
-                    log.WriteLine($"Saved {path} (frame {core.Chipset.Display.FrameNumber}).");
+                    log.WriteLine($"Saved {path} (frame {frame}).");
                 }
 
-                if (screenshotEvery is { } every)
+                // Write the screenshots as the 68000 thread makes them. If the program stops first, the last screenshot
+                // shows its last picture.
+                var saved = 0;
+                while (saved < shotPaths.Count)
                 {
-                    var directory = Path.GetDirectoryName(Path.GetFullPath(screenshot))!;
-                    var name = Path.GetFileNameWithoutExtension(screenshot);
-                    for (var time = every; time < seconds && !finished; time += every)
+                    if (shots.TryTake(out var shot, 100))
                     {
-                        WaitForTime(time);
-                        Save(Path.Combine(directory, $"{name}-{(int)time:D6}.png"));
+                        Save(shot.Path, shot.Pixels, shot.Frame);
+                        saved++;
+                    }
+                    else if (finished || terminated)
+                    {
+                        while (shots.TryTake(out shot))
+                            Save(shot.Path, shot.Pixels, shot.Frame);
+                        Save(screenshot, CopyPicture(), core.Chipset.Display.FrameNumber);
+                        break;
                     }
                 }
-
-                WaitForTime(seconds);
-                Save(screenshot);
             }
             else if (headless)
             {
