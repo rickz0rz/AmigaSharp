@@ -150,6 +150,7 @@ public sealed class Core
         Libraries.Register("diskfont.library", core => new DiskFontLibrary(core));
         Libraries.Register("intuition.library", core => new IntuitionLibrary(core));
         Libraries.Register("utility.library", core => new UtilityLibrary(core));
+        Libraries.Register("supergen.library", core => new SupergenLibrary(core));
         Libraries.RegisterResource("battclock.resource", core => new BattClockResource(core));
         Libraries.Register("serial.device", core => new SerialDevice(core));
         Libraries.Register("input.device", core => new InputDevice(core));

@@ -21,6 +21,15 @@ public sealed class LauncherOptionsTests : IDisposable
     }
 
     [Fact]
+    public void DiskOption_PutsDiskImagesInTheDrives()
+    {
+        var options = LauncherOptions.Parse(["program", "--disk", "DF1=data.adf", "--disk", "df2=more.adf"], []);
+
+        Assert.Equal([(1, "data.adf"), (2, "more.adf")], options.Disks);
+        Assert.Throws<ArgumentException>(() => LauncherOptions.Parse(["program", "--disk", "DH0=hd.adf"], []));
+    }
+
+    [Fact]
     public void CodeMapOptions_TurnTheMapOffOrGiveItsFile()
     {
         Assert.False(LauncherOptions.Parse(["program", "--no-code-map"], []).CodeMap);

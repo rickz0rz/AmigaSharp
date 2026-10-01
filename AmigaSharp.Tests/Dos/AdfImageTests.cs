@@ -40,6 +40,23 @@ public class AdfImageTests
     }
 
     [Fact]
+    public void Read_DiskWithADamagedFile_GivesTheOtherFiles_AndNamesTheDamagedOne()
+    {
+        var disk = new DiskBuilder(fastFileSystem: false);
+        disk.AddFile(disk.Root, 0, "Good", "good"u8.ToArray()); // Header block 2, data block 3.
+        disk.AddFile(disk.Root, 1, "Bad", "bad"u8.ToArray()); // Header block 4, data block 5.
+        // The data block of Bad is another kind of block: its size field is larger than a block.
+        BinaryPrimitives.WriteUInt32BigEndian(disk.Image.AsSpan(5 * 512 + 12), 1260);
+
+        var image = AdfImage.Read(disk.Image);
+
+        Assert.Equal(["Good"], image.Entries.Select(e => e.Path));
+        var (path, reason) = Assert.Single(image.DamagedFiles);
+        Assert.Equal("Bad", path);
+        Assert.Contains("block 5", reason);
+    }
+
+    [Fact]
     public void Read_ImageWithoutDos_Throws()
     {
         Assert.Throws<InvalidDataException>(() => AdfImage.Read(new byte[901_120]));

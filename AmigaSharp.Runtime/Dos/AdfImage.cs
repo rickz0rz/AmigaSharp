@@ -40,6 +40,15 @@ public sealed class AdfImage
     public bool FastFileSystem { get; }
     public IReadOnlyList<AdfEntry> Entries { get; }
 
+    /// <summary>
+    /// The files that the disk cannot give, with the reason: for example a data block that is not a data block. The
+    /// other files are in <see cref="Entries"/>. AmigaDOS also reads such a disk, and gives an error only for a damaged
+    /// file.
+    /// </summary>
+    public IReadOnlyList<(string Path, string Reason)> DamagedFiles => _damaged;
+
+    private readonly List<(string Path, string Reason)> _damaged = [];
+
     private AdfImage(byte[] image)
     {
         _image = image;
@@ -92,7 +101,15 @@ public sealed class AdfImage
                         ReadDirectory(entry, name + "/", entries, visited);
                         break;
                     case SecondaryTypeFile:
-                        entries.Add(new AdfEntry(name, false, ReadFile(entry)));
+                        try
+                        {
+                            entries.Add(new AdfEntry(name, false, ReadFile(entry)));
+                        }
+                        catch (InvalidDataException e)
+                        {
+                            _damaged.Add((name, e.Message));
+                        }
+
                         break;
                     default:
                         throw new InvalidDataException($"The disk has an entry of an unknown type: {name}.");
@@ -122,7 +139,12 @@ public sealed class AdfImage
     private ReadOnlySpan<byte> DataOf(int block)
     {
         var bytes = Block(block);
-        return FastFileSystem ? bytes : bytes.Slice(OfsDataHeaderSize, (int)Long(block, OfsDataSizeOffset));
+        if (FastFileSystem)
+            return bytes;
+        var size = (uint)Long(block, OfsDataSizeOffset);
+        if (size > BlockSize - OfsDataHeaderSize)
+            throw new InvalidDataException($"The disk is damaged: block {block} is not a data block of the file.");
+        return bytes.Slice(OfsDataHeaderSize, (int)size);
     }
 
     private string Name(int block)

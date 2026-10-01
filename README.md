@@ -148,6 +148,9 @@ Use `--help` to see all the options. These options are the most important:
 
 - `--drive <directory>` sets the host directory of `SYS:`.
 - `--volume NAME=<directory>` and `--assign NAME=<path>` make the volumes and the assigns of the program.
+- `--disk DF1=<file.adf>` puts a disk image in a drive (DF0 to DF3), for a program on more than one disk. The program
+  finds the files in `DF1:` and in the volume with the name of the disk. A file that the disk image cannot give, for
+  example because of a damaged block, is left out with a warning.
 - `--serial-port <port>` sets the TCP port of the serial port. Connect to it with `nc localhost <port>`.
 - `--screenshot <file.png>` saves the display after `--seconds` and does not open a window.
 - `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So the emulation is

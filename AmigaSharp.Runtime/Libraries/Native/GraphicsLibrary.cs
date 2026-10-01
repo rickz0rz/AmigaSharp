@@ -8,7 +8,7 @@ namespace AmigaSharp.Runtime.Libraries.Native;
 /// graphics.library. The drawing functions draw into planar bitmaps in memory. The RastPorts have no layers, so the
 /// drawing clips to the bitmap. The display (views, viewports and copper lists) comes from the hardware model.
 /// </summary>
-public class GraphicsLibrary(Core core) : AbstractLibrary
+public partial class GraphicsLibrary(Core core) : AbstractLibrary
 {
     private readonly Memory _memory = core.Memory;
     private readonly Renderer _renderer = new(core.Memory);
@@ -293,6 +293,9 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
         _memory.Write32(Base + GfxBaseOffsets.LofList, start);
         _memory.Write16(Hardware.CustomRegister.Base + Hardware.CustomRegister.Cop1lc, (ushort)(start >> 16));
         _memory.Write16(Hardware.CustomRegister.Base + Hardware.CustomRegister.Cop1lc + 2, (ushort)start);
+        // The system display of Kickstart has the copper and the bitplanes on, and the runtime has no system display.
+        // So a View turns them on: SET, DMAEN, BPLEN and COPEN.
+        _memory.Write16(Hardware.CustomRegister.Base + Hardware.CustomRegister.Dmacon, 0x8380);
     }
 
     // WaitBlit()

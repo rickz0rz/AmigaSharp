@@ -11,6 +11,9 @@ public sealed class LauncherOptions
     public bool Interpret { get; set; }
     public string? Drive { get; set; }
     public List<(string Name, string Path)> Volumes { get; } = [];
+
+    /// <summary>The disk images in the drives: the number of the drive (0 to 3, for DF0 to DF3) and the ADF.</summary>
+    public List<(int Drive, string Path)> Disks { get; } = [];
     public List<(string Name, string Path)> Assigns { get; } = [];
 
     /// <summary>The command line arguments of the program. Null if the command line does not give them.</summary>
@@ -99,6 +102,20 @@ public sealed class LauncherOptions
                 case "--interpret": options.Interpret = true; break;
                 case "--drive": options.Drive = Next(); break;
                 case "--volume": options.Volumes.Add(Pair()); break;
+                case "--disk":
+                {
+                    var (name, path) = Pair();
+                    var number = name.ToUpperInvariant() switch
+                    {
+                        "DF0" => 0,
+                        "DF1" => 1,
+                        "DF2" => 2,
+                        "DF3" => 3,
+                        _ => throw new ArgumentException($"--disk needs DF0, DF1, DF2 or DF3, not {name}."),
+                    };
+                    options.Disks.Add((number, path));
+                    break;
+                }
                 case "--assign": options.Assigns.Add(Pair()); break;
                 case "--arguments": options.Arguments = Next(); break;
                 case "--command-name": options.CommandName = Next(); break;

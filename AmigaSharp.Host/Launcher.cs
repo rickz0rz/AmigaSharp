@@ -55,6 +55,10 @@ public static class Launcher
                                     translations. The map can then go with the program to another computer.
           --drive <directory>       The host directory of SYS:. The default is the directory of the executable.
           --volume <NAME>=<dir>     A volume on a host directory, for example DH1=/path/to/drive.
+          --disk <DFn>=<file.adf>   Put a disk image in a drive (DF0 to DF3), for example DF1=data.adf. The program
+                                    finds its files in the volume DFn: and in the volume with the name of the disk, and
+                                    the drive also gives the disk to a program that reads it with the hardware. The
+                                    option can occur more than once.
           --assign <NAME>=<path>    An assign to an AmigaDOS directory, for example DF0=DH1: or FONTS=SYS:fonts.
           --arguments <text>        The command line arguments of the program.
           --command-name <name>     The name of the command. The default is the name of the executable.
@@ -197,33 +201,55 @@ public static class Launcher
         // A launcher that crashed or was killed could not remove its temporary folders.
         TempFolders.RemoveOld(log);
 
-        // A program on a disk image: extract the disk, and run the program from the copy.
-        string? diskCopy = null;
-        byte[]? diskImage = null;
+        // The disks: a program on a disk image is in DF0, and --disk puts other images in the drives. Each disk is a
+        // copy of its files in a new temporary directory: the volume DFn and the volume with the name of the disk.
+        var diskCopies = new List<string>();
+        var diskImages = new List<(int Drive, byte[] Image)>();
+        var disks = new List<(int Drive, string Path)>(options.Disks);
         var adfSeparator = executablePath.IndexOf(".adf:", StringComparison.OrdinalIgnoreCase);
         if (adfSeparator > 0)
         {
-            var imagePath = executablePath[..(adfSeparator + 4)];
+            if (disks.Any(disk => disk.Drive == 0))
+            {
+                Console.Error.WriteLine("error: the program is on a disk image in DF0, so --disk cannot use DF0.");
+                return 1;
+            }
+
+            disks.Insert(0, (0, executablePath[..(adfSeparator + 4)]));
+        }
+
+        foreach (var (number, imagePath) in disks)
+        {
             AmigaSharp.Runtime.Dos.AdfImage disk;
+            byte[] image;
             try
             {
-                disk = AmigaSharp.Runtime.Dos.AdfImage.Read(File.ReadAllBytes(imagePath));
+                image = File.ReadAllBytes(imagePath);
+                disk = AmigaSharp.Runtime.Dos.AdfImage.Read(image);
             }
             catch (Exception e) when (e is IOException or InvalidDataException)
             {
                 Console.Error.WriteLine($"error: {imagePath}: {e.Message}");
+                foreach (var copy in diskCopies)
+                    TempFolders.Delete(copy);
                 return 1;
             }
 
-            diskCopy = TempFolders.Create("AmigaSharp-Disk-");
+            var diskCopy = TempFolders.Create("AmigaSharp-Disk-");
+            diskCopies.Add(diskCopy);
             disk.ExtractTo(diskCopy);
-            log.WriteLine($"The disk {disk.VolumeName} is in {diskCopy}.");
-            executablePath = Path.Combine([diskCopy, .. executablePath[(adfSeparator + 5)..].Split('/')]);
-            drive ??= diskCopy;
-            diskImage = File.ReadAllBytes(imagePath);
-            volumes.Insert(0, ("DF0", diskCopy));
+            log.WriteLine($"The disk {disk.VolumeName} is in DF{number}, and its files are in {diskCopy}.");
+            foreach (var (path, reason) in disk.DamagedFiles)
+                log.WriteLine($"warning: the disk {disk.VolumeName} cannot give the file {path}. {reason}");
+            diskImages.Add((number, image));
+            volumes.Insert(0, ($"DF{number}", diskCopy));
             if (disk.VolumeName.IndexOfAny([':', '/']) < 0)
                 volumes.Insert(0, (disk.VolumeName, diskCopy));
+            if (number == 0 && adfSeparator > 0)
+            {
+                executablePath = Path.Combine([diskCopy, .. executablePath[(adfSeparator + 5)..].Split('/')]);
+                drive ??= diskCopy;
+            }
         }
 
         var executable = File.ReadAllBytes(executablePath);
@@ -240,9 +266,14 @@ public static class Launcher
         core.Memory.AllowUnaligned = options.UnalignedAccess;
         if (options.CpuMhz is { } cpuMhz)
             core.CpuClockHz = cpuMhz * 1_000_000;
-        // A program from a disk image also finds the disk in DF0, for a program that reads the disk with the hardware.
-        if (diskImage != null)
-            core.Chipset.Disks.Drives[0].Insert(diskImage);
+        // The drives also have the disks, for a program that reads a disk with the hardware. DF1 to DF3 are not connected
+        // without a disk.
+        foreach (var (number, image) in diskImages)
+        {
+            if (!core.Chipset.Disks.Drives[number].Present)
+                core.Chipset.Disks.Drives[number] = new FloppyDrive(present: true);
+            core.Chipset.Disks.Drives[number].Insert(image);
+        }
         if (date != null)
             core.SetDate(date.Value);
         // PROGDIR: is the directory of the program, as in AmigaDOS 2.0 and later. An option can replace it.
@@ -573,8 +604,8 @@ public static class Launcher
         finally
         {
             TempFolders.Delete(ram);
-            if (diskCopy != null)
-                TempFolders.Delete(diskCopy);
+            foreach (var copy in diskCopies)
+                TempFolders.Delete(copy);
         }
 
         if (codeMap != null)
@@ -635,6 +666,8 @@ public static class Launcher
         {
             var disk = AmigaSharp.Runtime.Dos.AdfImage.Read(File.ReadAllBytes(image));
             disk.ExtractTo(output);
+            foreach (var (path, reason) in disk.DamagedFiles)
+                Console.Error.WriteLine($"warning: the disk cannot give the file {path}. {reason}");
             Console.WriteLine($"{image}: the disk {disk.VolumeName} ({(disk.FastFileSystem ? "FFS" : "OFS")}).");
             foreach (var entry in disk.Entries)
                 Console.WriteLine(entry.IsDirectory ? $"  {entry.Path}/" : $"  {entry.Path} ({entry.Data.Length} bytes)");
