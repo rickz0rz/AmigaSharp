@@ -18,7 +18,11 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   2020-11-01 listings. Without `target-source/asm` (and no `build/target/ESQ`), it runs the drive's ESQ (byte-identical)
   without a listing and with `--turbo 3`. Keep docs generic: any 68000 AmigaOS executable can run, a vasm listing is
   an optional development aid, and ESQ and ATK are only the tested programs. Useful launcher options:
-  - `--virtual-time`: the run is deterministic and repeatable. Prefer it for comparisons.
+  - `--virtual-time`: the emulation is repeatable, but `--screenshot` is taken by a host thread while the 68000 keeps
+    running, so the saved frame can land a few frames apart between runs (ESQ's scrolling grid then differs by tens of
+    thousands of pixels). A byte compare of two screenshots does not prove "no change": compare several runs of each
+    build (sets of md5s), or compare content. Also, the first run of a new build compiles its translation and can land
+    differently from later (cached) runs.
   - `--screenshot <file.png> --seconds <n>` and `--screenshot-every <n>`: pictures without a window.
   - `--watch <label>`: logs each change of a 16-bit word at a listing label (needs the listing, which run-esq.sh
     passes). A 32-bit variable cannot be watched this way.

@@ -83,6 +83,8 @@ public sealed class VideoStream : IDisposable
         IReadOnlyList<IStreamRequests>? requests = null, QueueRequest.QueueFile? genlockQueue = null)
     {
         _display = display;
+        // The pictures of the genlock videos have the size of the display.
+        GenlockDecoder.PictureHeight = display.Height;
         _requests = requests ?? [];
         _log = log;
         _channelName = channelName;
@@ -127,7 +129,7 @@ public sealed class VideoStream : IDisposable
         [
             "-hide_banner", "-loglevel", "error",
             "-thread_queue_size", "64",
-            "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{Display.Width}x{Display.Height}", "-framerate", "30000/1001",
+            "-f", "rawvideo", "-pix_fmt", "bgra", "-s", $"{Display.Width}x{display.Height}", "-framerate", "30000/1001",
             "-i", "pipe:0",
             .. audioInput,
             "-map", "0:v", "-map", "1:a",
@@ -206,8 +208,8 @@ public sealed class VideoStream : IDisposable
     private void SendFrames()
     {
         var playlist = _genlock;
-        var amiga = new uint[Display.Width * Display.Height];
-        var output = new uint[Display.Width * Display.Height];
+        var amiga = new uint[Display.Width * _display.Height];
+        var output = new uint[amiga.Length];
         var bytes = new byte[output.Length * 4];
         var stream = _ffmpeg.StandardInput.BaseStream;
         var clock = Stopwatch.StartNew();

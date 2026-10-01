@@ -155,10 +155,10 @@ public class CiaTests
     private int TimeOfDay() => Read(CiaRegister.TodHigh) << 16 | Read(CiaRegister.TodMiddle) << 8 | Read(CiaRegister.TodLow);
 
     private void MoveTo(long eClockCycles) =>
-        _clock.Elapsed = TimeSpan.FromSeconds((eClockCycles + 0.5) / Cia.NtscEClockHz);
+        _clock.Elapsed = TimeSpan.FromSeconds((eClockCycles + 0.5) / VideoStandard.Ntsc.EClockHz);
 
     private void MoveToFrame(int frame) =>
-        _clock.Elapsed = TimeSpan.FromSeconds((frame + 0.5) * Beam.ColorClocksPerLine * Beam.LinesPerFrame / Beam.ColorClockHz);
+        _clock.Elapsed = TimeSpan.FromSeconds((frame + 0.5) * Beam.ColorClocksPerLine * VideoStandard.Ntsc.LinesPerFrame / VideoStandard.Ntsc.ColorClockHz);
 
     private byte Read(int register) => _memory.Read8(CiaA + (uint)register * 0x100);
 

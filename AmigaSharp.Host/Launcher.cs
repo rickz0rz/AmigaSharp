@@ -47,6 +47,13 @@ public static class Launcher
           --assign <NAME>=<path>    An assign to an AmigaDOS directory, for example DF0=DH1: or FONTS=SYS:fonts.
           --arguments <text>        The command line arguments of the program.
           --command-name <name>     The name of the command. The default is the name of the executable.
+          --pal                     Make a PAL Amiga: 312 lines and about 50 frames each second, with the clocks of PAL.
+                                    The picture is then 768 by 572 pixels. The default is NTSC.
+          --chipset <name>          ecs (the default, as an A2000) or aga (Alice and Lisa, as an A1200). With aga, the
+                                    chip IDs and graphics.library tell a program that the chipset is AGA. The display
+                                    does not show the AGA features yet.
+          --unaligned-access        Let the program read and write words and longs at odd addresses, as a 68020 does,
+                                    for example a program for the A1200. On a 68000, this is an address error.
           --serial-port <port>      The TCP port of the serial bridge. The default is 5400. 0 turns the bridge off.
           --serial-file <file>      Replay a captured feed on the serial port, in place of the bridge. The replay starts
                                     when the program enables the RBF interrupt, and it goes at the baud rate of SERPER.
@@ -55,7 +62,7 @@ public static class Launcher
           --serial-speed <n>        Receive the serial bytes n times faster than the baud rate of SERPER. The default is 1.
                                     ESQ has no flow control: a factor that is too large fills its receive buffer.
           --serial-log <file>       Write each serial byte in the two directions to the file, with the time.
-          --scale <n>               The size of the window: 1 is 768 by 480 pixels. The default is 1.
+          --scale <n>               The size of the window: 1 is 768 by 480 pixels (572 with --pal). The default is 1.
           --deinterlace <mode>      How the window, the screenshots and the stream show an interlaced display: weave
                                     (both fields, as a TV; the default), bob (the last field, each row twice) or blend
                                     (the average of the two fields). bob and blend have no comb lines on moving content.
@@ -211,7 +218,9 @@ public static class Launcher
         var measuringClock = stats ? new MeasuringClock(clock) : null;
         clock = measuringClock ?? clock;
         var turbo = turboSeconds != null || turboLabel != null;
-        var core = new Core(rootDirectory: drive, clock: clock) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
+        var core = new Core(rootDirectory: drive, clock: clock, video: options.Pal ? VideoStandard.Pal : null,
+            aga: options.Aga) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
+        core.Memory.AllowUnaligned = options.UnalignedAccess;
         // A program from a disk image also finds the disk in DF0, for a program that reads the disk with the hardware.
         if (diskImage != null)
             core.Chipset.Disks.Drives[0].Insert(diskImage);
@@ -413,7 +422,7 @@ public static class Launcher
             {
                 exitCode = WatchdogExitCode;
                 terminated = true;
-            })
+            }, height: core.Chipset.Display.Height)
             : null;
 
         // The scripted key presses: each key goes down, and up again 0.1 second later.
@@ -491,9 +500,9 @@ public static class Launcher
             {
                 void Save(string path)
                 {
-                    var pixels = new uint[Display.Width * Display.Height];
+                    var pixels = new uint[Display.Width * core.Chipset.Display.Height];
                     core.Chipset.Display.CopyFrame(pixels);
-                    File.WriteAllBytes(path, Png.Encode(Display.Width, Display.Height, pixels));
+                    File.WriteAllBytes(path, Png.Encode(Display.Width, core.Chipset.Display.Height, pixels));
                     log.WriteLine($"Saved {path} (frame {core.Chipset.Display.FrameNumber}).");
                 }
 

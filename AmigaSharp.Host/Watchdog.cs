@@ -20,8 +20,8 @@ public sealed class Watchdog : IDisposable
     private readonly TimeSpan _limit;
     private readonly TextWriter _log;
     private readonly Action _stop;
-    private uint[] _last = new uint[Display.Width * Display.Height];
-    private uint[] _current = new uint[Display.Width * Display.Height];
+    private uint[] _last;
+    private uint[] _current;
     private TimeSpan _lastChange;
     private bool _first = true;
     private bool _fired;
@@ -32,8 +32,12 @@ public sealed class Watchdog : IDisposable
     /// <param name="limit">The time that the picture can stay the same.</param>
     /// <param name="stop">Stops the program. The watchdog calls it one time.</param>
     /// <param name="start">False to not start the thread, for tests that call <see cref="Check"/>.</param>
-    public Watchdog(Action<uint[]> copyFrame, TimeSpan limit, TextWriter log, Action stop, bool start = true)
+    /// <param name="height">The height of the picture of the display. The default is the height for NTSC.</param>
+    public Watchdog(Action<uint[]> copyFrame, TimeSpan limit, TextWriter log, Action stop, bool start = true,
+        int? height = null)
     {
+        _last = new uint[Display.Width * (height ?? Display.HeightOf(VideoStandard.Ntsc))];
+        _current = new uint[_last.Length];
         _copyFrame = copyFrame;
         _limit = limit;
         _log = log;

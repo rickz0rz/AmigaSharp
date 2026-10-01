@@ -23,11 +23,19 @@ public sealed class Chipset : IHardware
 
     private const uint CiaEnd = 0xC0_0000;
 
-    public Chipset(IClock clock, Memory memory)
+    /// <param name="video">The video standard. The default is NTSC.</param>
+    /// <param name="aga">True for the AGA chipset of the A1200 and the A4000 (Alice and Lisa). The default is ECS.</param>
+    public Chipset(IClock clock, Memory memory, VideoStandard? video = null, bool aga = false)
     {
-        Beam = new Beam(clock);
-        Custom = new CustomChips(Beam);
-        long EClock() => (long)(Beam.Clock.Elapsed.TotalSeconds * Cia.NtscEClockHz);
+        Beam = new Beam(clock, video);
+        Aga = aga;
+        Custom = new CustomChips(Beam)
+        {
+            // Agnus: ECS $20 and AGA (Alice) $22, with $10 for NTSC. Denise: ECS $FC and AGA (Lisa) $F8.
+            AgnusId = (aga ? 0x22 : 0x20) | Beam.Standard.AgnusIdBit,
+            DeniseId = aga ? 0xF8 : 0xFC,
+        };
+        long EClock() => (long)(Beam.Clock.Elapsed.TotalSeconds * Beam.Standard.EClockHz);
         CiaA = new Cia(() => Beam.Frame, EClock, () => Custom.RequestInterrupt(InterruptBit.Ports));
         CiaB = new Cia(() => Beam.TotalLines, EClock, () => Custom.RequestInterrupt(InterruptBit.External));
         Keyboard = new Keyboard(CiaA, EClock);
@@ -42,7 +50,7 @@ public sealed class Chipset : IHardware
         }
         Rtc = new RealTimeClockChip(() => Now());
         // The low-pass filter is on when the power LED is bright: CIA-A PRA bit 1 is 0.
-        Audio = new AudioOutput(memory, Custom, () => (CiaA.OutputA & 0x02) == 0);
+        Audio = new AudioOutput(memory, Custom, () => (CiaA.OutputA & 0x02) == 0, Beam.ColorClockHz);
         Disks = new DiskController(memory, Custom, CiaA, CiaB, Beam);
         // The handshake inputs of the serial port: CTS is CIA-B port A bit 4, and DSR is bit 3.
         CtsLine = new BitBangedLine(CiaB, 0x10, () => Beam.Clock.Elapsed);
@@ -57,6 +65,9 @@ public sealed class Chipset : IHardware
     }
 
     public Beam Beam { get; }
+
+    /// <summary>True for the AGA chipset, false for ECS.</summary>
+    public bool Aga { get; }
     public CustomChips Custom { get; }
     public Cia CiaA { get; }
     public Cia CiaB { get; }

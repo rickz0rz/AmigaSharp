@@ -149,11 +149,17 @@ public sealed class Memory
 
     private IHardware HardwareOrThrow(uint address) => Hardware ?? throw new HardwareAccessException(address);
 
+    /// <summary>
+    /// True to let a program read and write words and longs at odd addresses, as a 68020 does. On the 68000, such an
+    /// access is an address error. Instructions must be at even addresses in both cases.
+    /// </summary>
+    public bool AllowUnaligned { get; set; }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint CheckAligned(uint address)
+    private uint CheckAligned(uint address)
     {
-        // The 68000 cannot access a word or a long at an odd address.
-        if ((address & 1) != 0)
+        // The 68000 cannot access a word or a long at an odd address. The 68020 can.
+        if ((address & 1) != 0 && !AllowUnaligned)
             throw new AddressErrorException(address & AddressMask);
         return address & AddressMask;
     }

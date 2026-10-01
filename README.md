@@ -19,7 +19,10 @@ AmigaSharp is a hobby project. It runs AmigaOS executables for the 68000. Two pr
 Other programs can also run. A program runs if it uses only the library calls and the hardware that the runtime
 emulates:
 
-- It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs.
+- It emulates the 68000 CPU only. It does not emulate the 68020 or later CPUs. `--unaligned-access` adds one
+  behavior of the 68020: words and longs at odd addresses.
+- It emulates an NTSC Amiga with the ECS chipset. `--pal` makes a PAL Amiga, and `--chipset aga` gives the chip IDs of
+  AGA.
 - It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
   of each library call.
 - It emulates only the parts of the chipset that ESQ, the Amiga Test Kit and the samples use.
@@ -147,8 +150,14 @@ Use `--help` to see all the options. These options are the most important:
 - `--volume NAME=<directory>` and `--assign NAME=<path>` make the volumes and the assigns of the program.
 - `--serial-port <port>` sets the TCP port of the serial port. Connect to it with `nc localhost <port>`.
 - `--screenshot <file.png>` saves the display after `--seconds` and does not open a window.
-- `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
-  each time, and it is as fast as the host can run it.
+- `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So the emulation is
+  the same each time, and it is as fast as the host can run it. A screenshot can still come from a frame or two
+  earlier or later, because the launcher takes it while the program runs.
+- `--pal` makes a PAL Amiga: 312 lines and 50 frames each second. The default is NTSC.
+- `--chipset aga` makes the chip IDs and graphics.library tell the program that the chipset is AGA (A1200, A4000).
+  The display does not show the AGA features yet.
+- `--unaligned-access` lets the program read and write words and longs at odd addresses, as a 68020 does. Programs
+  for the A1200 can need it.
 - `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
 - `--fast-cpu` runs the 68000 as fast as the host can. By default, the CPU runs at the speed of a real 68000
   (7.16 MHz) with a real-time clock. It sleeps when it is ahead, so a program that polls in a loop does not use a full

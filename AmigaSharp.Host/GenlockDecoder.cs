@@ -45,7 +45,6 @@ public sealed class GenlockDecoder : IGenlockDecoder
 {
     public const int SampleRate = 48_000;
     public const int BytesPerSample = 4;
-    private const int FrameBytes = Display.Width * Display.Height * 4;
 
     // Without pictures, the decoder gives small black pictures of this size. They count the time of the sound.
     private const int TimingSize = 2;
@@ -53,6 +52,14 @@ public sealed class GenlockDecoder : IGenlockDecoder
 
     // The pictures of all decoders use the same arrays again.
     private static readonly ConcurrentBag<uint[]> Pool = [];
+
+    /// <summary>
+    /// The height of the pictures: the height of the display (480 rows for NTSC, 572 for PAL). The launcher sets it
+    /// before it starts the stream.
+    /// </summary>
+    public static int PictureHeight { get; set; } = Display.HeightOf(VideoStandard.Ntsc);
+
+    private static int PictureLength => Display.Width * PictureHeight;
 
     private readonly string _source;
     private readonly bool _loop;
@@ -110,12 +117,21 @@ public sealed class GenlockDecoder : IGenlockDecoder
     }
 
     /// <summary>A picture of the size of the display from the pool, or a new picture. Its pixels are not cleared.</summary>
-    public static uint[] Rent() => Pool.TryTake(out var pixels) ? pixels : new uint[Display.Width * Display.Height];
+    public static uint[] Rent()
+    {
+        while (Pool.TryTake(out var pixels))
+        {
+            if (pixels.Length == PictureLength)
+                return pixels;
+        }
+
+        return new uint[PictureLength];
+    }
 
     /// <summary>Gives a picture back to the pool.</summary>
     public static void Return(uint[] pixels)
     {
-        if (pixels.Length == Display.Width * Display.Height)
+        if (pixels.Length == PictureLength)
             Pool.Add(pixels);
     }
 
@@ -207,7 +223,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
                 "-ac", "2", $"tcp://127.0.0.1:{port}"]
             : [];
         // A source with no video gets black pictures from ffmpeg, as long as its sound for a file.
-        var size = _pictures ? $"{Display.Width}x{Display.Height}" : $"{TimingSize}x{TimingSize}";
+        var size = _pictures ? $"{Display.Width}x{PictureHeight}" : $"{TimingSize}x{TimingSize}";
         string[] black = video
             ? []
             : ["-f", "lavfi", "-i", $"color=c=black:s={size}:r=30000/1001" +
@@ -225,7 +241,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
             "-vf", _pictures
                 ? "bwdif=mode=send_frame:deint=interlaced,fps=30000/1001:start_time=0," +
                   "crop=w='min(iw,ih*4/3/sar)':h='min(ih,iw*sar*3/4)'," +
-                  $"scale={Display.Width}:{Display.Height},format=bgra"
+                  $"scale={Display.Width}:{PictureHeight},format=bgra"
                 : "format=bgra",
             "-f", "rawvideo", "pipe:1",
             .. audioOutput,
@@ -279,7 +295,7 @@ public sealed class GenlockDecoder : IGenlockDecoder
 
     private void ReadPictures(Stream input)
     {
-        var frameBytes = _pictures ? FrameBytes : TimingSize * TimingSize * 4;
+        var frameBytes = _pictures ? PictureLength * 4 : TimingSize * TimingSize * 4;
         var bytes = new byte[frameBytes];
         while (!_stopped)
         {

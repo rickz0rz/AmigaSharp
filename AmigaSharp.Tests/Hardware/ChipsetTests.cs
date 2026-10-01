@@ -21,6 +21,34 @@ public class ChipsetTests
         Assert.Equal(0x3000, _memory.Read16(0xDFF004) & 0x7F00);
     }
 
+    [Theory]
+    [InlineData(false, false, 0x30, 0xFC)]
+    [InlineData(true, false, 0x20, 0xFC)]
+    [InlineData(false, true, 0x32, 0xF8)]
+    [InlineData(true, true, 0x22, 0xF8)]
+    public void ChipIds_TellTheVideoStandardAndTheChipset(bool pal, bool aga, int agnus, int denise)
+    {
+        var memory = new Memory();
+        var chipset = new Chipset(new ManualClock(), memory, pal ? VideoStandard.Pal : null, aga);
+        memory.Hardware = chipset;
+
+        Assert.Equal(agnus << 8, memory.Read16(0xDFF004) & 0x7F00);
+        Assert.Equal(denise, memory.Read16(0xDFF07C) & 0xFF);
+    }
+
+    [Fact]
+    public void PalBeam_Has312LinesAnd50Frames()
+    {
+        var clock = new ManualClock();
+        var beam = new Beam(clock, VideoStandard.Pal);
+        // Line 300 exists only on PAL.
+        clock.Elapsed = TimeSpan.FromSeconds((300 * Beam.ColorClocksPerLine + 0.5) / VideoStandard.Pal.ColorClockHz);
+
+        Assert.Equal((300, 0L), (beam.Line, beam.Frame));
+        Assert.Equal(50, VideoStandard.Pal.FramesPerSecond, 0);
+        Assert.Equal(572, Display.HeightOf(VideoStandard.Pal));
+    }
+
     [Fact]
     public void Dmacon_HasTheMasterBitOfKickstart_AndNoChannels()
     {
@@ -31,7 +59,7 @@ public class ChipsetTests
     public void BeamPosition_FollowsTheClock()
     {
         // 100 lines and 50 color clocks. Half a color clock more keeps the time inside that color clock.
-        _clock.Elapsed = TimeSpan.FromSeconds((100 * Beam.ColorClocksPerLine + 50.5) / Beam.ColorClockHz);
+        _clock.Elapsed = TimeSpan.FromSeconds((100 * Beam.ColorClocksPerLine + 50.5) / VideoStandard.Ntsc.ColorClockHz);
 
         Assert.Equal((100 << 8) | 50, _memory.Read16(0xDFF006));
         Assert.Equal(100, _chipset.Beam.Line);
@@ -44,7 +72,7 @@ public class ChipsetTests
     [Fact]
     public void Line256AndMore_SetBit0OfVposr()
     {
-        _clock.Elapsed = TimeSpan.FromSeconds((260 * Beam.ColorClocksPerLine + 0.5) / Beam.ColorClockHz);
+        _clock.Elapsed = TimeSpan.FromSeconds((260 * Beam.ColorClocksPerLine + 0.5) / VideoStandard.Ntsc.ColorClockHz);
 
         Assert.Equal(1, _memory.Read16(0xDFF004) & 1);
         Assert.Equal(4, _memory.Read16(0xDFF006) >> 8);

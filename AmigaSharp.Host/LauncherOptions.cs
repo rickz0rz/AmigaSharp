@@ -41,6 +41,15 @@ public sealed class LauncherOptions
     public double? ScreenshotEvery { get; set; }
     public DateTime? Date { get; set; }
     public bool VirtualTime { get; set; }
+
+    /// <summary>True for a PAL Amiga. The default is NTSC.</summary>
+    public bool Pal { get; set; }
+
+    /// <summary>True for the AGA chipset. The default is ECS.</summary>
+    public bool Aga { get; set; }
+
+    /// <summary>True to allow words and longs at odd addresses, as a 68020 does.</summary>
+    public bool UnalignedAccess { get; set; }
     public List<(double Seconds, byte RawKey)> Presses { get; } = [];
     public (double Seconds, string Path)? CopperDump { get; set; }
     public bool FastCpu { get; set; }
@@ -115,6 +124,16 @@ public sealed class LauncherOptions
                 case "--turbo-until": options.TurboLabel = Next(); break;
                 case "--watch": options.Watches.Add(Next()); break;
                 case "--virtual-time": options.VirtualTime = true; break;
+                case "--pal": options.Pal = true; break;
+                case "--unaligned-access": options.UnalignedAccess = true; break;
+                case "--chipset":
+                    options.Aga = Next().ToLowerInvariant() switch
+                    {
+                        "ecs" => false,
+                        "aga" => true,
+                        var other => throw new ArgumentException($"--chipset is ecs or aga, not {other}."),
+                    };
+                    break;
                 case "--date": options.Date = DateTime.Parse(Next(), CultureInfo.InvariantCulture); break;
                 case "--copper-dump":
                 {

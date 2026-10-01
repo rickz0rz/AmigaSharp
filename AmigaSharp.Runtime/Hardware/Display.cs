@@ -21,8 +21,9 @@ public enum DeinterlaceMode
 /// </summary>
 /// <remarks>
 /// <para>
-/// The picture is 768 by 480 pixels in high resolution: lines 21 to 260 of NTSC, two rows for each line. An interlaced
-/// frame fills one row of the two: the long frame fills the even rows. The display shows the bitplanes, the display
+/// The picture is 768 pixels wide in high resolution, with two rows for each line: 480 rows for lines 21 to 260 of
+/// NTSC, and 572 rows for lines 26 to 311 of PAL. An interlaced frame fills one row of the two: the long frame fills
+/// the even rows. The display shows the bitplanes, the display
 /// window, the scroll, dual playfield, extra half-brite and sprites. It does not show HAM.
 /// </para>
 /// <para>
@@ -33,10 +34,15 @@ public enum DeinterlaceMode
 public sealed class Display
 {
     public const int Width = 768;
-    public const int Height = 480;
+
+    /// <summary>The number of rows of the picture: two for each line. It depends on the video standard.</summary>
+    public int Height { get; }
 
     /// <summary>The first line in the picture.</summary>
-    public const int FirstLine = 21;
+    public int FirstLine { get; }
+
+    /// <summary>The number of rows of the picture for a video standard: 480 for NTSC, and 572 for PAL.</summary>
+    public static int HeightOf(VideoStandard standard) => standard.PictureLines * 2;
 
     /// <summary>The low-resolution pixel position of the left edge of the picture.</summary>
     public const int FirstLowResolutionPixel = 0x48;
@@ -75,8 +81,8 @@ public sealed class Display
     private readonly object _frameLock = new();
     // The display draws into the canvas. With interlace, a frame changes only its rows, and the rows of the other
     // frame stay. The host reads the last complete picture from _front.
-    private readonly uint[] _canvas = new uint[Width * Height];
-    private readonly uint[] _front = new uint[Width * Height];
+    private readonly uint[] _canvas;
+    private readonly uint[] _front;
     private bool _frontInterlaced;
     private bool _frontOddField;
 
@@ -103,6 +109,7 @@ public sealed class Display
     private TextWriter? _dump;
     private bool _runningCopper;
     private readonly Beam? _beam;
+    private readonly VideoStandard _standard;
     private readonly Sprite[] _sprites = new Sprite[8];
 
     /// <summary>The state of a sprite DMA channel in the current frame.</summary>
@@ -124,6 +131,11 @@ public sealed class Display
         _memory = memory;
         _custom = custom;
         _beam = beam;
+        _standard = beam?.Standard ?? VideoStandard.Ntsc;
+        Height = HeightOf(_standard);
+        FirstLine = _standard.FirstLine;
+        _canvas = new uint[Width * Height];
+        _front = new uint[Width * Height];
         _copper = new Copper(memory, custom);
         for (var plane = 0; plane < _planeData.Length; plane++)
             _planeData[plane] = new byte[256];
@@ -241,7 +253,7 @@ public sealed class Display
     private uint Location(int offset) => (uint)(_custom[offset] << 16 | _custom[offset + 2]);
 
     /// <summary>Runs the copper and makes the picture of one frame.</summary>
-    /// <param name="longFrame">True for the long frame of an interlaced display, which has 263 lines.</param>
+    /// <param name="longFrame">True for the long frame of an interlaced display, which has one more line.</param>
     /// <param name="render">False to run only the copper, for a frame that the host does not show.</param>
     public void RunFrame(bool longFrame, bool render)
     {
@@ -291,7 +303,7 @@ public sealed class Display
         }
 
         var interlaced = (_state[CustomRegister.Bplcon0 >> 1] & Interlace) != 0;
-        _lines = interlaced && longFrame ? 263 : 262;
+        _lines = interlaced && longFrame ? _standard.LinesPerFrame + 1 : _standard.LinesPerFrame;
         _longFrame = longFrame;
         _nextLine = 0;
         Array.Clear(_sprites);

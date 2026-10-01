@@ -170,6 +170,12 @@ public static class GfxBaseOffsets
     /// <summary>DisplayFlags: the display is NTSC.</summary>
     public const ushort Ntsc = 1;
 
+    /// <summary>DisplayFlags: the display is PAL.</summary>
+    public const ushort Pal = 4;
+
     /// <summary>ChipRevBits0: the ECS Agnus (GFXF_HR_AGNUS) and the ECS Denise (GFXF_HR_DENISE).</summary>
     public const byte EcsChips = 0x01 | 0x02;
+
+    /// <summary>ChipRevBits0: the ECS bits, Alice (GFXF_AA_ALICE) and Lisa (GFXF_AA_LISA) of the AGA chipset.</summary>
+    public const byte AgaChips = EcsChips | 0x04 | 0x08;
 }

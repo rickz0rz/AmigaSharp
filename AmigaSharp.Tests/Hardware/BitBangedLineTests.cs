@@ -64,7 +64,7 @@ public class BitBangedLineTests
     public void AudioSampleTime_GoesOneIntervalForEachRequest_AlsoWhenTheRuntimeIsLate()
     {
         const int intreq = 0xDFF09C, aud1 = 1 << 8;
-        const double interval = 2 * 0x65B / Beam.ColorClockHz;
+        var interval = 2 * 0x65B / VideoStandard.Ntsc.ColorClockHz;
         _memory.Write16(0xDFF0B4, 1);
         _memory.Write16(0xDFF0B6, 0x65B);
         _memory.Write16(0xDFF096, 0x8202);

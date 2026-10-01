@@ -169,7 +169,7 @@ public class DisplayTests
         Assert.NotEqual(0, _memory.Read16(0xDFF004) & 0x8000);
 
         // The long frame fills the even rows, and the short frame fills the odd rows.
-        var row = (0x2C - Display.FirstLine) * 2;
+        var row = (0x2C - VideoStandard.Ntsc.FirstLine) * 2;
         Assert.Equal(Red, first[row * Display.Width + FirstX]);
         Assert.Equal(Red, second[(row + 1) * Display.Width + FirstX]);
     }
@@ -190,7 +190,7 @@ public class DisplayTests
 
         var frame = NextFrame();
 
-        var row = (0x2C - Display.FirstLine) * 2;
+        var row = (0x2C - VideoStandard.Ntsc.FirstLine) * 2;
         Assert.Equal(evenRow, frame[row * Display.Width + FirstX] | 0xFF00_0000);
         Assert.Equal(oddRow, frame[(row + 1) * Display.Width + FirstX] | 0xFF00_0000);
     }
@@ -369,18 +369,18 @@ public class DisplayTests
     {
         _clock.Advance(TimeSpan.FromSeconds(1.0 / 59));
         _chipset.Custom.Update();
-        var frame = new uint[Display.Width * Display.Height];
+        var frame = new uint[Display.Width * Display.HeightOf(VideoStandard.Ntsc)];
         _chipset.Display.CopyFrame(frame);
         return frame;
     }
 
     /// <summary>The color of a pixel, without its genlock key.</summary>
     private static uint Pixel(uint[] frame, int x, int line) =>
-        frame[(line - Display.FirstLine) * 2 * Display.Width + x] | 0xFF00_0000;
+        frame[(line - VideoStandard.Ntsc.FirstLine) * 2 * Display.Width + x] | 0xFF00_0000;
 
     /// <summary>True if the pixel is the genlock key: its alpha is 0.</summary>
     private static bool IsKey(uint[] frame, int x, int line) =>
-        frame[(line - Display.FirstLine) * 2 * Display.Width + x] >> 24 == 0;
+        frame[(line - VideoStandard.Ntsc.FirstLine) * 2 * Display.Width + x] >> 24 == 0;
 
     private void WriteCopperList(uint address, params uint[][] instructions)
     {

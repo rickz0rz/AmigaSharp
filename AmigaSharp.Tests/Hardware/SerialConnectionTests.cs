@@ -14,7 +14,7 @@ public class SerialConnectionTests
         _chipset = new Chipset(_clock, _memory);
         _memory.Hardware = _chipset;
         // 9600 baud: one byte takes about 1.04 ms.
-        _memory.Write16(0xDFF032, (ushort)(Beam.ColorClockHz / 9600 - 1));
+        _memory.Write16(0xDFF032, (ushort)(VideoStandard.Ntsc.ColorClockHz / 9600 - 1));
     }
 
     [Fact]

@@ -38,10 +38,11 @@ public class ExecLibrary(Core core) : AbstractLibrary
         // AttnFlags 0: a 68000 with no FPU.
         _memory.Write16(Base + ExecBaseOffsets.AttnFlags, 0);
         _memory.Write16(Base + ExecBaseOffsets.TaskTrapsAllocated, 0x8000);
-        // Prevue ran on NTSC Amigas.
-        _memory.Write8(Base + ExecBaseOffsets.VBlankFrequency, 60);
-        _memory.Write8(Base + ExecBaseOffsets.PowerSupplyFrequency, 60);
-        _memory.Write32(Base + ExecBaseOffsets.EClockFrequency, 715_909);
+        // The frequencies of the video standard. Prevue ran on NTSC Amigas, and NTSC is the default.
+        var pal = core.Chipset.Beam.Standard == VideoStandard.Pal;
+        _memory.Write8(Base + ExecBaseOffsets.VBlankFrequency, pal ? (byte)50 : (byte)60);
+        _memory.Write8(Base + ExecBaseOffsets.PowerSupplyFrequency, pal ? (byte)50 : (byte)60);
+        _memory.Write32(Base + ExecBaseOffsets.EClockFrequency, (uint)Math.Round(core.Chipset.Beam.Standard.EClockHz));
 
         foreach (var list in new[]
                  {

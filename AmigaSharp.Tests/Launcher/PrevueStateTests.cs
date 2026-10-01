@@ -18,8 +18,8 @@ public class PrevueStateTests
     [InlineData(false, false, "logo")]
     public void TopHalf_ComesFromTheGenlockKey(bool leftClear, bool rightClear, string expected)
     {
-        var pixels = new uint[Display.Width * Display.Height];
-        for (var y = 0; y < Display.Height / 2; y++)
+        var pixels = new uint[Display.Width * Display.HeightOf(VideoStandard.Ntsc)];
+        for (var y = 0; y < Display.HeightOf(VideoStandard.Ntsc) / 2; y++)
         {
             for (var x = 0; x < Display.Width; x++)
                 pixels[y * Display.Width + x] = (x < Display.Width / 2 ? leftClear : rightClear) ? Transparent : Opaque;
@@ -38,8 +38,8 @@ public class PrevueStateTests
     [InlineData(0.5, 1.0, "other")]
     public void TopHalf_WithSomeKeyInTheHalves(double leftKey, double rightKey, string expected)
     {
-        var pixels = new uint[Display.Width * Display.Height];
-        for (var y = 0; y < Display.Height / 2; y++)
+        var pixels = new uint[Display.Width * Display.HeightOf(VideoStandard.Ntsc)];
+        for (var y = 0; y < Display.HeightOf(VideoStandard.Ntsc) / 2; y++)
         {
             for (var x = 0; x < Display.Width; x++)
             {

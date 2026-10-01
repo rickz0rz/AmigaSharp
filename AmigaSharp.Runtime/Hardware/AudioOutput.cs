@@ -17,7 +17,7 @@ namespace AmigaSharp.Runtime.Hardware;
 /// are not emulated.
 /// </para>
 /// </remarks>
-public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> filterOn)
+public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> filterOn, double colorClockHz)
 {
     public const int SampleRate = 48_000;
 
@@ -25,7 +25,8 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
     private const int Capacity = SampleRate * 2;
 
     private const int MinimumPeriod = 124;
-    private const double ClocksPerSample = Beam.ColorClockHz / SampleRate;
+    // The color clocks of each sample: NTSC and PAL have different color clocks.
+    private readonly double _clocksPerSample = colorClockHz / SampleRate;
 
     // A one-pole filter at about 3.3 kHz, near the filter of the A500 and A2000.
     private static readonly double FilterFactor = 1 - Math.Exp(-2 * Math.PI * 3300.0 / SampleRate);
@@ -58,7 +59,7 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
     /// <summary>Makes the samples up to the color clock.</summary>
     public void Update(long now)
     {
-        if (_nextSampleClock < 0 || now - _nextSampleClock > Beam.ColorClockHz)
+        if (_nextSampleClock < 0 || now - _nextSampleClock > colorClockHz)
         {
             // The first update, or a long pause of the host: start at the current time.
             _nextSampleClock = now;
@@ -96,7 +97,7 @@ public sealed class AudioOutput(Memory memory, CustomChips custom, Func<bool> fi
             // Two channels at full volume (128 * 64 each) fill the 16-bit range.
             Add((short)Math.Clamp(left * 2, short.MinValue, short.MaxValue),
                 (short)Math.Clamp(right * 2, short.MinValue, short.MaxValue));
-            _nextSampleClock += ClocksPerSample;
+            _nextSampleClock += _clocksPerSample;
         }
     }
 

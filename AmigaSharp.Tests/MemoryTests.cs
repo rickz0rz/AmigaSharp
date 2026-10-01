@@ -37,6 +37,19 @@ public class MemoryTests
     }
 
     [Fact]
+    public void WordAndLongAccess_AtOddAddress_WorksWhenAllowed_AsOnA68020()
+    {
+        _memory.AllowUnaligned = true;
+
+        _memory.Write32(0x1001, 0x11223344);
+        _memory.Write16(0x1005, 0x5566);
+
+        Assert.Equal(0x1122u, _memory.Read16(0x1001));
+        Assert.Equal(0x33445566u, _memory.Read32(0x1003));
+        Assert.Equal(0x22, _memory.Read8(0x1002));
+    }
+
+    [Fact]
     public void ByteAccess_AtOddAddress_Works()
     {
         _memory.Write8(0x1001, 0xAB);

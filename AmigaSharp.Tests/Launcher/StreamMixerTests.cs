@@ -135,7 +135,7 @@ public class StreamMixerTests
         memory.Write16(0xDFF096, 0x8201);
         chipset.Audio.Update(0);
         // One second of sound, much more than the mixer keeps.
-        chipset.Audio.Update((long)Beam.ColorClockHz);
+        chipset.Audio.Update((long)VideoStandard.Ntsc.ColorClockHz);
         var mixer = new StreamMixer(music: null, tap);
 
         var output = Mix(mixer, item: null, hasSound: false);

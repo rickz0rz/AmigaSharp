@@ -114,9 +114,12 @@ public sealed class Core
     /// <param name="input">The console input. The default is the standard input of the host.</param>
     /// <param name="rootDirectory">The host directory of the volume SYS:. The default is the current directory.</param>
     /// <param name="clock">The time of the hardware. The default is real time.</param>
-    public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null)
+    /// <param name="video">The video standard of the Amiga. The default is NTSC.</param>
+    /// <param name="aga">True for the AGA chipset (A1200, A4000). The default is ECS.</param>
+    public Core(Stream? output = null, Stream? input = null, string? rootDirectory = null, IClock? clock = null,
+        VideoStandard? video = null, bool aga = false)
     {
-        Chipset = new Chipset(clock ?? new RealTimeClock(), Memory);
+        Chipset = new Chipset(clock ?? new RealTimeClock(), Memory, video, aga);
         KeyboardInput.RawKeyPosted = Chipset.Keyboard.Post;
         Chipset.Now = () => Now;
         // Kickstart makes the drive lines of CIA-B port B outputs, with all motors off and no drive selected, and it

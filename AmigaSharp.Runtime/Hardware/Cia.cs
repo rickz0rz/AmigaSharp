@@ -50,9 +50,6 @@ public static class CiaInterrupt
 /// <param name="interrupt">Requests the interrupt of the CIA from Paula.</param>
 public sealed class Cia(Func<long> timeOfDay, Func<long> eClock, Action interrupt)
 {
-    /// <summary>The E clock of an NTSC Amiga: the CPU clock divided by 10.</summary>
-    public const double NtscEClockHz = 715_909.09;
-
     // The bits of CRA and CRB.
     private const byte Start = 1 << 0;
     private const byte RunModeOneShot = 1 << 3;

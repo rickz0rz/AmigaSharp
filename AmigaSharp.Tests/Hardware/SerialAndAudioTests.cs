@@ -16,7 +16,7 @@ public class SerialAndAudioTests
         _memory.Hardware = _chipset;
         _chipset.Custom.Serial.Connection = _connection;
         // 9600 baud.
-        _memory.Write16(0xDFF032, (ushort)(Beam.ColorClockHz / 9600 - 1));
+        _memory.Write16(0xDFF032, (ushort)(VideoStandard.Ntsc.ColorClockHz / 9600 - 1));
     }
 
     [Fact]
@@ -85,7 +85,7 @@ public class SerialAndAudioTests
         _memory.Write16(0xDFF0B4, 1);
         _memory.Write16(0xDFF0B6, 0x65B);
         _memory.Write16(0xDFF096, 0x8202);
-        var interval = TimeSpan.FromSeconds(2 * 0x65B / Beam.ColorClockHz);
+        var interval = TimeSpan.FromSeconds(2 * 0x65B / VideoStandard.Ntsc.ColorClockHz);
 
         _chipset.Custom.Update();
         Assert.NotEqual(0, _chipset.Custom.Intreq & 0x100);
@@ -106,7 +106,7 @@ public class SerialAndAudioTests
         _memory.Write16(0xDFF0B4, 1);
         _memory.Write16(0xDFF0B6, 0x65B);
         _memory.Write16(0xDFF096, 0x8202);
-        var interval = TimeSpan.FromSeconds(2 * 0x65B / Beam.ColorClockHz);
+        var interval = TimeSpan.FromSeconds(2 * 0x65B / VideoStandard.Ntsc.ColorClockHz);
         _chipset.Custom.Update();
         _memory.Write16(0xDFF09C, 0x100);
 

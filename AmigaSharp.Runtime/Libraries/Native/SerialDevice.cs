@@ -164,7 +164,7 @@ public class SerialDevice(Core core) : AbstractDevice(core)
     {
         if (baud == 0)
             return;
-        var period = (ushort)Math.Clamp(Beam.ColorClockHz / baud - 1, 1, 0x7FFF);
+        var period = (ushort)Math.Clamp(Core.Chipset.Beam.ColorClockHz / baud - 1, 1, 0x7FFF);
         Core.Chipset.Custom.Write(CustomRegister.Serper, period);
     }
 }

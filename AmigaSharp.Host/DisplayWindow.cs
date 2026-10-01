@@ -44,16 +44,16 @@ public sealed unsafe class DisplayWindow(
         var audioDevice = audio == null ? 0 : OpenAudio(sdl);
 
         var window = sdl.CreateWindow(title, Sdl.WindowposCentered, Sdl.WindowposCentered,
-            Display.Width * scale, Display.Height * scale,
+            Display.Width * scale, display.Height * scale,
             (uint)(WindowFlags.Hidden | WindowFlags.AllowHighdpi | WindowFlags.Resizable));
-        FitToDisplay(sdl, window);
+        FitToDisplay(sdl, window, display.Height);
         sdl.ShowWindow(window);
         var renderer = sdl.CreateRenderer(window, -1, (uint)(RendererFlags.Accelerated | RendererFlags.Presentvsync));
         // The picture keeps its shape in a window of any size, with black bars at the sides or at the top and bottom.
-        sdl.RenderSetLogicalSize(renderer, Display.Width, Display.Height);
+        sdl.RenderSetLogicalSize(renderer, Display.Width, display.Height);
         var texture = sdl.CreateTexture(renderer, (uint)PixelFormatEnum.Argb8888, (int)TextureAccess.Streaming,
-            Display.Width, Display.Height);
-        var pixels = new uint[Display.Width * Display.Height];
+            Display.Width, display.Height);
+        var pixels = new uint[Display.Width * display.Height];
         var shown = -1L;
 
         try
@@ -104,7 +104,7 @@ public sealed unsafe class DisplayWindow(
     /// Makes the window smaller, with the same shape, if the window and its borders do not fit in the usable area of
     /// its display (the area without the taskbar or the menu bar). Then centers it in that area.
     /// </summary>
-    private static void FitToDisplay(Sdl sdl, Window* window)
+    private static void FitToDisplay(Sdl sdl, Window* window, int pictureHeight)
     {
         Rectangle<int> usable;
         if (sdl.GetDisplayUsableBounds(sdl.GetWindowDisplayIndex(window), &usable) != 0)
@@ -119,9 +119,9 @@ public sealed unsafe class DisplayWindow(
         if (width <= availableWidth && height <= availableHeight)
             return;
 
-        var factor = Math.Min((double)availableWidth / Display.Width, (double)availableHeight / Display.Height);
+        var factor = Math.Min((double)availableWidth / Display.Width, (double)availableHeight / pictureHeight);
         width = Math.Max(1, (int)(Display.Width * factor));
-        height = Math.Max(1, (int)(Display.Height * factor));
+        height = Math.Max(1, (int)(pictureHeight * factor));
         sdl.SetWindowSize(window, width, height);
         sdl.SetWindowPosition(window, usable.Origin.X + left + (availableWidth - width) / 2,
             usable.Origin.Y + top + (availableHeight - height) / 2);

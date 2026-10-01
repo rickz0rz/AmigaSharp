@@ -107,6 +107,9 @@ public sealed class CustomChips
     /// <summary>The Agnus ID in VPOSR bits 14 to 8. $30 is the ECS Agnus (8372) for NTSC.</summary>
     public int AgnusId { get; set; } = 0x30;
 
+    /// <summary>The Denise ID in the low byte of DENISEID. $FC is the ECS Denise (8373), and $F8 is Lisa (AGA).</summary>
+    public int DeniseId { get; set; } = 0xFC;
+
     public SerialPort Serial { get; }
 
     /// <summary>The controller ports: a mouse in port 1 and a joystick in port 2, as usual.</summary>
@@ -201,7 +204,7 @@ public sealed class CustomChips
             case CustomRegister.Intenar: return Intena;
             case CustomRegister.Intreqr: return Intreq;
             // The ECS Denise (8373) has the ID $FC.
-            case CustomRegister.Deniseid: return 0xFFFC;
+            case CustomRegister.Deniseid: return (ushort)(0xFF00 | DeniseId);
             // A read of a strobe register does the same as a write. The value is not defined.
             case CustomRegister.Copjmp1 or CustomRegister.Copjmp2:
                 Write(offset, 0);
@@ -331,7 +334,7 @@ public sealed class CustomChips
     /// go forward for the interrupts that the program does not get.
     /// </summary>
     public TimeSpan AudioSampleTime(int channel) =>
-        TimeSpan.FromTicks((long)(_audio[channel].SampleClock * TimeSpan.TicksPerSecond / Beam.ColorClockHz));
+        TimeSpan.FromTicks((long)(_audio[channel].SampleClock * TimeSpan.TicksPerSecond / _beam.ColorClockHz));
 
     /// <summary>
     /// The color clocks between two interrupts of an audio channel. The channel plays AUDxLEN words, two samples in

@@ -10,7 +10,7 @@ public class AudioOutputTests
     private const int Period = 1000;
 
     // An output sample is 3579545 / 48000 = 74.6 color clocks. An Amiga sample of 1000 color clocks is 13.4 of them.
-    private const double ClocksPerOutputSample = Beam.ColorClockHz / AudioOutput.SampleRate;
+    private static readonly double ClocksPerOutputSample = VideoStandard.Ntsc.ColorClockHz / AudioOutput.SampleRate;
 
     private readonly Memory _memory = new();
     private readonly Chipset _chipset;

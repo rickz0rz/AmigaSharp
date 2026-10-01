@@ -1,5 +1,6 @@
 using AmigaSharp.Runtime.Exec;
 using AmigaSharp.Runtime.Graphics;
+using AmigaSharp.Runtime.Hardware;
 
 namespace AmigaSharp.Runtime.Libraries.Native;
 
@@ -31,16 +32,17 @@ public class GraphicsLibrary(Core core) : AbstractLibrary
         ExecList.AddTail(_memory, FontList, topaz);
         _memory.Write32(Base + GfxBaseOffsets.DefaultFont, topaz);
 
-        _memory.Write16(Base + GfxBaseOffsets.DisplayFlags, GfxBaseOffsets.Ntsc);
-        _memory.Write8(Base + GfxBaseOffsets.VBlank, 60);
-        _memory.Write16(Base + GfxBaseOffsets.MaxDisplayRow, 261);
+        var pal = core.Chipset.Beam.Standard == VideoStandard.Pal;
+        _memory.Write16(Base + GfxBaseOffsets.DisplayFlags, pal ? GfxBaseOffsets.Pal : GfxBaseOffsets.Ntsc);
+        _memory.Write8(Base + GfxBaseOffsets.VBlank, pal ? (byte)50 : (byte)60);
+        _memory.Write16(Base + GfxBaseOffsets.MaxDisplayRow, (ushort)(core.Chipset.Beam.LinesPerFrame - 1));
         _memory.Write16(Base + GfxBaseOffsets.MaxDisplayColumn, 454);
-        _memory.Write16(Base + GfxBaseOffsets.NormalDisplayRows, 200);
+        _memory.Write16(Base + GfxBaseOffsets.NormalDisplayRows, pal ? (ushort)256 : (ushort)200);
         _memory.Write16(Base + GfxBaseOffsets.NormalDisplayColumns, 640);
         _memory.Write16(Base + GfxBaseOffsets.NormalDpmX, 1280);
         _memory.Write16(Base + GfxBaseOffsets.NormalDpmY, 1280);
-        _memory.Write16(Base + GfxBaseOffsets.MicrosPerLine, 63);
-        _memory.Write8(Base + GfxBaseOffsets.ChipRevBits0, GfxBaseOffsets.EcsChips);
+        _memory.Write16(Base + GfxBaseOffsets.MicrosPerLine, pal ? (ushort)64 : (ushort)63);
+        _memory.Write8(Base + GfxBaseOffsets.ChipRevBits0, core.Chipset.Aga ? GfxBaseOffsets.AgaChips : GfxBaseOffsets.EcsChips);
     }
 
     // planes = BltBitMap(srcBitMap, xSrc, ySrc, destBitMap, xDest, yDest, xSize, ySize, minterm, mask, tempA)

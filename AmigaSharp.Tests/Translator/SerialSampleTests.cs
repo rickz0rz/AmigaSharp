@@ -38,7 +38,7 @@ public class SerialSampleTests
         Assert.Equal(13u, length);
         Assert.Equal("HELLO, AMIGA\n", Encoding.ASCII.GetString(connection.Sent.ToArray()));
         // SDCMD_SETPARAMS set SERPER for 19200 baud.
-        Assert.Equal((ushort)(Beam.ColorClockHz / 19200 - 1), core.Chipset.Custom.Serial.Period);
+        Assert.Equal((ushort)(VideoStandard.Ntsc.ColorClockHz / 19200 - 1), core.Chipset.Custom.Serial.Period);
         Assert.Equal(13, core.Interrupts.Delivered[InterruptBit.Rbf]);
     }
 

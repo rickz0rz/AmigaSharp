@@ -163,17 +163,23 @@ public sealed class VirtualClock(TimeSpan step) : IClock
 }
 
 /// <summary>
-/// The position of the video beam of an NTSC Amiga: 262 lines of 227 color clocks, about 60 frames each second.
+/// The position of the video beam: lines of 227 color clocks. NTSC has 262 lines, about 60 frames each second, and PAL
+/// has 312 lines, about 50 frames each second.
 /// </summary>
-public sealed class Beam(IClock clock)
+public sealed class Beam(IClock clock, VideoStandard? standard = null)
 {
-    /// <summary>The NTSC color clock: 3.579545 MHz.</summary>
-    public const double ColorClockHz = 3_579_545.0;
-
     public const int ColorClocksPerLine = 227;
-    public const int LinesPerFrame = 262;
 
     public IClock Clock { get; } = clock;
+
+    /// <summary>The video standard. The default is NTSC.</summary>
+    public VideoStandard Standard { get; } = standard ?? VideoStandard.Ntsc;
+
+    /// <summary>The color clock: 3.579545 MHz for NTSC, and 3.546895 MHz for PAL.</summary>
+    public double ColorClockHz => Standard.ColorClockHz;
+
+    /// <summary>The lines of a frame: 262 for NTSC, and 312 for PAL.</summary>
+    public int LinesPerFrame => Standard.LinesPerFrame;
 
     /// <summary>The number of color clocks since the start.</summary>
     public long ColorClocks => (long)(Clock.Elapsed.TotalSeconds * ColorClockHz);
@@ -188,7 +194,7 @@ public sealed class Beam(IClock clock)
     public TimeSpan StartOfFrame(long frame) =>
         TimeSpan.FromSeconds((frame * LinesPerFrame * ColorClocksPerLine + 0.5) / ColorClockHz);
 
-    /// <summary>The line in the frame, 0 to 261.</summary>
+    /// <summary>The line in the frame, from 0 (to 261 for NTSC, and to 311 for PAL).</summary>
     public int Line => (int)(TotalLines % LinesPerFrame);
 
     /// <summary>The horizontal position in color clocks, 0 to 226.</summary>

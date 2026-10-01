@@ -202,7 +202,7 @@ public sealed class DiskController
     /// <summary>DF0 is the internal drive. DF1 to DF3 are not connected.</summary>
     public FloppyDrive[] Drives { get; } = [new(true), new(false), new(false), new(false)];
 
-    private static long ClocksPer(double seconds) => (long)(seconds * Beam.ColorClockHz);
+    private long ClocksPer(double seconds) => (long)(seconds * _beam.ColorClockHz);
 
     /// <summary>Updates the drive signals and sends the index pulses.</summary>
     public void Update()

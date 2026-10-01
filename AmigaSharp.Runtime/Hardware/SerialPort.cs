@@ -67,7 +67,7 @@ public sealed class SerialPort(Beam beam)
     public double SpeedFactor { get; set; } = 1;
 
     /// <summary>The baud rate that SERPER gives.</summary>
-    public double BaudRate => Beam.ColorClockHz / ((Period & 0x7FFF) + 1);
+    public double BaudRate => beam.ColorClockHz / ((Period & 0x7FFF) + 1);
 
     /// <summary>The time of one byte: a start bit, 8 or 9 data bits and a stop bit.</summary>
     private TimeSpan ByteTime => TimeSpan.FromSeconds(((Period & 0x8000) != 0 ? 11 : 10) / BaudRate);

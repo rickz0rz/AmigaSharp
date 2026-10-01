@@ -270,7 +270,7 @@ public sealed class PrevueState : IStreamRequests
     /// <summary>The state as JSON.</summary>
     public string ToJson()
     {
-        var pixels = new uint[Display.Width * Display.Height];
+        var pixels = new uint[Display.Width * _core.Chipset.Display.Height];
         _core.Chipset.Display.CopyFrame(pixels);
         var memory = _core.Memory;
 

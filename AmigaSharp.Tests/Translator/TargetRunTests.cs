@@ -131,7 +131,7 @@ public sealed class TargetRunTests : IDisposable
 
     private static uint[] Frame(Core core)
     {
-        var pixels = new uint[Display.Width * Display.Height];
+        var pixels = new uint[Display.Width * Display.HeightOf(VideoStandard.Ntsc)];
         core.Chipset.Display.CopyFrame(pixels);
         return pixels;
     }
