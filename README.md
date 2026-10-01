@@ -3,18 +3,14 @@
 AmigaSharp translates AmigaOS executables for the 68000 to C#, and runs them on a runtime that emulates the Amiga
 libraries and a part of the chipset.
 
-![Prevue Guide in AmigaSharp, with the saved listings of November 1, 2020](docs/prevue-guide.png)
-
-The picture shows Prevue Guide with the saved listings of November 1, 2020. The top half of the screen is black,
-because the Prevue Channel showed a video in that area.
-
 ## Status
 
-AmigaSharp is a hobby project. It runs AmigaOS executables for the 68000. Two programs have been tested:
+AmigaSharp is a hobby project. It runs AmigaOS executables for the 68000. These programs have been tested:
 
-- Prevue Guide (ESQ), the Amiga program of the Prevue Channel. It is the main target, so this document has many
-  examples for it.
+- Prevue Guide (ESQ), the Amiga program of the Prevue Channel. It is the main target. See [Prevue Guide](#prevue-guide).
 - The Amiga Test Kit, a program that takes over the machine and tests the hardware directly.
+- Aonic, the demo of the A1200 port of Sonic the Hedgehog, with PAL, AGA and the speed of a 68020.
+- Sneak Prevue, the program of another channel of the Prevue company. It shows its first screens.
 
 Other programs can also run. A program runs if it uses only the library calls and the hardware that the runtime
 emulates:
@@ -25,10 +21,27 @@ emulates:
   AGA.
 - It uses high-level emulation (HLE) of the Amiga libraries. It does not use a Kickstart ROM. C# code does the work
   of each library call.
-- It emulates only the parts of the chipset that ESQ, the Amiga Test Kit and the samples use.
+- It emulates only the parts of the chipset that the tested programs and the samples use.
 
 A program needs only its executable. Its assembly source is optional. See
 [The listing of a program](#the-listing-of-a-program).
+
+## Prevue Guide
+
+![Prevue Guide in AmigaSharp, with the saved listings of November 1, 2020](docs/prevue-guide.png)
+
+Prevue Guide (ESQ) was the program of the Prevue Channel: the grid of listings in the bottom half of the screen, and
+promos and logos over a video in the top half. AmigaSharp runs it with its saved listings, or with the listings of a
+Channels DVR server, and can stream it as a TV channel. With a copy of the drive of a Prevue machine in
+`target-source/binaries/`:
+
+```sh
+scripts/run-esq.sh                                              # The saved listings of 2020.
+CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh  # The listings of a Channels DVR server.
+```
+
+[docs/prevue.md](docs/prevue.md) tells all the steps: the files of Prevue, the listings, the stream, the promos and
+the logos of the control line, and the programs for other people.
 
 ## Requirements
 
@@ -52,18 +65,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
 The shell scripts get their settings from environment variables. The PowerShell scripts get them from parameters, and
-they also read the same environment variables:
-
-| Shell script | PowerShell script |
-|---|---|
-| `CHANNELS_DVR=<url> scripts/run-esq.sh` | `scripts\run-esq.ps1 -ChannelsDvr <url>` |
-| `CHANNELS_DVR_INTERVAL`, `CHANNELS_DVR_PREMIUM` | `-Interval`, `-Premium` |
-| `ESQ_DATE`, `ESQ_SCALE` | `-Date`, `-Scale` |
-| `VASM`, `TARGET_SOURCE` of `build-target.sh` | `-Vasm`, `-TargetSource` |
-| `EMBEDDED_PROGRAM`, `EMBEDDED_LISTING`, `EMBEDDED_KNOWN_CODE` of `publish.sh` | `-EmbeddedProgram`, `-EmbeddedListing`, `-EmbeddedKnownCode` |
-
-The other arguments of `run-esq.ps1` go to the launcher, as with `run-esq.sh`. For example, use
-`scripts\run-esq.ps1 --scale 1`. Use `Get-Help scripts\run-esq.ps1 -Detailed` to see the parameters of a script.
+they also read the same environment variables. For example, `EMBEDDED_PROGRAM` of `publish.sh` is `-EmbeddedProgram`
+of `publish.ps1`. [docs/prevue.md](docs/prevue.md) has the settings of the scripts for Prevue. Use
+`Get-Help scripts\publish.ps1 -Detailed` to see the parameters of a script.
 
 - vasm has Windows programs on [its web site](http://sun.hasenbraten.de/vasm/). Put `vasmm68k_mot.exe` on the PATH,
   or give its path with `-Vasm`.
@@ -73,23 +77,17 @@ The other arguments of `run-esq.ps1` go to the launcher, as with `run-esq.sh`. F
 
 ## Files that the repository does not contain
 
-This repository does not contain Prevue Guide or its data. The ESQ steps in this document use two directories that
-are not public:
+This repository contains no Amiga programs, only the samples in `samples/`. The tested programs and their data are not
+public. Their steps use these files in `target-source/`:
 
-- `target-source/binaries/` contains a copy of the drive of a Prevue machine: ESQ, the fonts, and the listing files.
-  The ESQ steps need it.
-- `target-source/asm/` contains the assembly source of ESQ. It is optional. `scripts/build-target.sh` assembles it to
-  `build/target/ESQ` and its listing, and compares the result with a SHA-256 hash. The result is the same file as ESQ
-  of the drive, so Prevue runs the same. The listing adds the development features of
-  [The listing of a program](#the-listing-of-a-program). Without the assembly source, `scripts/run-esq.sh` runs ESQ of
-  the drive without a listing.
+- `binaries/` and `asm/`: the drive of a Prevue machine, and the optional assembly source of ESQ. See
+  [The files of Prevue](docs/prevue.md#the-files-of-prevue). The tests of the target program skip without them.
+- `AmigaTestKit.adf`, `Aonic-TheGreenHillZoneDemo.adf`, and the two disks of Sneak Prevue.
 
-Without these directories, the tests of the target program skip. The samples, the translator, the runtime and the
-other tests do not need them. If you have a copy of ESQ and its drive, give their paths to the launcher or to
-`run-prevue.sh` (`run-prevue.ps1` on Windows).
+The samples, the translator, the runtime and the other tests do not need these files.
 
-This project is not related to the owners of Amiga, Prevue or Channels DVR, and they do not support it. These names
-are trademarks of their owners.
+This project is not related to the owners of Amiga, Prevue, Channels DVR or Sonic the Hedgehog, and they do not
+support it. These names are trademarks of their owners.
 
 ## Projects
 
@@ -115,7 +113,7 @@ AmigaSharp.PrevueLauncher/   The launcher program for Prevue: the extension and 
 AmigaSharp.PrevueListings/   The listings tool for Prevue.
 AmigaSharp.Tests/            The tests of all the projects.
 docs/                        The documents: streaming.md, distribution.md, internals.md and performance.md, and
-                             ctrl-line.md and orchestration.md about Prevue.
+                             prevue.md, ctrl-line.md and orchestration.md about Prevue.
 scripts/                     The scripts to build and run. run-esq and scripts/dist/ are for Prevue.
 ```
 
@@ -142,6 +140,12 @@ The launcher translates the program, compiles it, and keeps the result in a cach
 
 ```sh
 dotnet run --project AmigaSharp.Launcher -c Release -- <executable> [--listing <file.lst>]
+```
+
+For example, the Hello World sample writes its text to the console:
+
+```sh
+dotnet run --project AmigaSharp.Launcher -c Release -- samples/HelloWorld/hello --listing samples/HelloWorld/hello.lst
 ```
 
 Use `--help` to see all the options. These options are the most important:
@@ -172,33 +176,16 @@ Use `--help` to see all the options. These options are the most important:
   (7.16 MHz) with a real-time clock. It sleeps when it is ahead, so a program that polls in a loop does not use a full
   host core.
 - `--turbo <seconds>` and `--turbo-until <label>` run the 68000 as fast as the host can at the start, and then at
-  its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0. With the listing,
-  the script uses `--turbo-until _ESQ_MainLoopUiTickEnabledFlag`, so ESQ starts as fast as with `--fast-cpu`. Without
-  the listing, it uses `--turbo 3`.
+  its real speed. `--turbo-until` ends the turbo when the word at a label of the listing is not 0.
 - `--watch <label>` writes each change of the word at a label of the listing, for example
   `--watch _Global_RefreshTickCounter`.
 - `--stats` writes the speed each second: the frames made and dropped, the time to make a frame, the time that the
   program waited, and the rate of the VERTB and AUD1 interrupts.
 - `--date <date>` sets the date and the time of the Amiga at the start, for example `--date 2020-11-01T16:00`.
-  Prevue shows saved listing data only on the date of that data.
+- `--serial-file <file>` replays a captured feed on the serial port in place of the TCP bridge, after
+  `--serial-start <seconds>`. `--serial-log <file>` writes each byte of the serial port with the time.
 
 In the window, the keys of the host go to the Amiga keyboard. F11 is the Help key.
-
-This command runs Prevue with a copy of the drive of the original machine. Prevue writes to its drive, so do not use
-`target-source/binaries` directly:
-
-```sh
-cp -R target-source/binaries /tmp/prevue-drive
-dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive
-```
-
-The launcher for Prevue sets the defaults of a Prevue machine. The drive is also DH1:, and DF0: and ENV: are DH1:.
-The command name is esq, and the arguments are the selection code GA24005. Use `--help` to see all the defaults.
-
-With the assembly source of ESQ, run `scripts/build-target.sh` first to make `build/target/ESQ` and its listing.
-Without it, use ESQ of the drive (`/tmp/prevue-drive/ESQ`), leave out `--listing`, and use `--turbo 3`.
-`scripts/run-esq.sh` does all of these steps.
 
 ### The listing of a program
 
@@ -218,155 +205,18 @@ The program runs the same with and without the listing. The listing adds these f
 - The launcher for Prevue reads the variables of ESQ by their labels. Without the listing, it uses a table of the
   addresses of the known build of ESQ.
 
+Without a listing, the launcher keeps a map of the code that ran, and each run translates more of the program. See
+[The interpreter](docs/internals.md#the-interpreter).
+
 The executable must be the same file that vasm made with the listing. The translator does not check all of it, and
 with another file the translation is wrong.
-
-## Show the saved listings
-
-The quickest way is the script. It opens Prevue in a window, with the saved 2020 listings:
-
-```sh
-scripts/run-esq.sh
-```
-
-The first run copies the drive to `build/drive/` and unpacks the listing files there. Delete `build/drive/` to start
-again from the original drive. The script sends its arguments to the launcher, for example `--scale 1`.
-
-To do the same steps by hand, follow the procedure below.
-
-The listing files of the drive (`curday.dat` and `nxtday.dat`) are packed with PowerPacker, and Prevue cannot read
-packed files. Unpack them in a copy of the drive, and run Prevue on the date of the data:
-
-```sh
-cp -R target-source/binaries /tmp/prevue-drive
-dotnet run --project AmigaSharp.Launcher -c Release -- unpack /tmp/prevue-drive/curday.dat \
-    /tmp/prevue-drive/nxtday.dat /tmp/prevue-drive/PWI? --output /tmp/prevue-drive
-dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive --date 2020-11-01T16:00
-```
-
-## Show the listings of a Channels DVR server
-
-`AmigaSharp.PrevueListings` reads the guide of a Channels DVR server and writes the Prevue listing files
-`curday.dat` and `nxtday.dat`. The files have the HD channels of the guide, in the order of their numbers. ESQ keeps
-a maximum of 200 channels. Set `CHANNELS_DVR` to use it with the script:
-
-```sh
-CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh
-```
-
-On Windows, give the address as a parameter:
-
-```powershell
-scripts\run-esq.ps1 -ChannelsDvr http://channels-dvr.local:8089
-```
-
-The script then writes new listing files to a separate drive copy, `build/drive-channels-dvr/`, before each run,
-and the Amiga uses the time of the host. While ESQ runs, the tool reads the guide again every 10 minutes
-(`CHANNELS_DVR_INTERVAL`). It sends the changes to the serial port as a Prevue data feed, so the grid stays current.
-The feed has the same commands as the satellite feed of Prevue: `C` for the channel lineup and `P` for each program.
-A day that ESQ does not have yet, for example the next day after the change at 5:00 AM, gets all its programs. The
-launcher receives the feed at 4 times 2400 baud (`--serial-speed 4`). ESQ has no flow control, and it parses about
-6 times 2400 baud, so a larger factor can fill its receive buffer.
-
-To show premium channels on a red background, set `CHANNELS_DVR_PREMIUM` to their channel numbers or call signs,
-with commas between them. For example, use `CHANNELS_DVR_PREMIUM=222,HBOHD`. The tool itself uses
-`--premium <list>`. The text of a movie has the title in quotation marks, the year, the summary, and the rating.
-
-To write the files to another drive, run the tool directly:
-
-```sh
-dotnet run --project AmigaSharp.PrevueListings -- --server http://channels-dvr.local:8089 --output <drive directory>
-```
-
-Use `--insecure` for an HTTPS address with a certificate that does not match the server. Use `--feed <file>` to
-also write all the listings as a feed, for `--serial-file` of the launcher.
-
-The files use the time zone `6` in their configuration. ESQ adds (time zone - 6) hours to the times of the listings
-and of the clock, so with `6`, the grid and the clock show the local time of the host. The saved 2020 files use `5`,
-and that is why their clock is one hour behind.
 
 ## Stream the display as a TV channel
 
 `--stream <port>` streams the display as live HLS video (H.264 and AAC, with ffmpeg from the PATH), with an M3U
-playlist for a custom channel of Channels DVR:
-
-```sh
-CHANNELS_DVR=http://channels-dvr.local:8089 scripts/run-esq.sh --headless --stream 8091 --deinterlace blend \
-    --stream-name "Prevue Guide"
-```
-
-The stream can also show a video behind Prevue, as the genlock of a Prevue machine, play a queue of videos, and mix
-music with the sound. An HTTP server controls them. [docs/streaming.md](docs/streaming.md) tells how, and gives the
-extra steps for Windows.
-
-## Replay a serial feed
-
-Prevue gets its listings on the serial port. The launcher can replay a captured feed from a file:
-
-- `--serial-file <file>` replays the bytes of the file in place of the TCP bridge. The bytes go at the baud rate of
-  SERPER. The replay starts when the program enables the RBF interrupt.
-- `--serial-start <seconds>` delays the replay. Prevue empties its receive buffer while it starts, so use 8 or more.
-- `--serial-log <file>` writes each byte in the two directions to the file, with the time of the Amiga clock.
-- `--prevue-feed-trace <file>` writes the commands that the Prevue feed parser reads, and the changes of its counters.
-  For example, a change of `_DATACErrs` shows a checksum error. This option needs `--listing`, and the launcher for
-  Prevue.
-
-Use `--virtual-time` with a replay. The run is then the same each time. Run the replay on a copy of the drive,
-because Prevue writes the data that it receives to the drive:
-
-```sh
-dotnet run --project AmigaSharp.PrevueLauncher -c Release -- build/target/ESQ --listing build/target/ESQ.lst \
-    --drive /tmp/prevue-drive --virtual-time \
-    --serial-file feed.bin --serial-start 8 --serial-log serial.log --prevue-feed-trace feed.log
-```
-
-## Send control commands
-
-Prevue has a second input, a 110 baud control line. The Prevue channel used it to show promos of programs over the
-genlock video. With `--stream`, the HTTP server sends commands on the line:
-
-| Request | Result |
-|---------|--------|
-| `GET /prevue/ctrl` | Gives the bytes that wait for the line (`queued`), the seconds that the line needs to send them, and the bytes that the line sent. |
-| `POST /prevue/ctrl/promo` | Shows a promo: `{"title": "Seinfeld", "channels": "*", "brush": "AT"}`, or a program that the launcher chooses: `{"auto": {"movies": true}}`. |
-| `POST /prevue/ctrl/clear` | Removes the promo or the logo. The genlock video shows in the top half. |
-| `POST /prevue/ctrl/logo` | Shows the current logo in the top half. |
-| `POST /prevue/ctrl/packets` | Sends packets of the control line: `[{"type": 1, "body": "3"}]`. |
-| `GET /prevue/guide` | Gives the programs of the listings of Prevue from now, for automatic promos. |
-| `GET /prevue/state` | Gives what the top half shows, if Prevue read the commands, and the logos. |
-| `GET /prevue/logos` | Gives the logos of `LOGO.LST`, the loaded logo, and the next line. |
-| `POST /prevue/logos/show` | Shows a logo of `LOGO.LST` in about 5 seconds, and no other logo: `{"name": "Insider"}`. |
-| `POST /prevue/logos/next` | Chooses the logo that Prevue loads at the next logo command: `{"name": "Insider"}`. |
-
-`--schedule <file>` plays a schedule: segments of videos and pauses, with the settings of the music and, for Prevue,
-the top half of the screen. `GET /schedule` gives its state. See [Schedules](docs/orchestration.md#schedules).
-
-For example, show a promo for Seinfeld from the saved listings, and then remove it:
-
-```sh
-curl -X POST http://localhost:8091/prevue/ctrl/promo -d '{"title": "Seinfeld", "brush": "AT"}'
-curl -X POST -d '' http://localhost:8091/prevue/ctrl/clear
-```
-
-- Prevue finds the next time of the program in its listings. If it finds no program, it shows the current logo.
-- `run-prevue.sh --channel-logos` makes channel logos from the logo images of Channels DVR, and `--logos <dir>`
-  makes them from your PNG files. See [Make channel logos](docs/ctrl-line.md#make-channel-logos).
-- The logos (for example "TV Guide sportsview") come from `LOGO.LST` on the drive. They cover all the top half, and
-  ESQ changes them about each 3 minutes. An empty `LOGO.LST` stops them. See [Logos](docs/ctrl-line.md#logos).
-- A promo can have a box on the right and a box on the left:
-  `{"right": {"title": "Bob's Burgers"}, "left": {"title": "Seinfeld", "brush": "DT"}, "first": "left"}`. Prevue
-  shows one box. It tries the box of `first` before the other box.
-- The line sends 11 bytes each second, so a promo takes about 2 seconds. The requests wait in a queue. Prevue starts
-  to read the line some seconds after the stream starts.
-- `--prevue-ctrl-port <port>` opens a TCP port for the raw bytes of the line, and `--prevue-ctrl-file <file>` sends
-  the bytes of a file. Do not send raw bytes and HTTP requests at the same time.
-- These requests and options are in `AmigaSharp.PrevueLauncher`. The scripts for Prevue (`scripts/run-esq.sh` and
-  `run-prevue.sh`) use it. `AmigaSharp.Launcher` has nothing of Prevue.
-
-[docs/ctrl-line.md](docs/ctrl-line.md) gives the format of the packets and the known commands.
-[docs/orchestration.md](docs/orchestration.md) tells how to use the videos, the music, the promos and the logos
-together, with an example coordinator.
+playlist for a custom channel of Channels DVR. The stream can also show a video behind the display, as the genlock of
+a Prevue machine, play a queue of videos, and mix music with the sound. An HTTP server controls them.
+[docs/streaming.md](docs/streaming.md) tells how, and gives the extra steps for Windows.
 
 ## Build programs for other people
 
@@ -400,7 +250,6 @@ dotnet run --project AmigaSharp.Launcher -c Release -- Aonic-TheGreenHillZoneDem
 ```
 
 The keys are the keys of the demo: the cursor keys, Z, X or C to jump, V to start or to pause, and Escape to stop.
-
 
 ## Tests
 

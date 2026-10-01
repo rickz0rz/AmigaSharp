@@ -1,8 +1,10 @@
 # AGENTS.md
 
 Notes for agents working in this repository. The README covers what the project is, the projects, the build, running
-programs and the tests; read it first. `docs/internals.md` explains the translator, the interpreter, the libraries and
-the chipset; `docs/streaming.md` the stream and its HTTP API; `docs/distribution.md` the published builds. This file covers what the README does not: how to check your work, conventions, and traps.
+programs and the tests; read it first. It stays generic (any 68000 AmigaOS program); Prevue lives in `docs/prevue.md`
+(with `ctrl-line.md` and `orchestration.md`). `docs/internals.md` explains the translator, the interpreter, the
+libraries and the chipset; `docs/streaming.md` the stream and its HTTP API; `docs/distribution.md` the published
+builds. This file covers what the README does not: how to check your work, conventions, and traps.
 
 ## Build and test
 

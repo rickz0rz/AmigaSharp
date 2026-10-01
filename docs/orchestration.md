@@ -5,8 +5,8 @@ grid, the top half of the screen, and the layers of the sound. A **coordinator**
 parts on a schedule. For example, a script, Home Assistant, or a cron job. It sends HTTP requests to the port of the
 stream.
 
-This document tells what each part does, how fast it changes, and how to use the parts together. The README and
-[ctrl-line.md](ctrl-line.md) give all the requests.
+This document tells what each part does, how fast it changes, and how to use the parts together.
+[streaming.md](streaming.md), [prevue.md](prevue.md) and [ctrl-line.md](ctrl-line.md) give all the requests.
 
 ![A promo in the top half, over the genlock video](prevue-promo-genlock.png)
 
@@ -264,8 +264,8 @@ a request that changes the genlock queue can change the order of the segments.
 
 A schedule needs the launcher for Prevue for `top`. The generic launcher plays schedules without `top`.
 
-`--genlock-playlist <file>` is a simpler file for the genlock queue only (see the README). It does not have the music
-or the top half.
+`--genlock-playlist <file>` is a simpler file for the genlock queue only (see [streaming.md](streaming.md)). It does not
+have the music or the top half.
 
 ## Example coordinator
 

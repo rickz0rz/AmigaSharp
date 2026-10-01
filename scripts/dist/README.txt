@@ -62,7 +62,8 @@ volume, and keep a fifth of that under the videos:
     curl -X POST http://localhost:8091/mixer/music -d '{"volume": 0.3, "fade": 3}'
     curl -X POST http://localhost:8091/mixer/duck -d '{"volume": 0.2}'
 
-GET /mixer gives the settings and the level of each part of the sound. The README of AmigaSharp has all the requests.
+GET /mixer gives the settings and the level of each part of the sound. The file docs/streaming.md of AmigaSharp has
+all the requests.
 
 Prevue can also show promos of programs in the top half of the screen, as the Prevue channel did. With --stream,
 send them to the stream port. For example, show a promo for Seinfeld, and then remove it:
@@ -73,8 +74,8 @@ send them to the stream port. For example, show a promo for Seinfeld, and then r
 A schedule file plays the videos, the music, the promos and the logos by itself. Start with --schedule
 /path/to/channel.json. The file docs/orchestration.md of AmigaSharp tells how to write it.
 
-The README of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp tells how
-to use the videos, the music, the promos and the logos together.
+The file docs/prevue.md of AmigaSharp has all the /prevue/ctrl requests. The file docs/orchestration.md of AmigaSharp
+tells how to use the videos, the music, the promos and the logos together.
 
 Channel logos show the logo of a station with its call letters and channel number. --channel-logos (with
 --channels-dvr) makes them from the logo images of Channels DVR. --logos /path/to/directory makes them from your PNG
