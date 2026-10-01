@@ -6,8 +6,11 @@
 # Usage: scripts/publish.sh [runtime identifier]
 #
 # The default runtime identifier is the one of this host, for example osx-arm64. Native AOT compiles only for the
-# operating system of the host: build on macOS for osx-arm64 and osx-x64, on Linux for linux-x64 and linux-arm64,
-# and on Windows for win-x64.
+# operating system of the host: on macOS for osx-arm64 and osx-x64, on Linux for linux-x64 and linux-arm64, and on
+# Windows for win-x64 and win-arm64. For another operating system, for example win-x64 on macOS, the script makes a
+# self-contained .NET build: a directory with the programs, their libraries and the .NET runtime. The users do not
+# need .NET for it either. It is larger (about 120 MB), and its launcher translates programs at run time, so it runs
+# them faster than a native launcher.
 #
 # The script writes the programs to dist/<runtime identifier>/. The launcher needs the SDL2 library next to it, so
 # keep the files of the directory together.
@@ -20,8 +23,19 @@
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-RID=${1:-$(dotnet --info | awk '/^ *RID:/ { print $2; exit }')}
+HOST_RID=$(dotnet --info | awk '/^ *RID:/ { print $2; exit }')
+RID=${1:-$HOST_RID}
 OUT=$ROOT/dist/$RID
+
+# The operating system is the first part of the runtime identifier: osx, linux or win.
+if [ "${RID%%-*}" = "${HOST_RID%%-*}" ]; then
+    BUILD="-p:PublishAot=true -p:StripSymbols=true"
+    NATIVE=1
+else
+    BUILD="--self-contained -p:PublishReadyToRun=true"
+    NATIVE=0
+    echo "Native AOT cannot compile for ${RID%%-*} on ${HOST_RID%%-*}. The build is a self-contained .NET build."
+fi
 
 EMBEDDED=""
 if [ -n "${EMBEDDED_PROGRAM:-}" ]; then
@@ -35,15 +49,21 @@ fi
 rm -rf "$OUT"
 for project in AmigaSharp.PrevueLauncher AmigaSharp.PrevueListings; do
     echo "Publishing $project for $RID."
-    # EMBEDDED is not in quotes, so that each property is a separate argument. Paths with spaces are not supported.
+    # BUILD and EMBEDDED are not in quotes, so that each option is a separate argument. Paths with spaces are not
+    # supported.
     # shellcheck disable=SC2086
-    dotnet publish "$ROOT/$project" -c Release -r "$RID" -o "$OUT" -nologo -v quiet \
-        -p:PublishAot=true -p:DebugType=None -p:StripSymbols=true $EMBEDDED
+    dotnet publish "$ROOT/$project" -c Release -r "$RID" -o "$OUT" -nologo -v quiet -p:DebugType=None \
+        $BUILD $EMBEDDED
 done
 
-# The build writes the files of the configuration of the translator, which the native launcher does not use.
-rm -f "$OUT"/*.runtimeconfig.json "$OUT"/*.pdb
+# The build also writes the translator as a program of this host. The launcher uses only its library.
+rm -f "$OUT"/AmigaSharp.Translator "$OUT"/AmigaSharp.Translator.exe "$OUT"/AmigaSharp.Translator.runtimeconfig.json \
+    "$OUT"/AmigaSharp.Translator.deps.json "$OUT"/*.pdb
 rm -rf "$OUT"/*.dSYM
+if [ "$NATIVE" = 1 ]; then
+    # A native program does not use the configuration files of .NET.
+    rm -f "$OUT"/*.runtimeconfig.json
+fi
 
 # The script and the instructions for the people who use the programs.
 case "$RID" in

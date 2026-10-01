@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AmigaSharp.Runtime\AmigaSharp.Runtime.csproj" />
-    <ProjectReference Include="..\AmigaSharp.Translator\AmigaSharp.Translator.csproj" />
+    <ProjectReference Include="..\AmigaSharp.Translator\AmigaSharp.Translator.csproj" GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishReadyToRun;PublishSingleFile;PublishAot" />
   </ItemGroup>
 
   <ItemGroup>
@@ -14,6 +14,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- The translator is a program, but the launcher uses it as a library: the reference builds it without a runtime
+         identifier, for each runtime identifier of the launcher (see scripts/publish.sh). -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

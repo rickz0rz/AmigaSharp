@@ -64,6 +64,12 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   background as color 0 (the key, like the drive's logos) and never color 0 on the card, `LOGO.LST` writer). High-res matters: ESQ draws a logo and its channel text in the picture's
   display mode, and in low-res the text comes out twice as wide as on real hardware. The logo file name must equal ESQ's source name of the channel
   (`PrevueFeed.SourceNames`), not the displayed call letters.
+- `AmigaSharp.Translator` is an exe that the launchers also use as a library. Its `ProjectReference`s carry
+  `GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishReadyToRun;PublishSingleFile;PublishAot"`, and the
+  referencing projects set `ValidateExecutableReferencesMatchSelfContained=false`. Without them, a publish for another
+  OS (`scripts/publish.sh win-x64` on macOS) builds the translator for the host RID and fails. `publish.sh`/`.ps1` use
+  Native AOT for the host OS and a self-contained ReadyToRun folder (runtime translation works) for another OS. Do not
+  make that folder single-file: `ProgramCompiler` needs `Assembly.Location`.
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
   registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,

@@ -477,6 +477,7 @@ To publish only the generic launcher, use `dotnet publish AmigaSharp.Launcher -c
 ```sh
 scripts/publish.sh              # For this host, for example osx-arm64.
 scripts/publish.sh osx-x64      # For a Mac with an Intel processor.
+scripts/publish.sh win-x64      # For Windows, also on macOS or Linux (a self-contained .NET build).
 ```
 
 The programs go to `dist/<runtime identifier>/`, with `run-prevue.sh` and `README.txt` for the users. The script
@@ -491,8 +492,13 @@ Add `--restart` for a channel that runs without a person: the script starts Prev
 picture does not change for a minute (`--watchdog 60`). A launcher also removes the temporary folders that a launcher
 that crashed or that was killed left.
 
-Keep the files of the directory together. The launcher needs the SDL2 library next to it. Native AOT compiles only
-for the operating system of the host, so build the Linux programs on Linux and the Windows programs on Windows.
+Keep the files of the directory together. The launcher needs the SDL2 library next to it.
+
+Native AOT compiles only for the operating system of the host. For another operating system, the script makes a
+self-contained .NET build: a directory of about 220 files and 120 MB, with the programs, their libraries and the .NET
+runtime. The users do not need .NET for it either. Its launcher translates the program when it starts, as
+`dotnet run` does, so it runs programs faster than a native launcher. The first start of a program takes some seconds
+longer, for the translation. Native programs for Linux and Windows still need a build on Linux or on Windows.
 
 On Windows, use `scripts\publish.ps1` (or `scripts\publish.ps1 -RuntimeIdentifier win-arm64`). Native AOT on Windows
 needs the C++ build tools of Visual Studio: install the workload "Desktop development with C++" of Visual Studio or
