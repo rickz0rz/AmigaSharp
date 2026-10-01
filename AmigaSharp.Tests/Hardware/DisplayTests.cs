@@ -4,34 +4,20 @@ using AmigaSharp.Runtime.Hardware;
 namespace AmigaSharp.Tests.Hardware;
 
 /// <summary>Tests of the copper and the display with copper lists and bitplanes in chip memory.</summary>
-public class DisplayTests
+public class DisplayTests : DisplayTestBench
 {
     private const uint CopperList = 0x1_0000;
     private const uint SecondCopperList = 0x1_8000;
     private const uint Plane = 0x2_0000;
-    private const uint Red = 0xFFFF_0000;
-    private const uint Green = 0xFF00_FF00;
-    private const uint Black = 0xFF00_0000;
-    private const uint Blue = 0xFF00_00FF;
 
     // The first pixel of a standard display: low-resolution pixel $81, at DDFSTRT $38.
-    private const int FirstX = (0x81 - Display.FirstLowResolutionPixel) * 2;
-
-    private readonly ManualClock _clock = new();
-    private readonly Memory _memory = new();
-    private readonly Chipset _chipset;
-
-    public DisplayTests()
-    {
-        _chipset = new Chipset(_clock, _memory);
-        _memory.Hardware = _chipset;
-    }
+    private static readonly int FirstX = X(0x81);
 
     [Fact]
     public void LowResolution_ShowsTheFirstPixelAtTheStartOfTheWindow()
     {
         SetUpLowResolution();
-        _memory.Write8(Plane, 0x80);
+        Memory.Write8(Plane, 0x80);
 
         var frame = NextFrame();
 
@@ -47,8 +33,8 @@ public class DisplayTests
     {
         SetUpLowResolution();
         Write(0xDFF108, 40); // BPL1MOD: skip one row of 40 bytes after each line.
-        _memory.Write8(Plane, 0x80);
-        _memory.Write8(Plane + 80, 0x40);
+        Memory.Write8(Plane, 0x80);
+        Memory.Write8(Plane + 80, 0x40);
 
         var frame = NextFrame();
 
@@ -68,8 +54,8 @@ public class DisplayTests
             Move(0x0E0, newRow >> 16),
             Move(0x0E2, newRow & 0xFFFF));
         Write(0xDFF108, 40); // BPL1MOD
-        _memory.Write8(Plane + 80, 0x80); // The row that the modulo gives.
-        _memory.Write8(newRow, 0x40);
+        Memory.Write8(Plane + 80, 0x80); // The row that the modulo gives.
+        Memory.Write8(newRow, 0x40);
 
         var frame = NextFrame();
 
@@ -86,7 +72,7 @@ public class DisplayTests
         Write(0xDFF100, 0x9200); // BPLCON0: high resolution, 1 plane.
         Write(0xDFF092, 0x28);
         Write(0xDFF094, 0xD6);
-        _memory.Write8(Plane + 92 + 16, 0x80);
+        Memory.Write8(Plane + 92 + 16, 0x80);
 
         var frame = NextFrame();
 
@@ -129,7 +115,7 @@ public class DisplayTests
         Write(0xDFF100, 0x9200); // BPLCON0: high resolution, 1 plane.
         Write(0xDFF092, 0x3C);
         Write(0xDFF094, 0xD4);
-        _memory.Write8(Plane, 0xA0);
+        Memory.Write8(Plane, 0xA0);
 
         var frame = NextFrame();
 
@@ -145,8 +131,8 @@ public class DisplayTests
         Write(0xDFF100, 0x2200); // BPLCON0: 2 planes.
         const uint secondPlane = Plane + 0x4000;
         Write32(0xDFF0E4, secondPlane);
-        _memory.Write8(Plane, 0b1010_0000);
-        _memory.Write8(secondPlane, 0b0110_0000);
+        Memory.Write8(Plane, 0b1010_0000);
+        Memory.Write8(secondPlane, 0b0110_0000);
 
         var frame = NextFrame();
 
@@ -161,12 +147,12 @@ public class DisplayTests
     {
         SetUpLowResolution();
         Write(0xDFF100, 0x1204); // BPLCON0: 1 plane, interlace.
-        _memory.Write8(Plane, 0x80);
+        Memory.Write8(Plane, 0x80);
 
         var first = NextFrame();
-        Assert.Equal(0, _memory.Read16(0xDFF004) & 0x8000);
+        Assert.Equal(0, Memory.Read16(0xDFF004) & 0x8000);
         var second = NextFrame();
-        Assert.NotEqual(0, _memory.Read16(0xDFF004) & 0x8000);
+        Assert.NotEqual(0, Memory.Read16(0xDFF004) & 0x8000);
 
         // The long frame fills the even rows, and the short frame fills the odd rows.
         var row = (0x2C - VideoStandard.Ntsc.FirstLine) * 2;
@@ -183,10 +169,10 @@ public class DisplayTests
         // The long field (even rows) has a red pixel. The short field (odd rows) that follows it has none.
         SetUpLowResolution();
         Write(0xDFF100, 0x1204); // BPLCON0: 1 plane, interlace.
-        _chipset.Display.Deinterlace = mode;
-        _memory.Write8(Plane, 0x80);
+        Chipset.Display.Deinterlace = mode;
+        Memory.Write8(Plane, 0x80);
         NextFrame();
-        _memory.Write8(Plane, 0x00);
+        Memory.Write8(Plane, 0x00);
 
         var frame = NextFrame();
 
@@ -260,7 +246,7 @@ public class DisplayTests
     {
         const uint sprite = 0x3_0000;
         Words(sprite, 0x3040, 0x3100, 0x8000, 0x0000, 0x0000, 0x0000);
-        _memory.Write8(Plane + (0x30 - 0x2C) * 40, 0x80);
+        Memory.Write8(Plane + (0x30 - 0x2C) * 40, 0x80);
         SetUpLowResolution(Move(0x120, sprite >> 16), Move(0x122, sprite & 0xFFFF), Move(0x1A2, 0x0F0),
             Move(0x104, bplcon2));
         Write(0xDFF096, 0x8020);
@@ -289,7 +275,7 @@ public class DisplayTests
     private void Words(uint address, params ushort[] words)
     {
         for (var i = 0; i < words.Length; i++)
-            _memory.Write16(address + (uint)i * 2, words[i]);
+            Memory.Write16(address + (uint)i * 2, words[i]);
     }
 
     [Fact]
@@ -297,7 +283,7 @@ public class DisplayTests
     {
         const uint sprite = 0x3_0000;
         Words(sprite, 0x3040, 0x3100, 0x8000, 0x0000, 0x0000, 0x0000);
-        _memory.Write8(Plane + (0x2E - 0x2C) * 40, 0x80);
+        Memory.Write8(Plane + (0x2E - 0x2C) * 40, 0x80);
         SetUpLowResolution(Move(0x120, sprite >> 16), Move(0x122, sprite & 0xFFFF), Move(0x1A2, 0x0F0));
         Write(0xDFF096, 0x8020);
 
@@ -313,7 +299,7 @@ public class DisplayTests
     [Fact]
     public void GenlockKey_CanBeABitplane_OrBit15OfTheColor()
     {
-        _memory.Write8(Plane, 0x80);
+        Memory.Write8(Plane, 0x80);
         // ZDBPEN with ZDBPSEL 0: the pixels of plane 1 are the key, and color 0 is not.
         SetUpLowResolution(Move(0x104, 0x0800));
         NextFrame();
@@ -364,43 +350,4 @@ public class DisplayTests
         Write32(0xDFF080, CopperList);
         Write(0xDFF096, 0x8380); // DMACON: DMA, bitplanes, copper
     }
-
-    private uint[] NextFrame()
-    {
-        _clock.Advance(TimeSpan.FromSeconds(1.0 / 59));
-        _chipset.Custom.Update();
-        var frame = new uint[Display.Width * Display.HeightOf(VideoStandard.Ntsc)];
-        _chipset.Display.CopyFrame(frame);
-        return frame;
-    }
-
-    /// <summary>The color of a pixel, without its genlock key.</summary>
-    private static uint Pixel(uint[] frame, int x, int line) =>
-        frame[(line - VideoStandard.Ntsc.FirstLine) * 2 * Display.Width + x] | 0xFF00_0000;
-
-    /// <summary>True if the pixel is the genlock key: its alpha is 0.</summary>
-    private static bool IsKey(uint[] frame, int x, int line) =>
-        frame[(line - VideoStandard.Ntsc.FirstLine) * 2 * Display.Width + x] >> 24 == 0;
-
-    private void WriteCopperList(uint address, params uint[][] instructions)
-    {
-        foreach (var instruction in instructions)
-        {
-            _memory.Write16(address, (ushort)instruction[0]);
-            _memory.Write16(address + 2, (ushort)instruction[1]);
-            address += 4;
-        }
-    }
-
-    private static uint[] Move(int register, uint value) => [(uint)register, value];
-
-    private static uint[] Wait(int line, int horizontal) => [(uint)(line << 8 | horizontal | 1), 0xFFFE];
-
-    private static uint[] Skip(int line, int horizontal) => [(uint)(line << 8 | horizontal | 1), 0xFFFF];
-
-    private static uint[] End() => [0xFFFF, 0xFFFE];
-
-    private void Write(uint address, ushort value) => _memory.Write16(address, value);
-
-    private void Write32(uint address, uint value) => _memory.Write32(address, value);
 }

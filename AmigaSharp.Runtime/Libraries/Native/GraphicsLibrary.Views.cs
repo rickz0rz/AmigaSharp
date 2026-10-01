@@ -15,41 +15,6 @@ namespace AmigaSharp.Runtime.Libraries.Native;
 /// </remarks>
 public partial class GraphicsLibrary
 {
-    // struct View
-    private const uint ViewDyOffset = 12;
-    private const uint ViewDxOffset = 14;
-    private const uint ViewModes = 16;
-    private const uint ViewSize = 18;
-
-    // struct ViewPort
-    private const uint VpNext = 0;
-    private const uint VpColorMap = 4;
-    private const uint VpDWidth = 24;
-    private const uint VpDHeight = 26;
-    private const uint VpDxOffset = 28;
-    private const uint VpDyOffset = 30;
-    private const uint VpModes = 32;
-    private const uint VpRasInfo = 36;
-    private const uint ViewPortSize = 40;
-
-    // struct RasInfo
-    private const uint RasInfoBitMap = 4;
-    private const uint RasInfoRxOffset = 8;
-    private const uint RasInfoRyOffset = 10;
-
-    // struct ColorMap (V36): Flags, Type, Count, ColorTable, and more fields that the runtime does not use.
-    private const uint ColorMapCount = 2;
-    private const uint ColorMapTable = 4;
-    private const uint ColorMapSize = 52;
-
-    // The Modes of a View and a ViewPort.
-    private const ushort ModeHires = 0x8000;
-    private const ushort ModeHide = 0x2000;
-    private const ushort ModeHam = 0x0800;
-    private const ushort ModeDualPlayfield = 0x0400;
-    private const ushort ModeLace = 0x0004;
-    private const ushort ModeGenlockVideo = 0x0002;
-
     // The copper lists that MrgCop made, by their cprlist, with their size. FreeCprList and the next MrgCop free them.
     private readonly Dictionary<uint, uint> _copperLists = [];
 
@@ -61,16 +26,16 @@ public partial class GraphicsLibrary
     [LibraryFunctionOffset(-360)]
     public void InitView([A1] uint view)
     {
-        _memory.WriteBytes(view, new byte[ViewSize]);
+        _memory.WriteBytes(view, new byte[ViewOffsets.Size]);
         // The standard position of the display: line $2C, low-resolution pixel $81.
-        _memory.Write16(view + ViewDxOffset, 0x81);
-        _memory.Write16(view + ViewDyOffset, 0x2C);
+        _memory.Write16(view + ViewOffsets.DxOffset, 0x81);
+        _memory.Write16(view + ViewOffsets.DyOffset, 0x2C);
     }
 
     // InitVPort(vp)
     //           A0
     [LibraryFunctionOffset(-204)]
-    public void InitVPort([A0] uint viewPort) => _memory.WriteBytes(viewPort, new byte[ViewPortSize]);
+    public void InitVPort([A0] uint viewPort) => _memory.WriteBytes(viewPort, new byte[ViewPortOffsets.Size]);
 
     // MakeVPort(view, vp)
     //           A0    A1
@@ -91,9 +56,9 @@ public partial class GraphicsLibrary
 
         var instructions = new List<(ushort Register, ushort Value, uint ViewPort, int Color)>();
         for (var viewPort = _memory.Read32(view + ViewOffsets.ViewPort); viewPort != 0;
-             viewPort = _memory.Read32(viewPort + VpNext))
+             viewPort = _memory.Read32(viewPort + ViewPortOffsets.Next))
         {
-            if ((_memory.Read16(viewPort + VpModes) & ModeHide) == 0)
+            if ((_memory.Read16(viewPort + ViewPortOffsets.Modes) & ViewModes.Hide) == 0)
                 AddViewPort(view, viewPort, instructions);
         }
 
@@ -128,22 +93,22 @@ public partial class GraphicsLibrary
         void Move(int register, int value, int color = -1) =>
             instructions.Add(((ushort)register, (ushort)value, viewPort, color));
 
-        var viewModes = _memory.Read16(view + ViewModes);
-        var modes = _memory.Read16(viewPort + VpModes);
-        var hires = (modes & ModeHires) != 0;
-        var lace = ((modes | viewModes) & ModeLace) != 0;
-        var rasInfo = _memory.Read32(viewPort + VpRasInfo);
-        var bitMap = rasInfo == 0 ? 0 : _memory.Read32(rasInfo + RasInfoBitMap);
+        var viewModes = _memory.Read16(view + ViewOffsets.Modes);
+        var modes = _memory.Read16(viewPort + ViewPortOffsets.Modes);
+        var hires = (modes & ViewModes.Hires) != 0;
+        var lace = ((modes | viewModes) & ViewModes.Lace) != 0;
+        var rasInfo = _memory.Read32(viewPort + ViewPortOffsets.RasInfo);
+        var bitMap = rasInfo == 0 ? 0 : _memory.Read32(rasInfo + RasInfoOffsets.BitMap);
         var depth = bitMap == 0 ? 0 : Math.Min((int)_memory.Read8(bitMap + BitMapOffsets.Depth), 6);
         var bytesPerRow = bitMap == 0 ? 0 : _memory.Read16(bitMap + BitMapOffsets.BytesPerRow);
 
         // The position and the size in low-resolution pixels and in lines.
-        var width = (short)_memory.Read16(viewPort + VpDWidth);
-        var height = (short)_memory.Read16(viewPort + VpDHeight);
-        var dx = (short)_memory.Read16(viewPort + VpDxOffset);
-        var dy = (short)_memory.Read16(viewPort + VpDyOffset);
-        var left = (short)_memory.Read16(view + ViewDxOffset) + (hires ? dx / 2 : dx);
-        var top = (short)_memory.Read16(view + ViewDyOffset) + (lace ? dy / 2 : dy);
+        var width = (short)_memory.Read16(viewPort + ViewPortOffsets.DWidth);
+        var height = (short)_memory.Read16(viewPort + ViewPortOffsets.DHeight);
+        var dx = (short)_memory.Read16(viewPort + ViewPortOffsets.DxOffset);
+        var dy = (short)_memory.Read16(viewPort + ViewPortOffsets.DyOffset);
+        var left = (short)_memory.Read16(view + ViewOffsets.DxOffset) + (hires ? dx / 2 : dx);
+        var top = (short)_memory.Read16(view + ViewOffsets.DyOffset) + (lace ? dy / 2 : dy);
         var lowResWidth = hires ? width / 2 : width;
         var lines = lace ? (height + 1) / 2 : height;
 
@@ -156,11 +121,11 @@ public partial class GraphicsLibrary
             bplcon0 |= 0x8000;
         if (lace)
             bplcon0 |= 0x0004;
-        if ((modes & ModeHam) != 0)
+        if ((modes & ViewModes.Ham) != 0)
             bplcon0 |= 0x0800;
-        if ((modes & ModeDualPlayfield) != 0)
+        if ((modes & ViewModes.DualPlayfield) != 0)
             bplcon0 |= 0x0400;
-        if ((modes & ModeGenlockVideo) != 0)
+        if ((modes & ViewModes.GenlockVideo) != 0)
             bplcon0 |= 0x0002;
 
         // The data fetch: 16 pixels for each word, from the window start.
@@ -180,8 +145,8 @@ public partial class GraphicsLibrary
         Move(CustomRegister.Bpl1mod, modulo);
         Move(CustomRegister.Bpl2mod, modulo);
 
-        var rx = rasInfo == 0 ? 0 : (short)_memory.Read16(rasInfo + RasInfoRxOffset);
-        var ry = rasInfo == 0 ? 0 : (short)_memory.Read16(rasInfo + RasInfoRyOffset);
+        var rx = rasInfo == 0 ? 0 : (short)_memory.Read16(rasInfo + RasInfoOffsets.RxOffset);
+        var ry = rasInfo == 0 ? 0 : (short)_memory.Read16(rasInfo + RasInfoOffsets.RyOffset);
         var offset = ry * bytesPerRow + rx / 16 * 2;
         for (var plane = 0; plane < depth; plane++)
         {
@@ -190,11 +155,11 @@ public partial class GraphicsLibrary
             Move(CustomRegister.Bpl1pt + plane * 4 + 2, (int)(pointer & 0xFFFF));
         }
 
-        var colorMap = _memory.Read32(viewPort + VpColorMap);
+        var colorMap = _memory.Read32(viewPort + ViewPortOffsets.ColorMap);
         if (colorMap == 0)
             return;
-        var table = _memory.Read32(colorMap + ColorMapTable);
-        var count = Math.Min((int)_memory.Read16(colorMap + ColorMapCount), 32);
+        var table = _memory.Read32(colorMap + ColorMapOffsets.ColorTable);
+        var count = Math.Min((int)_memory.Read16(colorMap + ColorMapOffsets.Count), 32);
         for (var color = 0; color < count; color++)
             Move(CustomRegister.Color00 + color * 2, _memory.Read16(table + (uint)color * 2), color);
     }
@@ -220,12 +185,12 @@ public partial class GraphicsLibrary
     public uint GetColorMap([D0] uint entries)
     {
         var count = (ushort)Math.Max(entries, 1);
-        var colorMap = core.Allocator.Allocate(ColorMapSize, MemoryFlags.Public | MemoryFlags.Clear);
+        var colorMap = core.Allocator.Allocate(ColorMapOffsets.Size, MemoryFlags.Public | MemoryFlags.Clear);
         var table = core.Allocator.Allocate((uint)count * 2, MemoryFlags.Public | MemoryFlags.Clear);
         if (colorMap == 0 || table == 0)
             return 0;
-        _memory.Write16(colorMap + ColorMapCount, count);
-        _memory.Write32(colorMap + ColorMapTable, table);
+        _memory.Write16(colorMap + ColorMapOffsets.Count, count);
+        _memory.Write32(colorMap + ColorMapOffsets.ColorTable, table);
         return colorMap;
     }
 
@@ -236,9 +201,9 @@ public partial class GraphicsLibrary
     {
         if (colorMap == 0)
             return;
-        var count = _memory.Read16(colorMap + ColorMapCount);
-        core.Allocator.Free(_memory.Read32(colorMap + ColorMapTable), (uint)count * 2);
-        core.Allocator.Free(colorMap, ColorMapSize);
+        var count = _memory.Read16(colorMap + ColorMapOffsets.Count);
+        core.Allocator.Free(_memory.Read32(colorMap + ColorMapOffsets.ColorTable), (uint)count * 2);
+        core.Allocator.Free(colorMap, ColorMapOffsets.Size);
     }
 
     // SetRGB4(vp, n, r, g, b)
@@ -270,15 +235,15 @@ public partial class GraphicsLibrary
     {
         if (viewPort == 0 || color < 0)
             return;
-        SetColorMapEntry(_memory.Read32(viewPort + VpColorMap), color, value);
+        SetColorMapEntry(_memory.Read32(viewPort + ViewPortOffsets.ColorMap), color, value);
         if (_colorMoves.TryGetValue(viewPort, out var moves) && moves.TryGetValue(color, out var address))
             _memory.Write16(address, value);
     }
 
     private void SetColorMapEntry(uint colorMap, int color, ushort value)
     {
-        if (colorMap == 0 || color < 0 || color >= _memory.Read16(colorMap + ColorMapCount))
+        if (colorMap == 0 || color < 0 || color >= _memory.Read16(colorMap + ColorMapOffsets.Count))
             return;
-        _memory.Write16(_memory.Read32(colorMap + ColorMapTable) + (uint)color * 2, (ushort)(value & 0x0FFF));
+        _memory.Write16(_memory.Read32(colorMap + ColorMapOffsets.ColorTable) + (uint)color * 2, (ushort)(value & 0x0FFF));
     }
 }

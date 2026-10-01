@@ -59,7 +59,7 @@ public class IntuitionLibrary(Core core) : AbstractLibrary
         _memory.Write8(screen + ScreenOffsets.BarHeight, 10);
         _memory.Write16(screen + ScreenOffsets.ViewPort + ViewPortOffsets.DWidth, ScreenWidth);
         _memory.Write16(screen + ScreenOffsets.ViewPort + ViewPortOffsets.DHeight, ScreenHeight);
-        _memory.Write16(screen + ScreenOffsets.ViewPort + ViewPortOffsets.Modes, ViewPortOffsets.HighResolution);
+        _memory.Write16(screen + ScreenOffsets.ViewPort + ViewPortOffsets.Modes, ViewModes.Hires);
 
         var rastPort = screen + ScreenOffsets.RastPort;
         graphics.InitRastPort(rastPort);
@@ -178,18 +178,6 @@ public static class ScreenOffsets
 
     /// <summary>Flags: the screen is the Workbench screen (WBENCHSCREEN).</summary>
     public const ushort WorkbenchScreen = 1;
-}
-
-/// <summary><c>struct ViewPort</c> (graphics/view.h).</summary>
-public static class ViewPortOffsets
-{
-    public const uint ColorMap = 4;
-    public const uint DWidth = 24;
-    public const uint DHeight = 26;
-    public const uint Modes = 32;
-    public const uint RasInfo = 36;
-
-    public const ushort HighResolution = 0x8000;
 }
 
 /// <summary><c>struct Window</c> (intuition/intuition.h).</summary>

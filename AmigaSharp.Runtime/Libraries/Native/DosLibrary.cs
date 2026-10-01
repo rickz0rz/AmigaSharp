@@ -208,17 +208,42 @@ public class DosLibrary(Core core) : AbstractLibrary
     [LibraryFunctionOffset(-138)]
     // The process runs the code of the first segment of the segment list: 4 bytes after the start, because the first
     // long of a segment is the BPTR to the next segment. Returns the message port of the process.
-    public uint CreateProc([D1] uint name, [D2] int priority, [D3] uint segList, [D4] uint stackSize)
+    public uint CreateProc([D1] uint name, [D2] int priority, [D3] uint segList, [D4] uint stackSize) =>
+        StartProcess(_memory.ReadCString(name), (sbyte)priority, stackSize, segList, cliArguments: null) +
+        ProcessOffsets.MsgPort;
+
+    /// <summary>
+    /// Starts a process that runs the first segment of the segment list, with the current directory, the input, the
+    /// output and the window of this process. With CLI arguments, the process is a CLI command: it gets a CLI
+    /// structure, its arguments in A0 and their length in D0, and the stack size at 4(SP). Returns the process.
+    /// </summary>
+    private uint StartProcess(string name, sbyte priority, uint stackSize, uint segmentList, string? cliArguments)
     {
         var parent = Process;
-        var process = core.CreateProcess(_memory.ReadCString(name), (sbyte)priority, stackSize);
-        _memory.Write32(process + ProcessOffsets.SegList, segList);
+        var process = core.CreateProcess(name, priority, stackSize);
+        _memory.Write32(process + ProcessOffsets.SegList, segmentList);
         foreach (var field in new[] { ProcessOffsets.CurrentDir, ProcessOffsets.InputStream, ProcessOffsets.OutputStream, ProcessOffsets.WindowPtr })
             _memory.Write32(process + field, _memory.Read32(parent + field));
 
-        var entry = (segList << 2) + 4;
-        core.Scheduler.Start(process, entry, _memory.Read32(process + TaskOffsets.StackUpper));
-        return process + ProcessOffsets.MsgPort;
+        // The code of a segment starts 4 bytes after its BPTR: the first long is the BPTR to the next segment.
+        var entry = (segmentList << 2) + 4;
+        var stackTop = _memory.Read32(process + TaskOffsets.StackUpper);
+        if (cliArguments == null)
+        {
+            core.Scheduler.Start(process, entry, stackTop);
+            return process;
+        }
+
+        core.SetUpCli(process, name, segmentList);
+        var argumentBytes = System.Text.Encoding.Latin1.GetBytes(cliArguments + "\0");
+        var argumentText = core.AllocateSystem(argumentBytes);
+        _memory.Write32(stackTop - 4, stackSize);
+        core.Scheduler.Start(process, entry, stackTop - 4, (d, a) =>
+        {
+            d[0] = (uint)argumentBytes.Length - 1;
+            a[0] = argumentText;
+        });
+        return process;
     }
 
     // ds = DateStamp(ds)
@@ -369,24 +394,8 @@ public class DosLibrary(Core core) : AbstractLibrary
             return Shell.Error;
         }
 
-        var parent = Process;
         var commandName = name[(name.LastIndexOfAny([':', '/']) + 1)..];
-        var process = core.CreateProcess(commandName, 0, Core.StackSize);
-        _memory.Write32(process + ProcessOffsets.SegList, segmentList);
-        foreach (var field in new[] { ProcessOffsets.CurrentDir, ProcessOffsets.InputStream, ProcessOffsets.OutputStream, ProcessOffsets.WindowPtr })
-            _memory.Write32(process + field, _memory.Read32(parent + field));
-        core.SetUpCli(process, commandName, segmentList);
-
-        // A CLI command starts with its arguments in A0, their length in D0, and the stack size at 4(SP).
-        var argumentBytes = System.Text.Encoding.Latin1.GetBytes(arguments + "\0");
-        var argumentText = core.AllocateSystem(argumentBytes);
-        var stackTop = _memory.Read32(process + TaskOffsets.StackUpper) - 4;
-        _memory.Write32(stackTop, Core.StackSize);
-        core.Scheduler.Start(process, (segmentList << 2) + 4, stackTop, (d, a) =>
-        {
-            d[0] = (uint)argumentBytes.Length - 1;
-            a[0] = argumentText;
-        });
+        StartProcess(commandName, 0, Core.StackSize, segmentList, arguments);
         core.Log.WriteLine($"Run {commandName}: the program runs in a new process.");
         return Shell.Ok;
     }

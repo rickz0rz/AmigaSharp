@@ -135,6 +135,54 @@ public static class ViewOffsets
     public const uint ViewPort = 0;
     public const uint LofCprList = 4;
     public const uint ShfCprList = 8;
+    public const uint DyOffset = 12;
+    public const uint DxOffset = 14;
+    public const uint Modes = 16;
+    public const uint Size = 18;
+}
+
+/// <summary><c>struct ViewPort</c> (graphics/view.h).</summary>
+public static class ViewPortOffsets
+{
+    public const uint Next = 0;
+    public const uint ColorMap = 4;
+    public const uint DWidth = 24;
+    public const uint DHeight = 26;
+    public const uint DxOffset = 28;
+    public const uint DyOffset = 30;
+    public const uint Modes = 32;
+    public const uint RasInfo = 36;
+    public const uint Size = 40;
+}
+
+/// <summary><c>struct RasInfo</c> (graphics/view.h).</summary>
+public static class RasInfoOffsets
+{
+    public const uint BitMap = 4;
+    public const uint RxOffset = 8;
+    public const uint RyOffset = 10;
+}
+
+/// <summary>
+/// <c>struct ColorMap</c> (graphics/view.h) of V36: Flags, Type, Count, ColorTable, and more fields that the runtime does
+/// not use.
+/// </summary>
+public static class ColorMapOffsets
+{
+    public const uint Count = 2;
+    public const uint ColorTable = 4;
+    public const uint Size = 52;
+}
+
+/// <summary>The Modes of a View and a ViewPort (graphics/view.h).</summary>
+public static class ViewModes
+{
+    public const ushort Hires = 0x8000;
+    public const ushort Hide = 0x2000;
+    public const ushort Ham = 0x0800;
+    public const ushort DualPlayfield = 0x0400;
+    public const ushort Lace = 0x0004;
+    public const ushort GenlockVideo = 0x0002;
 }
 
 /// <summary><c>struct cprlist</c> (graphics/copper.h).</summary>
