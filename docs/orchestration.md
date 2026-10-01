@@ -146,11 +146,14 @@ is optional:
 | `within` | The hours from now for the start of the program. The default is 3. |
 | `now` | `true` to also choose a program that plays now. |
 | `order` | `soonest` (the default) chooses the next program. `random` chooses by chance. |
-| `repeat` | The number of the last automatic promos whose titles do not show again. The default is 10. |
+| `repeat` | The number of the last automatic promos whose titles do not show again. The default is 10. If all the programs that fit were in these promos, the title of the oldest promo shows again. |
 
 - `brush` sets the background, as for a promo with a title. `side` is `right` (the default) or `left`.
 - The launcher reads the listings from the memory of Prevue. Thus Prevue always finds the program that it chooses.
 - A movie is a movie in the listings of Channels DVR. The saved listings of the drive have no movies.
+- A premium channel is a channel of the `--premium` list of `run-prevue` and of the listings tool
+  (`CHANNELS_DVR_PREMIUM` for `run-esq.sh`). A call sign in the list makes all the channel numbers of that call sign
+  premium. Without the list, no channel is premium, and `"premium": true` finds no program.
 - If no program fits, the answer is an error, and nothing shows.
 
 `GET /prevue/guide` gives the programs that an automatic promo can choose from: the channel, the call letters, the
