@@ -180,31 +180,164 @@ public static class Launcher
             return 2;
         }
 
-        var executablePath = options.ExecutablePath!;
-        var (listing, drive, arguments, commandName) =
-            (options.Listing, options.Drive, options.Arguments ?? "", options.CommandName);
-        var (screenshot, screenshotEvery, seconds) = (options.Screenshot, options.ScreenshotEvery, options.Seconds);
-        var (serialPort, serialFile, serialStart, serialSpeed, serialLog) =
-            (options.SerialPort, options.SerialFile, options.SerialStart, options.SerialSpeed, options.SerialLog);
-        var (volumes, assigns) = (options.Volumes, options.Assigns);
-        var (interpret, trace, stats, fastCpu) = (options.Interpret, options.Trace, options.Stats, options.FastCpu);
-        var (scale, deinterlace, headless, audioFile) = (options.Scale, options.Deinterlace, options.Headless, options.AudioFile);
-        var (streamPort, streamWide, streamName, streamAudio) =
-            (options.StreamPort, options.StreamWide, options.StreamName, options.StreamAudio);
-        var (genlock, genlockControl, genlockQueue) = (options.Genlock, options.GenlockControl, options.GenlockQueue);
-        var (turboSeconds, turboLabel, watches, virtualTime) =
-            (options.TurboSeconds, options.TurboLabel, options.Watches, options.VirtualTime);
-        var (date, presses, copperDump) = (options.Date, options.Presses, options.CopperDump);
-
         var log = Console.Error;
 
         // A launcher that crashed or was killed could not remove its temporary folders.
         TempFolders.RemoveOld(log);
 
-        // The disks: a program on a disk image is in DF0, and --disk puts other images in the drives. Each disk is a
-        // copy of its files in a new temporary directory: the volume DFn and the volume with the name of the disk.
-        var diskCopies = new List<string>();
-        var diskImages = new List<(int Drive, byte[] Image)>();
+        // The temporary folders of this run: RAM: and the copies of the disks. They go when the run ends, also after an
+        // error.
+        var temporary = new List<string>();
+        try
+        {
+            return RunProgram(options, app, log, temporary);
+        }
+        finally
+        {
+            foreach (var folder in temporary)
+                TempFolders.Delete(folder);
+        }
+    }
+
+    /// <summary>The state that the threads of a run share.</summary>
+    private sealed class RunState
+    {
+        /// <summary>True when the program ended.</summary>
+        public volatile bool Finished;
+
+        /// <summary>True when a signal or the watchdog stops the launcher.</summary>
+        public volatile bool Terminated;
+
+        public int ExitCode;
+    }
+
+    /// <summary>The disks of a run, and the path of the program on them.</summary>
+    private sealed record Disks(
+        string ExecutablePath,
+        string? Drive,
+        List<(string Name, string Path)> Volumes,
+        List<(int Drive, byte[] Image)> Images);
+
+    /// <summary>The screenshots of a run: their times and files, and the pictures that the 68000 thread copied.</summary>
+    private sealed record Screenshots(
+        List<(double Seconds, string Path)> Paths,
+        System.Collections.Concurrent.BlockingCollection<(string Path, uint[] Pixels, long Frame)> Pictures);
+
+    private static int RunProgram(LauncherOptions options, LauncherApp app, TextWriter log, List<string> temporary)
+    {
+        if (MountDisks(options, log, temporary) is not { } disks)
+            return 1;
+        var executable = File.ReadAllBytes(disks.ExecutablePath);
+        var drive = disks.Drive ?? Path.GetDirectoryName(Path.GetFullPath(disks.ExecutablePath))!;
+        var commandName = options.CommandName ?? Path.GetFileName(disks.ExecutablePath);
+
+        var realTimeClock = options.VirtualTime ? null : new RealTimeClock(start: false);
+        IClock clock = realTimeClock ?? (IClock)new VirtualClock();
+        var measuringClock = options.Stats ? new MeasuringClock(clock) : null;
+        clock = measuringClock ?? clock;
+
+        var core = CreateCore(options, drive, clock, disks);
+        SetUpFileSystem(core, options, disks, temporary);
+        using var bridge = SetUpSerialInput(core, options, clock, log);
+
+        // The extensions set up their parts, for example a line of the chipset, or requests for the port of the stream.
+        using var context = new LauncherContext(core, clock, log, options, executable);
+        foreach (var extension in app.Extensions)
+            extension.Start(context);
+
+        // The schedule needs the keys of the extensions, so the launcher reads it after they start.
+        var scheduleRequests = new ScheduleRequests();
+        Schedule? schedule = null;
+        if (options.Schedule != null)
+        {
+            try
+            {
+                schedule = Schedule.Read(options.Schedule, context.ScheduleExtensions);
+            }
+            catch (FormatException e)
+            {
+                Console.Error.WriteLine($"error: {e.Message}");
+                return 2;
+            }
+
+            context.StreamRequests.Add(scheduleRequests);
+        }
+
+        using var serialLogWriter = options.SerialLog == null ? null : new StreamWriter(options.SerialLog);
+        using var loggingConnection = serialLogWriter == null
+            ? null
+            : new LoggingSerialConnection(core.Chipset.Custom.Serial.Connection, serialLogWriter, () => clock.Elapsed);
+        if (loggingConnection != null)
+            core.Chipset.Custom.Serial.Connection = loggingConnection;
+
+        using var wavWriter = options.AudioFile == null ? null : new WavWriter(options.AudioFile, core.Chipset.Audio);
+
+        core.Chipset.Display.Deinterlace = options.Deinterlace;
+        using var videoStream = options.StreamPort is { } port
+            ? new VideoStream(core.Chipset.Display, port, options.StreamWide, options.StreamName ?? commandName, log,
+                options.StreamAudio, options.Genlock, options.GenlockControl || schedule != null,
+                core.Chipset.Audio.OpenTap(), context.StreamRequests, options.GenlockQueue)
+            : null;
+        using var scheduleRunner = schedule != null && videoStream != null
+            ? new ScheduleRunner(schedule, videoStream.Genlock!, videoStream.Mixer, context.ScheduleExtensions, log)
+            : null;
+        scheduleRequests.Runner = scheduleRunner;
+
+        // Without a listing, the map of the code that ran in earlier runs tells the translator where more code is.
+        var codeMap = options.Listing == null && options.CodeMap
+            ? options.CodeMapFile != null ? CodeMap.Open(options.CodeMapFile) : CodeMap.Load(executable)
+            : null;
+        core.RecordJumpTargets = codeMap != null;
+
+        var program = ChooseProgram(options, executable, core, log, codeMap);
+        if (!AddWatches(options, executable, core, clock, log) || !AddTurbo(options, executable, core, clock, log))
+            return 2;
+
+        var state = new RunState();
+        // SIGTERM and SIGHUP stop the launcher as Ctrl-C does, so that it closes the stream and ffmpeg.
+        using var terminate = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGTERM, signal =>
+            {
+                signal.Cancel = true;
+                state.Terminated = true;
+            });
+        using var hangUp = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+            System.Runtime.InteropServices.PosixSignal.SIGHUP, signal =>
+            {
+                signal.Cancel = true;
+                state.Terminated = true;
+            });
+
+        StartProgram(program, executable, options.Arguments ?? "", commandName, core, realTimeClock, state, log);
+
+        // The watchdog stops the program when its picture does not change, with the exit code 3.
+        using var watchdog = options.Watchdog is { } watchdogSeconds
+            ? new Watchdog(core.Chipset.Display.CopyFrame, TimeSpan.FromSeconds(watchdogSeconds), log, () =>
+            {
+                state.ExitCode = WatchdogExitCode;
+                state.Terminated = true;
+            }, height: core.Chipset.Display.Height)
+            : null;
+
+        var screenshots = ScheduleTimedActions(options, core);
+        if (measuringClock != null)
+            StartStats(core, clock, measuringClock, state, log);
+
+        WaitForEnd(options, core, state, screenshots, commandName, wavWriter != null, log);
+        Finish(core, codeMap, executable, options.Stats, log);
+        return state.ExitCode;
+    }
+
+    /// <summary>
+    /// Copies the files of the disks to temporary folders: the disk of the program in DF0, and the disks of --disk. Each
+    /// disk is the volume DFn and the volume with the name of the disk. Returns null after an error.
+    /// </summary>
+    private static Disks? MountDisks(LauncherOptions options, TextWriter log, List<string> temporary)
+    {
+        var executablePath = options.ExecutablePath!;
+        var drive = options.Drive;
+        var volumes = new List<(string Name, string Path)>();
+        var images = new List<(int Drive, byte[] Image)>();
         var disks = new List<(int Drive, string Path)>(options.Disks);
         var adfSeparator = executablePath.IndexOf(".adf:", StringComparison.OrdinalIgnoreCase);
         if (adfSeparator > 0)
@@ -212,7 +345,7 @@ public static class Launcher
             if (disks.Any(disk => disk.Drive == 0))
             {
                 Console.Error.WriteLine("error: the program is on a disk image in DF0, so --disk cannot use DF0.");
-                return 1;
+                return null;
             }
 
             disks.Insert(0, (0, executablePath[..(adfSeparator + 4)]));
@@ -230,18 +363,16 @@ public static class Launcher
             catch (Exception e) when (e is IOException or InvalidDataException)
             {
                 Console.Error.WriteLine($"error: {imagePath}: {e.Message}");
-                foreach (var copy in diskCopies)
-                    TempFolders.Delete(copy);
-                return 1;
+                return null;
             }
 
             var diskCopy = TempFolders.Create("AmigaSharp-Disk-");
-            diskCopies.Add(diskCopy);
+            temporary.Add(diskCopy);
             disk.ExtractTo(diskCopy);
             log.WriteLine($"The disk {disk.VolumeName} is in DF{number}, and its files are in {diskCopy}.");
             foreach (var (path, reason) in disk.DamagedFiles)
                 log.WriteLine($"warning: the disk {disk.VolumeName} cannot give the file {path}. {reason}");
-            diskImages.Add((number, image));
+            images.Add((number, image));
             volumes.Insert(0, ($"DF{number}", diskCopy));
             if (disk.VolumeName.IndexOfAny([':', '/']) < 0)
                 volumes.Insert(0, (disk.VolumeName, diskCopy));
@@ -252,247 +383,209 @@ public static class Launcher
             }
         }
 
-        var executable = File.ReadAllBytes(executablePath);
-        drive ??= Path.GetDirectoryName(Path.GetFullPath(executablePath))!;
-        commandName ??= Path.GetFileName(executablePath);
+        // The volumes of the options come after the volumes of the disks, so they can replace them.
+        volumes.AddRange(options.Volumes);
+        return new Disks(executablePath, drive, volumes, images);
+    }
 
-        var realTimeClock = virtualTime ? null : new RealTimeClock(start: false);
-        IClock clock = realTimeClock ?? (IClock)new VirtualClock();
-        var measuringClock = stats ? new MeasuringClock(clock) : null;
-        clock = measuringClock ?? clock;
-        var turbo = turboSeconds != null || turboLabel != null;
+    /// <summary>Makes the Amiga of the options, with the disks in its drives.</summary>
+    private static Core CreateCore(LauncherOptions options, string drive, IClock clock, Disks disks)
+    {
+        var turbo = options.TurboSeconds != null || options.TurboLabel != null;
         var core = new Core(rootDirectory: drive, clock: clock, video: options.Pal ? VideoStandard.Pal : null,
-            aga: options.Aga) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
+            aga: options.Aga) { TraceLibraryCalls = options.Trace, PaceCpu = !options.FastCpu && !turbo };
         core.Memory.AllowUnaligned = options.UnalignedAccess;
         if (options.CpuMhz is { } cpuMhz)
             core.CpuClockHz = cpuMhz * 1_000_000;
         // The drives also have the disks, for a program that reads a disk with the hardware. DF1 to DF3 are not connected
         // without a disk.
-        foreach (var (number, image) in diskImages)
+        foreach (var (number, image) in disks.Images)
         {
             if (!core.Chipset.Disks.Drives[number].Present)
                 core.Chipset.Disks.Drives[number] = new FloppyDrive(present: true);
             core.Chipset.Disks.Drives[number].Insert(image);
         }
-        if (date != null)
-            core.SetDate(date.Value);
+
+        if (options.Date != null)
+            core.SetDate(options.Date.Value);
+        return core;
+    }
+
+    /// <summary>Makes PROGDIR:, the volumes, the assigns, RAM: and T:.</summary>
+    private static void SetUpFileSystem(Core core, LauncherOptions options, Disks disks, List<string> temporary)
+    {
         // PROGDIR: is the directory of the program, as in AmigaDOS 2.0 and later. An option can replace it.
-        core.FileSystem.AddVolume("PROGDIR", Path.GetDirectoryName(Path.GetFullPath(executablePath))!);
-        foreach (var (name, path) in volumes)
+        core.FileSystem.AddVolume("PROGDIR", Path.GetDirectoryName(Path.GetFullPath(disks.ExecutablePath))!);
+        foreach (var (name, path) in disks.Volumes)
             core.FileSystem.AddVolume(name, path);
-        foreach (var (name, path) in assigns)
+        foreach (var (name, path) in options.Assigns)
             core.FileSystem.AddAssign(name, path);
 
         // RAM: is a new directory for each run. T: is RAM:T, as in the Startup-Sequence of Workbench.
         var ram = TempFolders.Create("AmigaSharp-RAM-");
+        temporary.Add(ram);
         Directory.CreateDirectory(Path.Combine(ram, "T"));
         core.FileSystem.AddVolume("RAM", ram);
-        if (assigns.All(assign => !assign.Name.Equals("T", StringComparison.OrdinalIgnoreCase)))
+        if (options.Assigns.All(assign => !assign.Name.Equals("T", StringComparison.OrdinalIgnoreCase)))
             core.FileSystem.AddAssign("T", "RAM:T");
+    }
 
-        using var bridge = serialPort > 0 && serialFile == null ? new TcpSerialBridge(serialPort, log: log) : null;
+    /// <summary>
+    /// Connects the serial port: the TCP bridge, or the replay of a file. Sets the speed factor. Returns the bridge.
+    /// </summary>
+    private static TcpSerialBridge? SetUpSerialInput(Core core, LauncherOptions options, IClock clock, TextWriter log)
+    {
+        var serial = core.Chipset.Custom.Serial;
+        var bridge = options.SerialPort > 0 && options.SerialFile == null
+            ? new TcpSerialBridge(options.SerialPort, log: log)
+            : null;
         if (bridge != null)
         {
-            core.Chipset.Custom.Serial.Connection = bridge;
+            serial.Connection = bridge;
             log.WriteLine($"Serial bridge on localhost:{bridge.Port}. For example: nc localhost {bridge.Port}");
         }
 
-        if (serialFile != null)
+        if (options.SerialFile is { } serialFile)
         {
             var feed = File.ReadAllBytes(serialFile);
             var custom = core.Chipset.Custom;
-            core.Chipset.Custom.Serial.Connection = new ReplaySerialConnection(feed,
-                () => clock.Elapsed.TotalSeconds >= serialStart && (custom.Intena & (1 << InterruptBit.Rbf)) != 0);
+            var start = options.SerialStart;
+            serial.Connection = new ReplaySerialConnection(feed,
+                () => clock.Elapsed.TotalSeconds >= start && (custom.Intena & (1 << InterruptBit.Rbf)) != 0);
             log.WriteLine($"Replaying {feed.Length} bytes from {serialFile} on the serial port.");
         }
 
-        core.Chipset.Custom.Serial.SpeedFactor = serialSpeed;
+        serial.SpeedFactor = options.SerialSpeed;
+        return bridge;
+    }
 
-        // The extensions set up their parts, for example a line of the chipset, or requests for the port of the stream.
-        using var context = new LauncherContext(core, clock, log, options, executable);
-        foreach (var extension in app.Extensions)
-            extension.Start(context);
-
-        // The schedule needs the keys of the extensions, so the launcher reads it after they start.
-        Schedule? schedule = null;
-        var scheduleRequests = new ScheduleRequests();
-        if (options.Schedule != null)
-        {
-            try
-            {
-                schedule = Schedule.Read(options.Schedule, context.ScheduleExtensions);
-            }
-            catch (FormatException e)
-            {
-                Console.Error.WriteLine($"error: {e.Message}");
-                return 2;
-            }
-
-            context.StreamRequests.Add(scheduleRequests);
-        }
-
-        using var serialLogWriter = serialLog == null ? null : new StreamWriter(serialLog);
-        using var loggingConnection = serialLogWriter == null
-            ? null
-            : new LoggingSerialConnection(core.Chipset.Custom.Serial.Connection, serialLogWriter,
-                () => clock.Elapsed);
-        if (loggingConnection != null)
-            core.Chipset.Custom.Serial.Connection = loggingConnection;
-
-        using var wavWriter = audioFile == null ? null : new WavWriter(audioFile, core.Chipset.Audio);
-
-        core.Chipset.Display.Deinterlace = deinterlace;
-        using var videoStream = streamPort is { } port
-            ? new VideoStream(core.Chipset.Display, port, streamWide, streamName ?? commandName, log, streamAudio, genlock,
-                genlockControl || schedule != null, core.Chipset.Audio.OpenTap(), context.StreamRequests,
-                genlockQueue)
-            : null;
-        using var scheduleRunner = schedule != null && videoStream != null
-            ? new ScheduleRunner(schedule, videoStream.Genlock!, videoStream.Mixer, context.ScheduleExtensions, log)
-            : null;
-        scheduleRequests.Runner = scheduleRunner;
-
-        // Without a listing, the map of the code that ran in earlier runs tells the translator where more code is.
-        var codeMap = listing == null && options.CodeMap
-            ? options.CodeMapFile != null ? CodeMap.Open(options.CodeMapFile) : CodeMap.Load(executable)
-            : null;
-        core.RecordJumpTargets = codeMap != null;
-
-        // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
-        // a constant in such a build, so the trimmer removes the compiler from it.
-        TranslatedProgram program;
-        if (!interpret && EmbeddedPrograms.TryGet(executable, out var createEmbedded))
+    /// <summary>
+    /// The program to run: the translation in the launcher, a translation that the launcher compiles now, or the
+    /// interpreter. A native (AOT) build cannot compile and load a translation while it runs, so it uses the
+    /// interpreter. The check is a constant in such a build, so the trimmer removes the compiler from it.
+    /// </summary>
+    private static TranslatedProgram ChooseProgram(LauncherOptions options, byte[] executable, Core core, TextWriter log,
+        CodeMap? codeMap)
+    {
+        if (!options.Interpret && EmbeddedPrograms.TryGet(executable, out var createEmbedded))
         {
             log.WriteLine("Using the translation that is built into the launcher.");
-            program = createEmbedded(core);
-        }
-        else if (!interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
-        {
-            program = CompileProgram(executable, listing, core, log, codeMap?.Addresses);
-        }
-        else
-        {
-            if (!interpret)
-                log.WriteLine("This build cannot compile a translation while it runs. The program runs in the interpreter.");
-            program = new InterpretedProgram(core);
+            return createEmbedded(core);
         }
 
-        if (watches.Count > 0)
-        {
-            var symbols = AmigaSharp.Translator.VasmListing.Read(listing!).Symbols;
-            var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
-            foreach (var label in watches)
-            {
-                if (!symbols.TryGetValue(label, out var symbol) || symbol.Section is not { } section || section >= bases.Length)
-                {
-                    Console.Error.WriteLine($"error: the listing does not have the label {label}.");
-                    return 2;
-                }
+        if (!options.Interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+            return CompileProgram(executable, options.Listing, core, log, codeMap?.Addresses);
 
-                var address = bases[section] + symbol.Value;
-                int? last = null;
-                core.AddPollHandler(() =>
-                {
-                    var value = core.Memory.Read16(address);
-                    if (value == last)
-                        return;
-                    log.WriteLine($"{clock.Elapsed.TotalSeconds,10:F3}  {label} = {value} (${value:X4}, {(short)value})");
-                    last = value;
-                });
-            }
+        if (!options.Interpret)
+            log.WriteLine("This build cannot compile a translation while it runs. The program runs in the interpreter.");
+        return new InterpretedProgram(core);
+    }
+
+    /// <summary>The address of a label of the listing in the loaded program, or null if the listing does not have it.</summary>
+    private static uint? LabelAddress(LauncherOptions options, byte[] executable, string label)
+    {
+        var symbols = VasmListing.Read(options.Listing!).Symbols;
+        var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
+        if (!symbols.TryGetValue(label, out var symbol) || symbol.Section is not { } section || section >= bases.Length)
+        {
+            Console.Error.WriteLine($"error: the listing does not have the label {label}.");
+            return null;
         }
 
-        if (turbo && !fastCpu)
+        return bases[section] + symbol.Value;
+    }
+
+    /// <summary>Writes each change of the words of --watch. Returns false if the listing does not have a label.</summary>
+    private static bool AddWatches(LauncherOptions options, byte[] executable, Core core, IClock clock, TextWriter log)
+    {
+        foreach (var label in options.Watches)
         {
-            // The launcher checks the end of the turbo at each safe point. The label is a word in the memory of the program.
-            uint? turboAddress = null;
-            if (turboLabel != null)
-            {
-                var symbols = AmigaSharp.Translator.VasmListing.Read(listing!).Symbols;
-                var bases = AmigaSharp.Runtime.Loader.HunkLayout.Assign(AmigaSharp.Runtime.Loader.HunkFile.Parse(executable));
-                if (!symbols.TryGetValue(turboLabel, out var symbol) || symbol.Section is not { } section || section >= bases.Length)
-                {
-                    Console.Error.WriteLine($"error: the listing does not have the label {turboLabel}.");
-                    return 2;
-                }
-
-                turboAddress = bases[section] + symbol.Value;
-            }
-
+            if (LabelAddress(options, executable, label) is not { } address)
+                return false;
+            int? last = null;
             core.AddPollHandler(() =>
             {
-                if (core.PaceCpu)
+                var value = core.Memory.Read16(address);
+                if (value == last)
                     return;
-                var done = (turboSeconds != null && clock.Elapsed.TotalSeconds >= turboSeconds)
-                           || (turboAddress is { } address && core.Memory.Read16(address) != 0);
-                if (!done)
-                    return;
-                core.PaceCpu = true;
-                log.WriteLine($"The turbo ended at {clock.Elapsed.TotalSeconds:F1} s. The 68000 now runs at its real speed.");
+                log.WriteLine($"{clock.Elapsed.TotalSeconds,10:F3}  {label} = {value} (${value:X4}, {(short)value})");
+                last = value;
             });
         }
 
-        // The program runs on its own thread. The main thread shows the window, or waits for the screenshot.
-        var finished = false;
+        return true;
+    }
 
-        // SIGTERM and SIGHUP stop the launcher as Ctrl-C does, so that it closes the stream and ffmpeg.
-        var terminated = false;
-        using var terminate = System.Runtime.InteropServices.PosixSignalRegistration.Create(
-            System.Runtime.InteropServices.PosixSignal.SIGTERM, context =>
-            {
-                context.Cancel = true;
-                terminated = true;
-            });
-        using var hangUp = System.Runtime.InteropServices.PosixSignalRegistration.Create(
-            System.Runtime.InteropServices.PosixSignal.SIGHUP, context =>
-            {
-                context.Cancel = true;
-                terminated = true;
-            });
-        var exitCode = 0;
-        var runner = new Thread(() =>
+    /// <summary>
+    /// Ends the turbo after --turbo seconds, or when the word at the label of --turbo-until is not 0. The launcher
+    /// checks at each safe point. Returns false if the listing does not have the label.
+    /// </summary>
+    private static bool AddTurbo(LauncherOptions options, byte[] executable, Core core, IClock clock, TextWriter log)
+    {
+        var (turboSeconds, turboLabel) = (options.TurboSeconds, options.TurboLabel);
+        if ((turboSeconds == null && turboLabel == null) || options.FastCpu)
+            return true;
+
+        uint? turboAddress = null;
+        if (turboLabel != null && (turboAddress = LabelAddress(options, executable, turboLabel)) == null)
+            return false;
+
+        core.AddPollHandler(() =>
+        {
+            if (core.PaceCpu)
+                return;
+            var done = (turboSeconds != null && clock.Elapsed.TotalSeconds >= turboSeconds)
+                       || (turboAddress is { } address && core.Memory.Read16(address) != 0);
+            if (!done)
+                return;
+            core.PaceCpu = true;
+            log.WriteLine($"The turbo ended at {clock.Elapsed.TotalSeconds:F1} s. The 68000 now runs at its real speed.");
+        });
+        return true;
+    }
+
+    /// <summary>Runs the program on its own thread. The main thread shows the window, or waits for the screenshots.</summary>
+    private static void StartProgram(TranslatedProgram program, byte[] executable, string arguments, string commandName,
+        Core core, RealTimeClock? realTimeClock, RunState state, TextWriter log)
+    {
+        new Thread(() =>
         {
             try
             {
                 realTimeClock?.Start();
                 var result = program.Run(executable, arguments, commandName);
                 log.WriteLine($"The program returned {(int)result}.");
-                exitCode = (int)result;
+                state.ExitCode = (int)result;
             }
             catch (Exception e)
             {
                 log.WriteLine($"The program stopped: {e.GetType().Name}: {e.Message}");
                 log.WriteLine($"PC ${core.Cpu.Pc:X6}, A7 ${core.Cpu.A[7]:X6}");
-                exitCode = 1;
+                state.ExitCode = 1;
             }
             finally
             {
-                finished = true;
+                state.Finished = true;
             }
-        }, 64 * 1024 * 1024) { IsBackground = true, Name = "68000" };
-        runner.Start();
+        }, 64 * 1024 * 1024) { IsBackground = true, Name = "68000" }.Start();
+    }
 
-        // The watchdog stops the program when its picture does not change, with the exit code 3.
-        using var watchdog = options.Watchdog is { } watchdogSeconds
-            ? new Watchdog(core.Chipset.Display.CopyFrame, TimeSpan.FromSeconds(watchdogSeconds), log, () =>
-            {
-                exitCode = WatchdogExitCode;
-                terminated = true;
-            }, height: core.Chipset.Display.Height)
-            : null;
-
-        // The key presses, the copper dump and the screenshots happen on the 68000 thread at their Amiga time. So with
-        // --virtual-time, they are at the same point of the program in each run.
+    /// <summary>
+    /// Adds the key presses, the copper dump and the screenshots at their Amiga time. They happen on the 68000 thread,
+    /// so with --virtual-time they are at the same point of the program in each run. Returns the screenshots.
+    /// </summary>
+    private static Screenshots ScheduleTimedActions(LauncherOptions options, Core core)
+    {
         var timed = new TimedActions(core);
 
         // The scripted key presses: each key goes down, and up again 0.1 second later.
-        foreach (var (time, rawKey) in presses)
+        foreach (var (time, rawKey) in options.Presses)
         {
             timed.Add(time, () => core.KeyboardInput.PostRawKey(rawKey, up: false));
             timed.Add(time + 0.1, () => core.KeyboardInput.PostRawKey(rawKey, up: true));
         }
 
-        if (copperDump is var (dumpTime, dumpPath))
+        if (options.CopperDump is var (dumpTime, dumpPath))
         {
             timed.Add(dumpTime, () =>
             {
@@ -501,130 +594,133 @@ public static class Launcher
             });
         }
 
-        // The 68000 thread copies the picture of each screenshot, and this thread writes the files.
-        var shots = new System.Collections.Concurrent.BlockingCollection<(string Path, uint[] Pixels, long Frame)>();
-        var shotPaths = new List<(double Seconds, string Path)>();
-        if (screenshot != null)
+        // The 68000 thread copies the picture of each screenshot, and the main thread writes the files.
+        var screenshots = new Screenshots([], new());
+        if (options.Screenshot is not { } screenshot)
+            return screenshots;
+        if (options.ScreenshotEvery is { } every)
         {
-            if (screenshotEvery is { } every)
+            var directory = Path.GetDirectoryName(Path.GetFullPath(screenshot))!;
+            var name = Path.GetFileNameWithoutExtension(screenshot);
+            for (var time = every; time < options.Seconds; time += every)
+                screenshots.Paths.Add((time, Path.Combine(directory, $"{name}-{(int)time:D6}.png")));
+        }
+
+        screenshots.Paths.Add((options.Seconds, screenshot));
+        foreach (var (time, path) in screenshots.Paths)
+            timed.Add(time, () => screenshots.Pictures.Add((path, CopyPicture(core), core.Chipset.Display.FrameNumber)));
+        return screenshots;
+    }
+
+    private static uint[] CopyPicture(Core core)
+    {
+        var pixels = new uint[Display.Width * core.Chipset.Display.Height];
+        core.Chipset.Display.CopyFrame(pixels);
+        return pixels;
+    }
+
+    /// <summary>Writes the speed of the emulation each second, for --stats.</summary>
+    private static void StartStats(Core core, IClock clock, MeasuringClock measuringClock, RunState state, TextWriter log)
+    {
+        new Thread(() =>
+        {
+            var display = core.Chipset.Display;
+            var custom = core.Chipset.Custom;
+            var host = System.Diagnostics.Stopwatch.StartNew();
+            var delivered = core.Interrupts.Delivered;
+            var (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) =
+                (TimeSpan.Zero, TimeSpan.Zero, 0L, 0L, TimeSpan.Zero, TimeSpan.Zero);
+            var (lastVertb, lastAudio1) = (0L, 0L);
+            var lastInterpreted = 0L;
+            var lastCycles = 0L;
+            while (!state.Finished)
             {
-                var directory = Path.GetDirectoryName(Path.GetFullPath(screenshot))!;
-                var name = Path.GetFileNameWithoutExtension(screenshot);
-                for (var time = every; time < seconds; time += every)
-                    shotPaths.Add((time, Path.Combine(directory, $"{name}-{(int)time:D6}.png")));
+                Thread.Sleep(1000);
+                var (now, amiga, frames, dropped, render, wait) = (host.Elapsed, clock.Elapsed, display.FrameNumber,
+                    custom.FramesDropped, display.RenderTime, measuringClock.WaitTime);
+                var seconds = (now - lastHost).TotalSeconds;
+                var made = frames - lastFrames;
+                log.WriteLine($"stats: {made / seconds,5:F1} frames/s, {(dropped - lastDropped) / seconds,5:F1} dropped/s, " +
+                              $"{(made > 0 ? (render - lastRender).TotalMilliseconds / made : 0),5:F2} ms/frame, " +
+                              $"waiting {(wait - lastWait).TotalSeconds / seconds * 100,3:F0}%, " +
+                              $"Amiga time x{(amiga - lastAmiga).TotalSeconds / seconds:F2}, " +
+                              $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
+                              $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}, " +
+                              $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s, " +
+                              $"68000 at {(core.Cpu.Cycles - lastCycles) / seconds / 1e6:F2} MHz, " +
+                              $"free chip {core.Allocator.Available(MemoryFlags.Chip) / 1024} KB " +
+                              $"fast {core.Allocator.Available(MemoryFlags.Fast) / 1024} KB");
+                lastInterpreted = core.InterpretedInstructions;
+                lastCycles = core.Cpu.Cycles;
+                (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);
+                (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) = (now, amiga, frames, dropped, render, wait);
+            }
+        }) { IsBackground = true, Name = "Stats" }.Start();
+    }
+
+    /// <summary>
+    /// Waits for the end of the run on the main thread: writes the screenshots, or waits without a window, or shows the
+    /// window until the program ends or the launcher stops.
+    /// </summary>
+    private static void WaitForEnd(LauncherOptions options, Core core, RunState state, Screenshots screenshots,
+        string commandName, bool soundToFile, TextWriter log)
+    {
+        if (options.Screenshot is { } screenshot)
+        {
+            void Save(string path, uint[] pixels, long frame)
+            {
+                File.WriteAllBytes(path, Png.Encode(Display.Width, core.Chipset.Display.Height, pixels));
+                log.WriteLine($"Saved {path} (frame {frame}).");
             }
 
-            shotPaths.Add((seconds, screenshot));
-            foreach (var (time, path) in shotPaths)
-                timed.Add(time, () => shots.Add((path, CopyPicture(), core.Chipset.Display.FrameNumber)));
-        }
-
-        uint[] CopyPicture()
-        {
-            var pixels = new uint[Display.Width * core.Chipset.Display.Height];
-            core.Chipset.Display.CopyFrame(pixels);
-            return pixels;
-        }
-
-        if (measuringClock != null)
-        {
-            new Thread(() =>
+            // Write the screenshots as the 68000 thread makes them. If the program stops first, the last screenshot
+            // shows its last picture.
+            var saved = 0;
+            while (saved < screenshots.Paths.Count)
             {
-                var display = core.Chipset.Display;
-                var custom = core.Chipset.Custom;
-                var host = System.Diagnostics.Stopwatch.StartNew();
-                var delivered = core.Interrupts.Delivered;
-                var (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) =
-                    (TimeSpan.Zero, TimeSpan.Zero, 0L, 0L, TimeSpan.Zero, TimeSpan.Zero);
-                var (lastVertb, lastAudio1) = (0L, 0L);
-                var lastInterpreted = 0L;
-                var lastCycles = 0L;
-                while (!finished)
+                if (screenshots.Pictures.TryTake(out var shot, 100))
                 {
-                    Thread.Sleep(1000);
-                    var (now, amiga, frames, dropped, render, wait) = (host.Elapsed, clock.Elapsed, display.FrameNumber,
-                        custom.FramesDropped, display.RenderTime, measuringClock.WaitTime);
-                    var seconds = (now - lastHost).TotalSeconds;
-                    var made = frames - lastFrames;
-                    log.WriteLine($"stats: {made / seconds,5:F1} frames/s, {(dropped - lastDropped) / seconds,5:F1} dropped/s, " +
-                                  $"{(made > 0 ? (render - lastRender).TotalMilliseconds / made : 0),5:F2} ms/frame, " +
-                                  $"waiting {(wait - lastWait).TotalSeconds / seconds * 100,3:F0}%, " +
-                                  $"Amiga time x{(amiga - lastAmiga).TotalSeconds / seconds:F2}, " +
-                                  $"interrupts/s VERTB {(delivered[InterruptBit.VerticalBlank] - lastVertb) / seconds:F0} " +
-                                  $"AUD1 {(delivered[InterruptBit.Audio0 + 1] - lastAudio1) / seconds:F0}, " +
-                                  $"interpreted {(core.InterpretedInstructions - lastInterpreted) / seconds:F0} instructions/s, " +
-                                  $"68000 at {(core.Cpu.Cycles - lastCycles) / seconds / 1e6:F2} MHz, " +
-                                  $"free chip {core.Allocator.Available(MemoryFlags.Chip) / 1024} KB " +
-                                  $"fast {core.Allocator.Available(MemoryFlags.Fast) / 1024} KB");
-                    lastInterpreted = core.InterpretedInstructions;
-                    lastCycles = core.Cpu.Cycles;
-                    (lastVertb, lastAudio1) = (delivered[InterruptBit.VerticalBlank], delivered[InterruptBit.Audio0 + 1]);
-                    (lastHost, lastAmiga, lastFrames, lastDropped, lastRender, lastWait) = (now, amiga, frames, dropped, render, wait);
+                    Save(shot.Path, shot.Pixels, shot.Frame);
+                    saved++;
                 }
-            }) { IsBackground = true, Name = "Stats" }.Start();
-        }
-
-        try
-        {
-            if (screenshot != null)
-            {
-                void Save(string path, uint[] pixels, long frame)
+                else if (state.Finished || state.Terminated)
                 {
-                    File.WriteAllBytes(path, Png.Encode(Display.Width, core.Chipset.Display.Height, pixels));
-                    log.WriteLine($"Saved {path} (frame {frame}).");
-                }
-
-                // Write the screenshots as the 68000 thread makes them. If the program stops first, the last screenshot
-                // shows its last picture.
-                var saved = 0;
-                while (saved < shotPaths.Count)
-                {
-                    if (shots.TryTake(out var shot, 100))
-                    {
+                    while (screenshots.Pictures.TryTake(out shot))
                         Save(shot.Path, shot.Pixels, shot.Frame);
-                        saved++;
-                    }
-                    else if (finished || terminated)
-                    {
-                        while (shots.TryTake(out shot))
-                            Save(shot.Path, shot.Pixels, shot.Frame);
-                        Save(screenshot, CopyPicture(), core.Chipset.Display.FrameNumber);
-                        break;
-                    }
+                    Save(screenshot, CopyPicture(core), core.Chipset.Display.FrameNumber);
+                    break;
                 }
-            }
-            else if (headless)
-            {
-                var stop = false;
-                Console.CancelKeyPress += (_, e) =>
-                {
-                    e.Cancel = true;
-                    stop = true;
-                };
-                while (!finished && !stop && !terminated)
-                    Thread.Sleep(100);
-            }
-            else
-            {
-                void Key(Silk.NET.SDL.Scancode scancode, bool up)
-                {
-                    if (KeyboardMapping.TryGetRawKey(scancode, out var rawKey))
-                        core.KeyboardInput.PostRawKey(rawKey, up);
-                }
-
-                var ports = core.Chipset.Custom.Ports;
-                new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", scale, Key, ports[0], ports[1],
-                        wavWriter == null ? core.Chipset.Audio : null)
-                    .Run(() => finished || terminated);
             }
         }
-        finally
+        else if (options.Headless)
         {
-            TempFolders.Delete(ram);
-            foreach (var copy in diskCopies)
-                TempFolders.Delete(copy);
+            var stop = false;
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                stop = true;
+            };
+            while (!state.Finished && !stop && !state.Terminated)
+                Thread.Sleep(100);
         }
+        else
+        {
+            void Key(Silk.NET.SDL.Scancode scancode, bool up)
+            {
+                if (KeyboardMapping.TryGetRawKey(scancode, out var rawKey))
+                    core.KeyboardInput.PostRawKey(rawKey, up);
+            }
 
+            var ports = core.Chipset.Custom.Ports;
+            new DisplayWindow(core.Chipset.Display, $"AmigaSharp: {commandName}", options.Scale, Key, ports[0], ports[1],
+                    soundToFile ? null : core.Chipset.Audio)
+                .Run(() => state.Finished || state.Terminated);
+        }
+    }
+
+    /// <summary>Adds the code that ran in the interpreter to the map, and writes the entries of the interpreter for --stats.</summary>
+    private static void Finish(Core core, CodeMap? codeMap, byte[] executable, bool stats, TextWriter log)
+    {
         if (codeMap != null)
         {
             var added = codeMap.Add(executable, core.Memory,
@@ -640,8 +736,6 @@ public static class Launcher
             foreach (var (address, count) in core.InterpreterEntries.OrderByDescending(e => e.Value).Take(10).ToList())
                 log.WriteLine($"  ${address:X6}: {count} times");
         }
-
-        return exitCode;
     }
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Compiles and loads the translation of the program.")]
