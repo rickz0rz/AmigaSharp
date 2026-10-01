@@ -715,6 +715,15 @@ dotnet run --project AmigaSharp.Launcher -c Release -- AmigaTestKit.adf:AmigaTes
 The program unpacks itself into memory when it starts, so the translator sees only the code that unpacks it. The
 interpreter runs the unpacked code. `--interpret` gives the same result.
 
+Aonic, the demo of the A1200 port of Sonic the Hedgehog, needs a PAL Amiga with AGA and the speed of a 68020:
+
+```sh
+dotnet run --project AmigaSharp.Launcher -c Release -- Aonic-TheGreenHillZoneDemo.adf:aonic \
+    --pal --chipset aga --unaligned-access --cpu-mhz 56
+```
+
+The keys are the keys of the demo: the cursor keys, Z, X or C to jump, V to start or to pause, and Escape to stop.
+
 ## Tests
 
 ```sh
