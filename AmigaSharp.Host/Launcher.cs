@@ -73,7 +73,9 @@ public static class Launcher
           --cpu-mhz <n>             Run the CPU at n MHz of 68000 cycles. The default is 7.16, the speed of the 68000. A
                                     68020 needs fewer cycles for an instruction: for a program of the A1200 (68020 at
                                     14 MHz), use for example 56.
-          --serial-port <port>      The TCP port of the serial bridge. The default is 5400. 0 turns the bridge off.
+          --serial-port <port>      Open the serial bridge on this TCP port. A client that connects gets the bytes that
+                                    the program sends, and sends bytes to the program. Without this option, there is no
+                                    bridge, except in the launcher for Prevue (port 5400). 0 turns the bridge off.
           --serial-file <file>      Replay a captured feed on the serial port, in place of the bridge. The replay starts
                                     when the program enables the RBF interrupt, and it goes at the baud rate of SERPER.
           --serial-start <seconds>  The time of the Amiga clock before the replay can start. The default is 0. ESQ empties
@@ -436,8 +438,8 @@ public static class Launcher
     private static TcpSerialBridge? SetUpSerialInput(Core core, LauncherOptions options, IClock clock, TextWriter log)
     {
         var serial = core.Chipset.Custom.Serial;
-        var bridge = options.SerialPort > 0 && options.SerialFile == null
-            ? new TcpSerialBridge(options.SerialPort, log: log)
+        var bridge = options.SerialPort is > 0 and var port && options.SerialFile == null
+            ? new TcpSerialBridge(port, log: log)
             : null;
         if (bridge != null)
         {

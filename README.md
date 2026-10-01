@@ -155,7 +155,9 @@ Use `--help` to see all the options. These options are the most important:
 - `--disk DF1=<file.adf>` puts a disk image in a drive (DF0 to DF3), for a program on more than one disk. The program
   finds the files in `DF1:` and in the volume with the name of the disk. A file that the disk image cannot give, for
   example because of a damaged block, is left out with a warning.
-- `--serial-port <port>` sets the TCP port of the serial port. Connect to it with `nc localhost <port>`.
+- `--serial-port <port>` opens the serial bridge on a TCP port. The bridge connects the serial port of the Amiga to
+  a TCP client, for example `nc localhost <port>`. Without this option, there is no bridge. The launcher for Prevue
+  opens it on port 5400.
 - `--screenshot <file.png>` saves the display after `--seconds` and does not open a window.
 - `--virtual-time` uses a virtual clock. Time moves at each safe point, and a wait ends at once. So a run is the same
   each time, and it is as fast as the host can run it. The screenshots, the key presses of `--press` and the copper

@@ -21,7 +21,11 @@ public sealed class LauncherOptions
     public string? Arguments { get; set; }
 
     public string? CommandName { get; set; }
-    public int SerialPort { get; set; } = 5400;
+    /// <summary>
+    /// The TCP port of the serial bridge, 0 for no bridge, or null when the option is not given. Without the option, the
+    /// generic launcher has no bridge, and an extension can set a port, as the launcher for Prevue does.
+    /// </summary>
+    public int? SerialPort { get; set; }
     public string? SerialFile { get; set; }
     public double SerialStart { get; set; }
     public double SerialSpeed { get; set; } = 1;

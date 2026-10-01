@@ -218,5 +218,5 @@ shows its first screens, and its second program (sts) cannot unpack itself from 
 
 ```sh
 dotnet run --project AmigaSharp.Launcher -c Release -- SneakPrevue_SystemDisk.adf:vd \
-    --disk DF1=SneakPrevue_DataDisk1.adf
+    --disk DF1=SneakPrevue_DataDisk1.adf --serial-port 5400
 ```

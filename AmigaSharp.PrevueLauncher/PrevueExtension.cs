@@ -13,6 +13,9 @@ public sealed class PrevueExtension : ILauncherExtension
     /// <summary>The selection code of the machine when the command line does not give one.</summary>
     public const string DefaultCode = "GA24005";
 
+    /// <summary>The TCP port of the serial bridge for Prevue. The listings tool sends the data feed to it.</summary>
+    public const int DefaultSerialPort = 5400;
+
     /// <summary>A word of ESQ that becomes 1 when its main loop starts. The turbo ends there.</summary>
     public const string MainLoopLabel = "_ESQ_MainLoopUiTickEnabledFlag";
 
@@ -38,8 +41,8 @@ public sealed class PrevueExtension : ILauncherExtension
 
         Defaults of a Prevue machine: with --drive, the drive is also DH1:, and DF0: and ENV: are DH1:. The executable
         is ESQ on the drive, the command name is esq, and the arguments are the selection code GA24005. The turbo
-        runs until the main loop of ESQ starts (with --listing), or for 8 seconds. An option on the command line
-        changes each default.
+        runs until the main loop of ESQ starts (with --listing), or for 8 seconds. The serial bridge is on port 5400
+        for the listings. An option on the command line changes each default.
         """;
 
     public bool TryParse(string option, Func<string> next)
@@ -74,6 +77,8 @@ public sealed class PrevueExtension : ILauncherExtension
                 options.ExecutablePath = esq;
         }
 
+        // Prevue gets its listings on the serial port: the listings tool connects to the bridge.
+        options.SerialPort ??= DefaultSerialPort;
         options.CommandName ??= "esq";
         options.Arguments ??= DefaultCode;
         if (!options.FastCpu && options.TurboSeconds == null && options.TurboLabel == null)

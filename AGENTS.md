@@ -27,7 +27,8 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   - `--screenshot <file.png> --seconds <n>` and `--screenshot-every <n>`: pictures without a window.
   - `--watch <label>`: logs each change of a 16-bit word at a listing label (needs the listing, which run-esq.sh
     passes). A 32-bit variable cannot be watched this way.
-  - `--serial-port <port>`: the default serial bridge port is 5400. Give each parallel run its own port.
+  - `--serial-port <port>`: the serial bridge. The Prevue launcher opens it on 5400 by default, the generic launcher
+    only with this option. Give each parallel Prevue run its own port.
 - Put screenshots for the user in `screenshots/` (untracked). Contact sheets:
   `ffmpeg -framerate 1 -pattern_type glob -i 'dir/p-*.png' -vf "scale=384:240,tile=5x2" -frames:v 1 sheet.png`.
 - Stop background launcher runs with `pkill -TERM -f 'AmigaSharp\..*Launcher .*--stream <port>'`. Background jobs

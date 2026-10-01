@@ -34,6 +34,24 @@ public sealed class LauncherOptionsTests : IDisposable
     }
 
     [Fact]
+    public void SerialBridge_IsOffWithoutTheOption()
+    {
+        Assert.Null(LauncherOptions.Parse(["program"], []).SerialPort);
+        Assert.Equal(5411, LauncherOptions.Parse(["program", "--serial-port", "5411"], []).SerialPort);
+    }
+
+    [Fact]
+    public void PrevueDefaults_KeepASerialPortOfTheCommandLine()
+    {
+        var extension = new PrevueExtension();
+        var options = LauncherOptions.Parse(["ESQ", "--serial-port", "0"], [extension]);
+
+        extension.Complete(options);
+
+        Assert.Equal(0, options.SerialPort);
+    }
+
+    [Fact]
     public void CodeMapOptions_TurnTheMapOffOrGiveItsFile()
     {
         Assert.False(LauncherOptions.Parse(["program", "--no-code-map"], []).CodeMap);
@@ -75,6 +93,7 @@ public sealed class LauncherOptionsTests : IDisposable
         Assert.Equal("esq", options.CommandName);
         Assert.Equal(PrevueExtension.DefaultCode, options.Arguments);
         Assert.Equal(8, options.TurboSeconds);
+        Assert.Equal(PrevueExtension.DefaultSerialPort, options.SerialPort);
     }
 
     [Fact]
