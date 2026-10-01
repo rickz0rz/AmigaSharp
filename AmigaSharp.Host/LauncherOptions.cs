@@ -50,6 +50,9 @@ public sealed class LauncherOptions
 
     /// <summary>True to allow words and longs at odd addresses, as a 68020 does.</summary>
     public bool UnalignedAccess { get; set; }
+
+    /// <summary>The speed of the CPU in MHz, or null for the 7.16 MHz of the 68000.</summary>
+    public double? CpuMhz { get; set; }
     public List<(double Seconds, byte RawKey)> Presses { get; } = [];
     public (double Seconds, string Path)? CopperDump { get; set; }
     public bool FastCpu { get; set; }
@@ -126,6 +129,11 @@ public sealed class LauncherOptions
                 case "--virtual-time": options.VirtualTime = true; break;
                 case "--pal": options.Pal = true; break;
                 case "--unaligned-access": options.UnalignedAccess = true; break;
+                case "--cpu-mhz":
+                    options.CpuMhz = double.Parse(Next(), CultureInfo.InvariantCulture);
+                    if (options.CpuMhz is < 1 or > 1000)
+                        throw new ArgumentException("--cpu-mhz needs a speed from 1 to 1000.");
+                    break;
                 case "--chipset":
                     options.Aga = Next().ToLowerInvariant() switch
                     {

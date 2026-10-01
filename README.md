@@ -161,6 +161,9 @@ Use `--help` to see all the options. These options are the most important:
   emulated.
 - `--unaligned-access` lets the program read and write words and longs at odd addresses, as a 68020 does. Programs
   for the A1200 can need it.
+- `--cpu-mhz <n>` runs the CPU faster than the 7.16 MHz of the 68000. The runtime counts the cycles of the 68000, and
+  a 68020 needs fewer cycles for an instruction. So a program of the A1200 needs more than its 14 MHz: the Sonic
+  demo gets about 45 of its 50 frames each second at 7.16 MHz, and 49 at 56 MHz.
 - `--press <seconds>=<key>` presses a key at a time, for example `--press 8=escape`.
 - `--fast-cpu` runs the 68000 as fast as the host can. By default, the CPU runs at the speed of a real 68000
   (7.16 MHz) with a real-time clock. It sleeps when it is ahead, so a program that polls in a loop does not use a full

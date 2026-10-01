@@ -453,8 +453,14 @@ public sealed class Core
     public bool PaceCpu { get; set; } = true;
 
     // The CPU can be this far ahead of the clock before it sleeps, and this far behind before it stops to catch up.
-    private static readonly long PaceAheadCycles = (long)(CycleEstimate.ClockHz * 0.001);
-    private static readonly long PaceBehindCycles = (long)(CycleEstimate.ClockHz * 0.002);
+    private long PaceAheadCycles => (long)(CpuClockHz * 0.001);
+    private long PaceBehindCycles => (long)(CpuClockHz * 0.002);
+
+    /// <summary>
+    /// The speed of the CPU for the pacing, in cycles of the 68000 each second. The default is the 7.16 MHz of the
+    /// 68000 of an NTSC Amiga. A larger value runs the program faster, for example for a program of the A1200.
+    /// </summary>
+    public double CpuClockHz { get; set; } = CycleEstimate.ClockHz;
     private static readonly TimeSpan PaceStep = TimeSpan.FromMicroseconds(250);
     private bool _pacing;
     private long _paceOffset;
@@ -473,7 +479,7 @@ public sealed class Core
 
         // The pacing compares the cycles since the last change of the offset with the clock. Cpu.Cycles itself only
         // grows, so it also shows how fast the CPU runs.
-        var now = (long)(clock.Elapsed.TotalSeconds * CycleEstimate.ClockHz);
+        var now = (long)(clock.Elapsed.TotalSeconds * CpuClockHz);
         var cycles = Cpu.Cycles - _paceOffset;
         if (!PaceCpu)
         {
@@ -495,7 +501,7 @@ public sealed class Core
         _pacing = true;
         try
         {
-            var target = TimeSpan.FromSeconds(cycles / CycleEstimate.ClockHz);
+            var target = TimeSpan.FromSeconds(cycles / CpuClockHz);
             while (clock.Elapsed < target)
             {
                 clock.WaitUntil(Min(target, clock.Elapsed + PaceStep));

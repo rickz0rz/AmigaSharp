@@ -55,6 +55,9 @@ public static class Launcher
                                     and 64 pixels. See the README for the parts that it does not have.
           --unaligned-access        Let the program read and write words and longs at odd addresses, as a 68020 does,
                                     for example a program for the A1200. On a 68000, this is an address error.
+          --cpu-mhz <n>             Run the CPU at n MHz of 68000 cycles. The default is 7.16, the speed of the 68000. A
+                                    68020 needs fewer cycles for an instruction: for a program of the A1200 (68020 at
+                                    14 MHz), use for example 56.
           --serial-port <port>      The TCP port of the serial bridge. The default is 5400. 0 turns the bridge off.
           --serial-file <file>      Replay a captured feed on the serial port, in place of the bridge. The replay starts
                                     when the program enables the RBF interrupt, and it goes at the baud rate of SERPER.
@@ -222,6 +225,8 @@ public static class Launcher
         var core = new Core(rootDirectory: drive, clock: clock, video: options.Pal ? VideoStandard.Pal : null,
             aga: options.Aga) { TraceLibraryCalls = trace, PaceCpu = !fastCpu && !turbo };
         core.Memory.AllowUnaligned = options.UnalignedAccess;
+        if (options.CpuMhz is { } cpuMhz)
+            core.CpuClockHz = cpuMhz * 1_000_000;
         // A program from a disk image also finds the disk in DF0, for a program that reads the disk with the hardware.
         if (diskImage != null)
             core.Chipset.Disks.Drives[0].Insert(diskImage);

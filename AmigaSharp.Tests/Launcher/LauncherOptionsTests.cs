@@ -10,6 +10,17 @@ public sealed class LauncherOptionsTests : IDisposable
     public void Dispose() => Directory.Delete(_drive, recursive: true);
 
     [Fact]
+    public void MachineOptions_MakeAPalAgaAmigaWithAFasterCpu()
+    {
+        var options = LauncherOptions.Parse(
+            ["program", "--pal", "--chipset", "AGA", "--unaligned-access", "--cpu-mhz", "56"], []);
+
+        Assert.True(options.Pal && options.Aga && options.UnalignedAccess);
+        Assert.Equal(56, options.CpuMhz);
+        Assert.Throws<ArgumentException>(() => LauncherOptions.Parse(["program", "--chipset", "ocs"], []));
+    }
+
+    [Fact]
     public void GenericLauncher_RefusesAnOptionForPrevue()
     {
         var error = Assert.Throws<ArgumentException>(() =>
