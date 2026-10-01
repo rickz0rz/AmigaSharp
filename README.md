@@ -668,6 +668,16 @@ The translator reads a map with `--known-code <file>`, and a build that compiles
 it from `EMBEDDED_KNOWN_CODE` (see [Build programs for other people](#build-programs-for-other-people)). A native
 launcher then runs the translated code from its first start, also without a listing.
 
+To see the code that the translator finds, write a disassembly with the translator:
+
+```sh
+dotnet run --project AmigaSharp.Translator -c Release -- aonic --disassemble aonic.s --known-code aonic.code
+```
+
+The disassembly has each hunk, the functions as labels, and each instruction with its address and its words. The
+other bytes show as data, so a larger map shows more of the program as code. For the Sonic demo and its map, the
+disassembly has 596 functions and 16,082 instructions. It is for inspection: an assembler does not read it.
+
 A program can write new code over its own code, for example the decruncher of a packed program. The runtime keeps the
 first 8 bytes of each translated method. If these bytes change, the runtime removes the method, and the interpreter
 runs the new code. Some code jumps with an RTS: it puts the address on the stack, and does RTS. If the return address

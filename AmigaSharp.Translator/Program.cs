@@ -3,8 +3,9 @@ using AmigaSharp.Translator;
 
 const string usage = """
     Usage: AmigaSharp.Translator <executable> --output <file.cs> [options]
+           AmigaSharp.Translator <executable> --disassemble <file.s> [options]
 
-    Translates an AmigaOS executable to a C# class.
+    Translates an AmigaOS executable to a C# class, or writes the code that it finds as a disassembly.
 
     Options:
       --listing <file.lst>   The vasm listing of the executable (vasm option -L). The translator uses it to find
@@ -13,9 +14,12 @@ const string usage = """
       --class <name>         The name of the class. The default is the name of the executable.
       --known-code <file>    A map of the code that ran (the launcher writes it, see --code-map of the launcher).
                              Without a listing, the translator also translates the code at its addresses.
+      --disassemble <file>   Also write the code that the translator found as a disassembly: the functions, each
+                             instruction with its address and its words, and the other bytes as data. With this
+                             option, --output is optional.
     """;
 
-string? executable = null, output = null, listingPath = null, knownCodePath = null;
+string? executable = null, output = null, listingPath = null, knownCodePath = null, disassemblyPath = null;
 var namespaceName = "AmigaSharp.Generated";
 string? className = null;
 for (var i = 0; i < args.Length; i++)
@@ -27,6 +31,7 @@ for (var i = 0; i < args.Length; i++)
         case "--namespace" when i + 1 < args.Length: namespaceName = args[++i]; break;
         case "--class" when i + 1 < args.Length: className = args[++i]; break;
         case "--known-code" when i + 1 < args.Length: knownCodePath = args[++i]; break;
+        case "--disassemble" when i + 1 < args.Length: disassemblyPath = args[++i]; break;
         case var value when !value.StartsWith("--") && executable == null: executable = value; break;
         default:
             Console.Error.WriteLine($"error: unknown argument {args[i]}.");
@@ -35,7 +40,7 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
-if (executable == null || output == null)
+if (executable == null || (output == null && disassemblyPath == null))
 {
     Console.Error.WriteLine(usage);
     return 2;
@@ -58,9 +63,12 @@ foreach (var warning in analysis.Warnings)
 
 className ??= ProgramAnalysis.Sanitize(Path.GetFileNameWithoutExtension(executable));
 var sourceName = Path.GetFileName(executable) + (listingPath == null ? "" : $" and {Path.GetFileName(listingPath)}");
-File.WriteAllText(output, CSharpProgramWriter.Write(analysis, namespaceName, className, sourceName));
+if (output != null)
+    File.WriteAllText(output, CSharpProgramWriter.Write(analysis, namespaceName, className, sourceName));
+if (disassemblyPath != null)
+    File.WriteAllText(disassemblyPath, Disassembler.Write(analysis, sourceName));
 
-Console.WriteLine($"{Path.GetFileName(output)}: {analysis.Functions.Count} functions, "
+Console.WriteLine($"{Path.GetFileName(output ?? disassemblyPath)}: {analysis.Functions.Count} functions, "
                   + $"{analysis.Instructions.Count} instructions.");
 Console.Write(HunkLayout.Describe(file, analysis.Bases));
 return 0;

@@ -63,6 +63,30 @@ public sealed class CodeMapTests : IDisposable
     }
 
     [Fact]
+    public void Disassembly_ShowsTheFunctions_TheInstructions_AndTheData()
+    {
+        Hunk Hunk(int index, HunkType type, byte[] data, uint size) => new()
+        {
+            Index = index, Type = type, Memory = HunkMemory.Any, Size = size, Data = data, Relocations = [],
+        };
+        // MOVEQ #1,D0; RTS; and two bytes of data. Then a BSS hunk of 8 bytes.
+        var file = new HunkFile
+        {
+            Hunks = [Hunk(0, HunkType.Code, [0x70, 0x01, 0x4E, 0x75, 0xAB, 0xCD], 6), Hunk(1, HunkType.Bss, [], 8)],
+        };
+        var analysis = ProgramAnalysis.Analyze(file, listing: null);
+        var start = analysis.Bases[0];
+
+        var lines = Disassembler.Write(analysis, "test").Split('\n').Select(line => line.TrimEnd()).ToList();
+
+        Assert.Contains($"{analysis.FunctionAt(start)!.Name}:", lines);
+        Assert.Contains(lines, line => line.StartsWith($"    ${start:X6}  7001") && line.EndsWith("MOVEQ #$1,D0"));
+        Assert.Contains(lines, line => line.StartsWith($"    ${start + 2:X6}  4E75") && line.EndsWith("RTS"));
+        Assert.Contains($"    ${start + 4:X6}  dc.b $AB,$CD", lines);
+        Assert.Contains($"    ${analysis.Bases[1]:X6}  ds.b 8", lines);
+    }
+
+    [Fact]
     public void Analysis_TranslatesKnownCode_AlsoInADataHunk()
     {
         // Hunk 0 is code that ends at once. Hunk 1 is data with code that only an address in a table can reach.
