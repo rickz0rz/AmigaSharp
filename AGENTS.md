@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Notes for agents working in this repository. The README covers what the project is, the projects, the build and the
-tests; read it first. This file covers what the README does not: how to check your work, conventions, and traps.
+Notes for agents working in this repository. The README covers what the project is, the projects, the build, running
+programs and the tests; read it first. `docs/internals.md` explains the translator, the interpreter, the libraries and
+the chipset; `docs/streaming.md` the stream and its HTTP API; `docs/distribution.md` the published builds. This file covers what the README does not: how to check your work, conventions, and traps.
 
 ## Build and test
 

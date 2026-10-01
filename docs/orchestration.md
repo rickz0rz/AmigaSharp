@@ -47,7 +47,7 @@ Start the stream with an empty genlock queue, so that the coordinator controls t
   also gets `--watchdog 60`: if the picture does not change for a minute, the launcher stops, and the script starts
   it again. The grid of Prevue always moves, and the ESC menu has a clock, so a still picture means a problem.
 - The logos come from `LOGO.LST` on the drive. Edit it in the copy of the drive before the stream starts. See
-  [Logos](#logos).
+  [Logos](ctrl-line.md#logos).
 
 The HTTP server starts some seconds before Prevue reads its control line. The requests of `/prevue/ctrl` wait in a
 queue until then. A coordinator can start at the same time as the stream.
