@@ -5,6 +5,7 @@ namespace AmigaSharp.Runtime.Dos;
 /// <summary>
 /// Runs AmigaDOS commands for dos Execute and SystemTagList. The runtime cannot run the command files in C:, so it
 /// has its own versions of the common commands: Copy, Delete, List, Dir, Assign, MakeDir, Rename, Echo, Type and CD.
+/// Run is in dos.library: it loads a program with LoadSeg and starts it in a new process.
 /// </summary>
 public sealed class Shell(Core core)
 {

@@ -37,7 +37,7 @@ public abstract class TranslatedProgram(Core core)
         file.Load(memory, bases);
         var segmentList = file.WriteSegmentList(memory, bases);
         RegisterFunctions();
-        SetUpCli(commandName, segmentList);
+        core.SetUpCli(core.MainProcess, commandName, segmentList);
 
         // AmigaDOS starts a CLI command with A0 pointing to the arguments and D0 holding their length. The arguments
         // end with a newline. The stack size is at 4(SP), above the return address.
@@ -52,23 +52,6 @@ public abstract class TranslatedProgram(Core core)
         return cpu.D[0];
     }
 
-    private void SetUpCli(string commandName, uint segmentList)
-    {
-        var process = core.MainProcess;
-        var cli = core.AllocateSystem(CliOffsets.Size);
-        var name = Encoding.Latin1.GetBytes(commandName);
-        var bstr = core.AllocateSystem([(byte)name.Length, .. name]);
-
-        memory.Write32(cli + CliOffsets.CommandName, bstr >> 2);
-        memory.Write32(cli + CliOffsets.DefaultStack, Core.StackSize / 4);
-        memory.Write32(cli + CliOffsets.StandardInput, memory.Read32(process + ProcessOffsets.InputStream));
-        memory.Write32(cli + CliOffsets.CurrentInput, memory.Read32(process + ProcessOffsets.InputStream));
-        memory.Write32(cli + CliOffsets.StandardOutput, memory.Read32(process + ProcessOffsets.OutputStream));
-        memory.Write32(cli + CliOffsets.CurrentOutput, memory.Read32(process + ProcessOffsets.OutputStream));
-        memory.Write32(cli + CliOffsets.Interactive, 0xFFFF_FFFF);
-        memory.Write32(cli + CliOffsets.Module, segmentList);
-        memory.Write32(process + ProcessOffsets.Cli, cli >> 2);
-    }
 }
 
 /// <summary>A program that has no translated functions. The interpreter runs all of its code.</summary>

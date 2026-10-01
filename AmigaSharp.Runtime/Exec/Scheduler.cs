@@ -59,11 +59,13 @@ public sealed class Scheduler
     /// Starts a task. It runs the code at <paramref name="entry"/> in user mode with the stack at
     /// <paramref name="stackTop"/>. It becomes ready now, and it runs when the scheduler gives it the CPU.
     /// </summary>
-    public void Start(uint task, uint entry, uint stackTop)
+    /// <param name="setUp">Sets the registers at the start, for example A0 and D0 of a CLI command.</param>
+    public void Start(uint task, uint entry, uint stackTop, Action<uint[], uint[]>? setUp = null)
     {
         var registers = CpuSnapshot.Take(_core.Cpu);
         Array.Clear(registers.D);
         Array.Clear(registers.A);
+        setUp?.Invoke(registers.D, registers.A);
         var state = new TaskState
         {
             Address = task,

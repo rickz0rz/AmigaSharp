@@ -190,5 +190,44 @@ public sealed class DosLibraryTests : IDisposable
         Assert.Equal(_harness.Call(Dos, Output), _harness.Memory.Read32(process + ProcessOffsets.OutputStream));
     }
 
+    [Fact]
+    public void LoadSeg_LoadsAndRelocatesTheHunks_AndUnLoadSegFreesThem()
+    {
+        const short loadSeg = -150, unLoadSeg = -156;
+        var executable = File.ReadAllBytes(Path.Combine(TestPaths.RepositoryRoot, "samples", "ControlFlow", "controlflow"));
+        File.WriteAllBytes(Path.Combine(_harness.Root, "program"), executable);
+        var file = AmigaSharp.Runtime.Loader.HunkFile.Parse(executable);
+        var name = _harness.String("program");
+        var free = _harness.Core.Allocator.Available(MemoryFlags.Any);
+
+        var segmentList = _harness.Call(Dos, loadSeg, ("D1", name));
+
+        // Each segment: its size at -4, the BPTR to the next segment, and then the hunk.
+        var memory = _harness.Memory;
+        var segment = segmentList;
+        var bases = new List<uint>();
+        while (segment != 0)
+        {
+            bases.Add((segment << 2) + 4);
+            segment = memory.Read32(segment << 2);
+        }
+
+        Assert.Equal(file.Hunks.Count, bases.Count);
+        // The first instruction is the code of the file, and each relocation adds the base of its hunk.
+        Assert.Equal(file.Hunks[0].Data[0], memory.Read8(bases[0]));
+        foreach (var hunk in file.Hunks)
+        {
+            foreach (var relocation in hunk.Relocations)
+            {
+                var original = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(hunk.Data.AsSpan((int)relocation.Offset));
+                Assert.Equal(original + bases[relocation.TargetHunk], memory.Read32(bases[hunk.Index] + relocation.Offset));
+            }
+        }
+
+        _harness.Call(Dos, unLoadSeg, ("D1", segmentList));
+        Assert.Equal(free, _harness.Core.Allocator.Available(MemoryFlags.Any));
+        Assert.Equal(0u, _harness.Call(Dos, loadSeg, ("D1", _harness.String("nothing"))));
+    }
+
     public void Dispose() => _harness.Dispose();
 }

@@ -172,6 +172,37 @@ public class DosLibrary(Core core) : AbstractLibrary
     [LibraryFunctionOffset(-132)]
     public int IoErr() => (int)_memory.Read32(Process + ProcessOffsets.Result2);
 
+    // segList = LoadSeg(name)
+    // D0               D1
+    [LibraryFunctionOffset(-150)]
+    public uint LoadSeg([D1] uint name)
+    {
+        var (path, error) = _files.Resolve(_memory.ReadCString(name), CurrentDirectory, mustExist: true);
+        if (path == null || !File.Exists(path))
+        {
+            SetError(path == null ? error : DosError.ObjectNotFound);
+            return 0;
+        }
+
+        try
+        {
+            var segmentList = SegmentLoader.Load(core, File.ReadAllBytes(path));
+            if (segmentList == 0)
+                SetError(DosError.NoFreeStore);
+            return segmentList;
+        }
+        catch (InvalidDataException)
+        {
+            SetError(DosError.ObjectWrongType);
+            return 0;
+        }
+    }
+
+    // UnLoadSeg(segList)
+    //           D1
+    [LibraryFunctionOffset(-156)]
+    public void UnLoadSeg([D1] uint segmentList) => SegmentLoader.Unload(core, segmentList);
+
     // process = CreateProc(name, pri, segList, stackSize)
     // D0                   D1    D2   D3       D4
     [LibraryFunctionOffset(-138)]
@@ -292,9 +323,82 @@ public class DosLibrary(Core core) : AbstractLibrary
     [LibraryFunctionOffset(-954)]
     public int VPrintf([D1] uint format, [D2] uint arguments) => VFPrintf(Output(), format, arguments);
 
+    /// <summary>
+    /// Runs a program in a new process, as the Run command does: the program of the first word, with the other words as
+    /// its arguments. The program is a file in the current directory or in C:. The process has the current directory,
+    /// the input and the output of this process. Returns 0 if the process started.
+    /// </summary>
+    private int RunInBackground(string commandLine)
+    {
+        var words = commandLine.Trim().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries);
+        // The output and the input of the new process are the ones of this process: Run >NIL: is the same as Run.
+        while (words.Length > 0 && (words[0].StartsWith('>') || words[0].StartsWith('<')))
+            words = words.Length == 2 ? words[1].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries) : [];
+        if (words.Length == 0)
+            return Shell.Ok;
+
+        var name = words[0];
+        var arguments = (words.Length == 2 ? words[1] : "") + "\n";
+        string? path = null;
+        foreach (var candidate in name.Contains(':') || name.Contains('/') ? [name] : new[] { name, "C:" + name })
+        {
+            var (resolved, _) = _files.Resolve(candidate, CurrentDirectory, mustExist: true);
+            if (resolved != null && File.Exists(resolved))
+            {
+                path = resolved;
+                break;
+            }
+        }
+
+        if (path == null)
+        {
+            core.Log.WriteLine($"Run {name}: the program does not exist.");
+            SetError(DosError.ObjectNotFound);
+            return Shell.Error;
+        }
+
+        uint segmentList;
+        try
+        {
+            segmentList = SegmentLoader.Load(core, File.ReadAllBytes(path));
+        }
+        catch (InvalidDataException)
+        {
+            core.Log.WriteLine($"Run {name}: the file is not a program.");
+            SetError(DosError.ObjectWrongType);
+            return Shell.Error;
+        }
+
+        var parent = Process;
+        var commandName = name[(name.LastIndexOfAny([':', '/']) + 1)..];
+        var process = core.CreateProcess(commandName, 0, Core.StackSize);
+        _memory.Write32(process + ProcessOffsets.SegList, segmentList);
+        foreach (var field in new[] { ProcessOffsets.CurrentDir, ProcessOffsets.InputStream, ProcessOffsets.OutputStream, ProcessOffsets.WindowPtr })
+            _memory.Write32(process + field, _memory.Read32(parent + field));
+        core.SetUpCli(process, commandName, segmentList);
+
+        // A CLI command starts with its arguments in A0, their length in D0, and the stack size at 4(SP).
+        var argumentBytes = System.Text.Encoding.Latin1.GetBytes(arguments + "\0");
+        var argumentText = core.AllocateSystem(argumentBytes);
+        var stackTop = _memory.Read32(process + TaskOffsets.StackUpper) - 4;
+        _memory.Write32(stackTop, Core.StackSize);
+        core.Scheduler.Start(process, (segmentList << 2) + 4, stackTop, (d, a) =>
+        {
+            d[0] = (uint)argumentBytes.Length - 1;
+            a[0] = argumentText;
+        });
+        core.Log.WriteLine($"Run {commandName}: the program runs in a new process.");
+        return Shell.Ok;
+    }
+
     /// <summary>Runs a command in the shell of the runtime. The output goes to the file handle, or to the console.</summary>
     private int RunCommand(string commandLine, uint output)
     {
+        // Run starts a program in a new process, and returns at once.
+        var words = commandLine.Trim().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length == 2 && words[0].Equals("run", StringComparison.OrdinalIgnoreCase))
+            return RunInBackground(words[1]);
+
         using var stream = new MemoryStream();
         var result = _shell.Run(commandLine, CurrentDirectory, stream);
         if (result == Shell.UnknownCommand)

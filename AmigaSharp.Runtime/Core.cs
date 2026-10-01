@@ -656,6 +656,27 @@ public sealed class Core
     }
 
     /// <summary>
+    /// Makes the CLI structure of a process that runs a command: the command name, the stack size, the input and the
+    /// output of the process, and the segment list of the command.
+    /// </summary>
+    public void SetUpCli(uint process, string commandName, uint segmentList)
+    {
+        var cli = AllocateSystem(CliOffsets.Size);
+        var name = Encoding.Latin1.GetBytes(commandName);
+        var bstr = AllocateSystem([(byte)name.Length, .. name]);
+
+        Memory.Write32(cli + CliOffsets.CommandName, bstr >> 2);
+        Memory.Write32(cli + CliOffsets.DefaultStack, StackSize / 4);
+        Memory.Write32(cli + CliOffsets.StandardInput, Memory.Read32(process + ProcessOffsets.InputStream));
+        Memory.Write32(cli + CliOffsets.CurrentInput, Memory.Read32(process + ProcessOffsets.InputStream));
+        Memory.Write32(cli + CliOffsets.StandardOutput, Memory.Read32(process + ProcessOffsets.OutputStream));
+        Memory.Write32(cli + CliOffsets.CurrentOutput, Memory.Read32(process + ProcessOffsets.OutputStream));
+        Memory.Write32(cli + CliOffsets.Interactive, 0xFFFF_FFFF);
+        Memory.Write32(cli + CliOffsets.Module, segmentList);
+        Memory.Write32(process + ProcessOffsets.Cli, cli >> 2);
+    }
+
+    /// <summary>
     /// Makes a <c>struct Process</c> with a message port and a stack. The process has no input or output streams. The
     /// process does not run until the scheduler starts it. The main process is the task that runs the program.
     /// </summary>
