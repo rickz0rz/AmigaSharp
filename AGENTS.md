@@ -76,6 +76,11 @@ Most display, genlock and Prevue work can only be verified by looking at the scr
   OS (`scripts/publish.sh win-x64` on macOS) builds the translator for the host RID and fails. `publish.sh`/`.ps1` use
   Native AOT for the host OS and a self-contained ReadyToRun folder (runtime translation works) for another OS. Do not
   make that folder single-file: `ProgramCompiler` needs `Assembly.Location`.
+- Code map (`AmigaSharp.Host/CodeMap.cs`): without `--listing`, interpreter entry addresses are saved per executable
+  (`<translations cache>/<sha256[..24]>.code`) and passed to `ProgramAnalysis.Analyze(..., knownCode)` as extra roots
+  (also in data hunks); they are part of the translation cache key. Only addresses inside hunk file data whose opcode
+  bytes still match the file are kept. With a listing the map is ignored. To reproduce a first-run translation, use
+  `--no-code-map` or delete the `.code` file.
 - Both launcher exes import `AmigaSharp.Host/EmbeddedProgram.targets` for build-time translation; the generated code
   registers itself with a module initializer in `EmbeddedPrograms`.
 - Launcher options and HTTP endpoints that only make sense for Prevue get a `prevue` prefix (`--prevue-ctrl-port`,

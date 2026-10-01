@@ -640,6 +640,13 @@ function. The interpreter runs this code one instruction at a time. At each call
 method at the address. If there is no method, the interpreter runs the code. So translated code and interpreted code
 can call each other.
 
+Without a listing, the translator finds only the code that it can reach from the entry point: code that the program
+reaches through a table of addresses or an interrupt vector runs in the interpreter. So the launcher keeps a map of
+the addresses where the interpreter started, in the translation cache, and the next translation also starts there.
+Each run then translates more of the program. For the Sonic demo, the interpreter ran 115 million instructions in 30
+seconds in the first run, and 0.6 million in the fifth run. The map keeps only code of the file: code that a program
+unpacks or writes while it runs stays in the interpreter. `--no-code-map` turns the map off.
+
 A program can write new code over its own code, for example the decruncher of a packed program. The runtime keeps the
 first 8 bytes of each translated method. If these bytes change, the runtime removes the method, and the interpreter
 runs the new code. Some code jumps with an RTS: it puts the address on the stack, and does RTS. If the return address

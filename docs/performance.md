@@ -46,6 +46,20 @@ The parts of `UpdateHardware` in the profile:
 `DiskController.Update` uses time, but ESQ does not use the floppy drive. `BitBangedLine.Update` uses much of its time
 to wait for a lock that the thread of the control line feed also uses.
 
+## The map of the code that ran
+
+Without a listing, the translator translates only the code that it can reach from the entry point. The launcher keeps
+a map of the addresses where the interpreter started (see `AmigaSharp.Host/CodeMap.cs`), and the next translation also
+starts at them. For the Sonic demo at `--cpu-mhz 56`:
+
+| Run | Translated | Interpreted in 30 s | Host waits |
+|---|---|---|---|
+| 1 | 15 functions, 255 instructions | 115 million | 67% |
+| 3 | 263 functions, 8,883 instructions | 4.0 million | 80% |
+| 5 | 508 functions, 14,256 instructions | 0.6 million | 80% |
+
+ESQ has a listing, so it does not use the map.
+
 ## Possible work
 
 1. Do not update all the hardware at each library call if almost no Amiga time went by since the last update, for

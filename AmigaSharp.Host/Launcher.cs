@@ -42,6 +42,9 @@ public static class Launcher
           --listing <file.lst>      The vasm listing of the executable. The translator uses its instructions and labels.
           --interpret               Run the program in the interpreter. Do not translate it. A native (AOT) build always
                                     uses the interpreter.
+          --no-code-map             Without --listing, the launcher keeps a map of the code that ran in the interpreter,
+                                    and the next translation also translates that code. So each run translates more of
+                                    the program. This option does not read or write the map.
           --drive <directory>       The host directory of SYS:. The default is the directory of the executable.
           --volume <NAME>=<dir>     A volume on a host directory, for example DH1=/path/to/drive.
           --assign <NAME>=<path>    An assign to an AmigaDOS directory, for example DF0=DH1: or FONTS=SYS:fonts.
@@ -308,6 +311,9 @@ public static class Launcher
             : null;
         scheduleRequests.Runner = scheduleRunner;
 
+        // Without a listing, the map of the code that ran in earlier runs tells the translator where more code is.
+        var codeMap = listing == null && options.CodeMap ? CodeMap.Load(executable) : null;
+
         // A native (AOT) build cannot compile and load a translation while it runs, so it uses the interpreter. The check is
         // a constant in such a build, so the trimmer removes the compiler from it.
         TranslatedProgram program;
@@ -318,7 +324,7 @@ public static class Launcher
         }
         else if (!interpret && System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
         {
-            program = CompileProgram(executable, listing, core, log);
+            program = CompileProgram(executable, listing, core, log, codeMap?.Addresses);
         }
         else
         {
@@ -558,6 +564,14 @@ public static class Launcher
                 TempFolders.Delete(diskCopy);
         }
 
+        if (codeMap != null)
+        {
+            var added = codeMap.Add(executable, core.Memory, core.InterpreterEntries.Keys.ToList());
+            if (added > 0)
+                log.WriteLine($"The map of the code that ran has {codeMap.Addresses.Count} addresses ({added} new). " +
+                              "The next start also translates them.");
+        }
+
         if (stats && core.InterpreterEntries.Count > 0)
         {
             log.WriteLine($"The interpreter ran {core.InterpretedInstructions} instructions. The most frequent entries:");
@@ -570,8 +584,9 @@ public static class Launcher
 
     [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Compiles and loads the translation of the program.")]
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Loads the translation of the program as an assembly.")]
-    private static TranslatedProgram CompileProgram(byte[] executable, string? listing, Core core, TextWriter log) =>
-        (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log), core)!;
+    private static TranslatedProgram CompileProgram(byte[] executable, string? listing, Core core, TextWriter log,
+        IReadOnlyCollection<uint>? knownCode) =>
+        (TranslatedProgram)Activator.CreateInstance(ProgramCompiler.Compile(executable, listing, log, knownCode), core)!;
 
     private static int Extract(string[] arguments)
     {

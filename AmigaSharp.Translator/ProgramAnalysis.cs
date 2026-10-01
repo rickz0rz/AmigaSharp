@@ -44,19 +44,25 @@ public sealed class ProgramAnalysis
 
     public List<string> Warnings { get; } = [];
 
-    public static ProgramAnalysis Analyze(HunkFile file, VasmListing? listing)
+    /// <param name="knownCode">
+    /// Addresses where code ran in earlier runs, for example the entries of the interpreter. Without a listing, the
+    /// analysis also follows the code from each of them, also in a data hunk, and each of them starts a function. With a
+    /// listing, the listing tells which bytes are code, and the analysis does not use them.
+    /// </param>
+    public static ProgramAnalysis Analyze(HunkFile file, VasmListing? listing, IReadOnlyCollection<uint>? knownCode = null)
     {
         var bases = HunkLayout.Assign(file);
         var memory = new Memory(guardHardware: false);
         file.Load(memory, bases);
 
         var analysis = new ProgramAnalysis { File = file, Bases = bases, Listing = listing };
+        var known = listing == null ? (knownCode ?? []).Where(analysis.IsInHunkData).ToList() : [];
         if (listing != null)
             analysis.FindInstructionsFromListing(memory, listing);
         else
-            analysis.FindInstructionsFromEntry(memory);
+            analysis.FindInstructionsFromEntry(memory, known);
 
-        analysis.FindFunctions(memory);
+        analysis.FindFunctions(memory, known);
         return analysis;
     }
 
@@ -90,16 +96,30 @@ public sealed class ProgramAnalysis
         }
     }
 
-    private void FindInstructionsFromEntry(Memory memory)
+    private void FindInstructionsFromEntry(Memory memory, IReadOnlyList<uint> knownCode)
     {
-        var pending = new Stack<uint>();
+        // Code that ran can be in a data hunk. The analysis then follows code in that hunk too.
+        var codeHunks = File.Hunks.Where(hunk => hunk.Type == HunkType.Code).Select(hunk => hunk.Index)
+            .Concat(knownCode.Select(address => HunkOffset(address).Hunk)).ToHashSet();
+        var pending = new Stack<uint>(knownCode.Reverse());
         pending.Push(Bases[0]);
         while (pending.Count > 0)
         {
             var address = pending.Pop();
-            while (!Instructions.ContainsKey(address) && IsInCodeHunk(address))
+            while (!Instructions.ContainsKey(address) && (address & 1) == 0
+                   && HunkOffset(address).Hunk is var hunk and >= 0 && codeHunks.Contains(hunk))
             {
-                var instruction = Decoder.Decode(address, memory.Read16);
+                Instruction instruction;
+                try
+                {
+                    instruction = Decoder.Decode(address, memory.Read16);
+                }
+                catch (Exception e) when (e is not OutOfMemoryException)
+                {
+                    // The path runs into bytes that are not an instruction, for example data after the code.
+                    break;
+                }
+
                 Instructions[address] = new CodeInstruction(instruction, null, true);
                 foreach (var target in ConstantTargets(instruction))
                     pending.Push(target);
@@ -110,9 +130,12 @@ public sealed class ProgramAnalysis
         }
     }
 
-    private void FindFunctions(Memory memory)
+    private void FindFunctions(Memory memory, IReadOnlyList<uint> knownCode)
     {
         var starts = new SortedSet<uint> { Bases[0] };
+
+        // Every address where code ran in an earlier run: the program called it or jumped to it.
+        starts.UnionWith(knownCode);
 
         // Every non-local label in a code hunk that is at an instruction.
         if (Listing != null)
@@ -236,10 +259,11 @@ public sealed class ProgramAnalysis
         return (-1, 0);
     }
 
-    private bool IsInCodeHunk(uint address)
+    /// <summary>True if the address is even and in the contents of a hunk in the file (not in BSS memory).</summary>
+    public bool IsInHunkData(uint address)
     {
-        var (hunk, _) = HunkOffset(address);
-        return hunk >= 0 && File.Hunks[hunk].Type == HunkType.Code;
+        var (hunk, offset) = HunkOffset(address);
+        return (address & 1) == 0 && hunk >= 0 && offset + 2 <= File.Hunks[hunk].Data.Length;
     }
 
     private uint HunkEnd(uint address)

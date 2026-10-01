@@ -53,6 +53,9 @@ public sealed class LauncherOptions
 
     /// <summary>The speed of the CPU in MHz, or null for the 7.16 MHz of the 68000.</summary>
     public double? CpuMhz { get; set; }
+
+    /// <summary>False to not read or write the map of the code that ran (see <see cref="CodeMap"/>).</summary>
+    public bool CodeMap { get; set; } = true;
     public List<(double Seconds, byte RawKey)> Presses { get; } = [];
     public (double Seconds, string Path)? CopperDump { get; set; }
     public bool FastCpu { get; set; }
@@ -129,6 +132,7 @@ public sealed class LauncherOptions
                 case "--virtual-time": options.VirtualTime = true; break;
                 case "--pal": options.Pal = true; break;
                 case "--unaligned-access": options.UnalignedAccess = true; break;
+                case "--no-code-map": options.CodeMap = false; break;
                 case "--cpu-mhz":
                     options.CpuMhz = double.Parse(Next(), CultureInfo.InvariantCulture);
                     if (options.CpuMhz is < 1 or > 1000)

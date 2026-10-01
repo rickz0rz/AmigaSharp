@@ -20,10 +20,14 @@ public static class ProgramCompiler
     public static string CacheDirectory { get; } = Path.Combine(Path.GetTempPath(), "AmigaSharp", "translations");
 
     /// <summary>Returns the type of the translated program. It is a subclass of <see cref="TranslatedProgram"/>.</summary>
-    public static Type Compile(byte[] executable, string? listingPath, TextWriter log)
+    /// <param name="knownCode">Addresses where code ran in earlier runs (see <see cref="CodeMap"/>).</param>
+    public static Type Compile(byte[] executable, string? listingPath, TextWriter log,
+        IReadOnlyCollection<uint>? knownCode = null)
     {
         var listingBytes = listingPath == null ? [] : File.ReadAllBytes(listingPath);
-        var key = CacheKey(executable, listingBytes);
+        // A listing makes the translator ignore the known code, so the known code is part of the key only without it.
+        knownCode = listingPath == null ? knownCode ?? [] : [];
+        var key = CacheKey(executable, listingBytes, knownCode);
         var cached = Path.Combine(CacheDirectory, key + ".dll");
         if (File.Exists(cached))
         {
@@ -33,7 +37,7 @@ public static class ProgramCompiler
 
         log.WriteLine("Translating the executable.");
         var listing = listingPath == null ? null : VasmListing.Read(listingPath);
-        var analysis = ProgramAnalysis.Analyze(HunkFile.Parse(executable), listing);
+        var analysis = ProgramAnalysis.Analyze(HunkFile.Parse(executable), listing, knownCode);
         foreach (var warning in analysis.Warnings)
             log.WriteLine($"warning: {warning}");
         var source = CSharpProgramWriter.Write(analysis, Namespace, ClassName, "the launched executable");
@@ -62,11 +66,13 @@ public static class ProgramCompiler
         return Assembly.LoadFile(cached).GetType($"{Namespace}.{ClassName}")!;
     }
 
-    private static string CacheKey(byte[] executable, byte[] listing)
+    private static string CacheKey(byte[] executable, byte[] listing, IReadOnlyCollection<uint> knownCode)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         hash.AppendData(executable);
         hash.AppendData(listing);
+        foreach (var address in knownCode.Order())
+            hash.AppendData(BitConverter.GetBytes(address));
         // A new version of the translator or the runtime makes a new translation.
         hash.AppendData(File.ReadAllBytes(typeof(CSharpProgramWriter).Assembly.Location));
         hash.AppendData(File.ReadAllBytes(typeof(Core).Assembly.Location));
