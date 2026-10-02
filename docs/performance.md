@@ -66,16 +66,24 @@ ESQ has a listing, so it does not use the map.
    example less than one line of the display. The interrupts then still come at the correct time.
 2. Make `DiskController.Update` return at once when no motor is on and no disk DMA runs.
 3. Make `BitBangedLine.Update` read the state of its queue without the lock when the queue is empty.
-4. Do not set the condition codes when no instruction reads them. The translation sets them after almost each
+4. Read the clock once in each update. In real time, `Beam.ColorClocks` and `Beam.Frame` each read the `Stopwatch`
+   and convert the time with floating-point operations. The custom chips, the audio, the CIAs and the lines each
+   read the time again. `UpdateHardware` can read the time once and give the value to each part.
+5. Do not set the condition codes when no instruction reads them. The translation sets them after almost each
    instruction, for example after `MOVE.W (A1)+,D0`, also when the next instruction sets them again. The translator
    can find the instructions whose condition codes the next instructions of the function always set again before
    a read. A branch, a call, a return, a jump to an address that is known only at run time, and an interrupt can read
    them, so the translator must keep them at those points.
-5. Make a call of translated code cheaper. Each `core.Call` pushes the return address, runs the function in a `try`
+6. Keep the registers of the 68000 in local variables in a translated function. Today each instruction reads and
+   writes the arrays `cpu.D` and `cpu.A`, so each access is a load or a store of memory. The function can copy the
+   registers into locals at its start, and write them back before a call, a return, a safe point and a library call.
+   The JIT can then keep them in the registers of the host. Together with item 5, this removes most of the
+   dependencies between instructions, and the host CPU can then run more instructions in parallel.
+7. Make a call of translated code cheaper. Each `core.Call` pushes the return address, runs the function in a `try`
    block for `StackUnwindException`, and checks the return address. A call from translated code to a translated
    function with a normal return could skip the `try` block, if the unwind can find its frame in another way.
 
-Items 4 and 5 make all the translated code faster. They do not need a profile of the hot functions: the JIT of .NET
+Items 5, 6 and 7 make all the translated code faster. They do not need a profile of the hot functions: the JIT of .NET
 already compiles the hot methods of a translation again with its own profile (tiered compilation and Dynamic PGO).
 A profile of the program would help only the native (AOT) build, which has no JIT. .NET can give a recorded profile
 to such a build.
